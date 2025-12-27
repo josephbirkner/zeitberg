@@ -61,15 +61,16 @@ The goals below evolve this into an automated pipeline + a browsable/searchable 
 
 ### M2 — (1) GitHub Pages: Browse + Search
 
-- Choose deployment model:
-  - **Simple**: serve from `docs/` (no build step), site loads `data/…` directly.
-  - **Better**: build to `dist/` and deploy via `actions/deploy-pages` (recommended).
-- Create `site/` (or `web/`) static app:
+- **Security constraint:** GitHub Pages on personal accounts is public, so the viewer must not ship diary data as static assets.
+- Deploy a static viewer app (e.g. `app/`) that:
+  - Prompts for GitHub username + a fine-grained PAT.
+  - Stores the token locally (localStorage/sessionStorage).
+  - Loads `data/entries/*.json` from the private repo via the GitHub API.
+- Implement browsing and search:
   - Timeline views: day / week / month; project/tag filters.
   - Full-text search over descriptions (precomputed index via `flexsearch`/`lunr`).
   - Deep links: `/#/date/2025-05-20`, `/#/entry/<id>`, `/#/search?q=…`.
-  - Optional: show existing `YYYY/<week>.png` plots as a “weekly overview” tab.
-- Add build step that produces:
+- (Optional) Add a build step that produces:
   - `data/index/search.json` (or chunked indices)
   - `data/index/summary.json` (counts, totals per project/tag/day)
 
