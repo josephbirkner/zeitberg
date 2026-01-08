@@ -8,17 +8,45 @@
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">
-        <div class="title">Timetracking Viewer</div>
-        <div class="subtitle">Loads private data via GitHub API</div>
+      <div class="topbar-left">
+        <nav id="viewTabs" class="tabs" role="tablist" aria-label="Views" hidden>
+          <button id="tabWeek" class="tab" type="button" role="tab" aria-selected="true">Week</button>
+          <button id="tabSearch" class="tab" type="button" role="tab" aria-selected="false">Search</button>
+        </nav>
+
+        <div id="weekControls" class="week-controls" hidden>
+          <button id="prevWeekBtn" class="btn btn-secondary btn-icon" type="button" title="PageUp" aria-label="Previous week">
+            ◀
+          </button>
+          <button id="nextWeekBtn" class="btn btn-secondary btn-icon" type="button" title="PageDown" aria-label="Next week">
+            ▶
+          </button>
+          <button id="latestWeekBtn" class="btn btn-secondary" type="button">Latest</button>
+
+          <div id="weekLabel" class="week-label" aria-live="polite"></div>
+
+          <label class="zoom zoom-compact">
+            <span>Zoom</span>
+            <input id="zoomInput" type="range" min="1" max="4" step="0.25" value="1" />
+          </label>
+        </div>
       </div>
-      <div class="topbar-actions">
-        <div id="authStatus" class="auth-status" aria-live="polite"></div>
-        <button id="logoutBtn" class="btn btn-secondary" type="button" hidden>Logout</button>
+
+      <div class="topbar-right">
+        <div class="loadbar" aria-live="polite">
+          <progress id="loadProgress" max="1" value="0"></progress>
+          <div id="loadProgressLabel" class="muted loadbar-label"></div>
+        </div>
+
+        <div class="topbar-actions">
+          <button id="reloadDataBtn" class="btn btn-secondary" type="button" hidden>Reload</button>
+          <div id="authStatus" class="auth-status" aria-live="polite"></div>
+          <button id="logoutBtn" class="btn btn-secondary" type="button" hidden>Logout</button>
+        </div>
       </div>
     </header>
 
-    <main class="container">
+    <main>
       <section id="loginSection" class="card" hidden>
         <h2>Login</h2>
         <p class="muted">
@@ -59,89 +87,73 @@
       </section>
 
       <section id="appSection" class="stack" hidden>
-        <section class="card">
-          <div class="row wrap">
-            <div>
-              <h2 class="tight">Data</h2>
-              <div id="repoLabel" class="muted"></div>
+        <section id="weekViewSection" class="week-view" hidden>
+          <div id="weekScroll" class="week-scroll" tabindex="0" aria-label="Week timeline"></div>
+        </section>
+
+        <div id="searchView" class="stack" hidden>
+          <section class="card">
+            <div class="row wrap">
+              <h2 class="tight">Browse &amp; Search</h2>
+              <div id="stats" class="stats muted"></div>
             </div>
-            <div class="row">
-              <button id="reloadDataBtn" class="btn btn-secondary" type="button">Reload data</button>
+
+            <div class="filters grid">
+              <label>
+                <span>Search</span>
+                <input id="searchInput" type="search" placeholder="description, project, tags…" />
+              </label>
+              <label>
+                <span>Project</span>
+                <select id="projectSelect"></select>
+              </label>
+              <label>
+                <span>From (CET)</span>
+                <input id="fromDate" type="date" />
+              </label>
+              <label>
+                <span>To (CET)</span>
+                <input id="toDate" type="date" />
+              </label>
+              <label>
+                <span>Max rows</span>
+                <input id="maxRows" type="number" min="50" step="50" value="500" />
+              </label>
+              <label>
+                <span>Sort</span>
+                <select id="sortSelect">
+                  <option value="desc">Newest first</option>
+                  <option value="asc">Oldest first</option>
+                </select>
+              </label>
             </div>
-          </div>
+          </section>
 
-          <div class="progress">
-            <progress id="loadProgress" max="1" value="0"></progress>
-            <div id="loadProgressLabel" class="muted"></div>
-          </div>
-          <pre id="dataError" class="error" hidden></pre>
-        </section>
-
-        <section class="card">
-          <div class="row wrap">
-            <h2 class="tight">Browse &amp; Search</h2>
-            <div id="stats" class="stats muted"></div>
-          </div>
-
-          <div class="filters grid">
-            <label>
-              <span>Search</span>
-              <input id="searchInput" type="search" placeholder="description, project, tags…" />
-            </label>
-            <label>
-              <span>Project</span>
-              <select id="projectSelect"></select>
-            </label>
-            <label>
-              <span>From (CET)</span>
-              <input id="fromDate" type="date" />
-            </label>
-            <label>
-              <span>To (CET)</span>
-              <input id="toDate" type="date" />
-            </label>
-            <label>
-              <span>Max rows</span>
-              <input id="maxRows" type="number" min="50" step="50" value="500" />
-            </label>
-            <label>
-              <span>Sort</span>
-              <select id="sortSelect">
-                <option value="desc">Newest first</option>
-                <option value="asc">Oldest first</option>
-              </select>
-            </label>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="table-wrap">
-            <table class="table" aria-label="Entries">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Duration</th>
-                  <th>Project</th>
-                  <th>Description</th>
-                  <th>Tags</th>
-                  <th>Billable</th>
-                </tr>
-              </thead>
-              <tbody id="entriesTbody"></tbody>
-            </table>
-          </div>
-        </section>
+          <section class="card">
+            <div class="table-wrap">
+              <table class="table" aria-label="Entries">
+                <thead>
+	                  <tr>
+	                    <th>Date</th>
+	                    <th>Start</th>
+	                    <th>End</th>
+	                    <th>Duration</th>
+	                    <th>Project</th>
+	                    <th>Description</th>
+	                    <th>Tags</th>
+	                    <th>Billable</th>
+	                  </tr>
+	                </thead>
+                <tbody id="entriesTbody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       </section>
     </main>
 
-    <footer class="footer container">
-      <div class="muted">
-        Tip: create a fine-grained PAT with <code>Contents: Read-only</code> for the private repo, and use Logout to clear
-        it from this browser. Local testing: serve the repo root and open <code>/docs/?source=local</code>.
-      </div>
-    </footer>
+    <pre id="dataError" class="error error-toast" hidden></pre>
+    <div id="repoLabel" class="data-badge" aria-live="polite"></div>
 
     <script type="module" src="./app.js"></script>
   </body>

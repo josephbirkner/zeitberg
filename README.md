@@ -9,6 +9,11 @@ This is a static HTML5 viewer that stays “public” as code, but loads **priva
 - The manifest lists weekly chunks in `data/entries/<iso-year>/<week>.json` (and their Git blob SHAs), which are then loaded via the Git blob API.
 - Your token is stored in the browser (localStorage if “Remember” is enabled; otherwise sessionStorage).
 
+## Views
+
+- **Week**: graphical week timeline (Mon–Sun) with keyboard navigation (`←/→` day, `↑/↓` entry, `PageUp/PageDown` week) and a zoom slider.
+- **Search**: the query/table UI for filtering and browsing entries.
+
 ## Local testing
 
 You can test the viewer against local files (no GitHub token) by serving the **repo root** so `/data/` is reachable:
