@@ -198,6 +198,19 @@ select:focus {
   margin-top: 10px;
 }
 
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+progress {
+  width: min(520px, 100%);
+  height: 12px;
+  accent-color: var(--accent);
+}
+
 .year-pill {
   display: inline-flex;
   align-items: center;
@@ -272,4 +285,3 @@ select:focus {
     min-width: 260px;
   }
 }
-

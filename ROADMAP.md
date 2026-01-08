@@ -24,7 +24,7 @@ The goals below evolve this into an automated pipeline + a browsable/searchable 
 ## Target Architecture (High Level)
 
 - **Ingest (GitHub Actions cron)**: pull from Toggl API → store as `data/raw/toggl/*.json`.
-- **Normalize**: transform raw → `data/entries/{year}.json` (or chunked by month) + derived indices.
+- **Normalize**: transform raw → weekly chunks under `data/entries/<iso-year>/<week>.json` + derived indices.
 - **Publish (GitHub Pages)**: static site reads normalized JSON + precomputed search index.
 - **Edit (Frontend)**: user edits entries in the site; changes are saved as repo commits (via GitHub API) and/or queued as “overrides” applied during normalization.
 
@@ -51,7 +51,7 @@ The goals below evolve this into an automated pipeline + a browsable/searchable 
   - Reads secrets (`TOGGL_API_TOKEN`, `TOGGL_WORKSPACE_ID`, optional project map).
   - Fetches time entries incrementally (plus a “lookback window” to catch edits).
   - Writes raw pulls to `data/raw/toggl/…`.
-  - Updates normalized `data/entries/…` deterministically.
+  - Updates normalized weekly chunks under `data/entries/<iso-year>/<week>.json` deterministically.
   - Avoids duplicate entries; handles edits/deletes (decision needed: keep tombstones?).
 - Add `.github/workflows/toggl-sync.yml`:
   - `schedule:` cron (e.g., hourly or daily)
@@ -65,7 +65,7 @@ The goals below evolve this into an automated pipeline + a browsable/searchable 
 - Deploy a static viewer app (e.g. `app/`) that:
   - Prompts for GitHub username + a fine-grained PAT.
   - Stores the token locally (localStorage/sessionStorage).
-  - Loads `data/entries/*.json` from the private repo via the GitHub API.
+  - Loads `data/entries/*/*.json` from the private repo via the GitHub API.
 - Implement browsing and search:
   - Timeline views: day / week / month; project/tag filters.
   - Full-text search over descriptions (precomputed index via `flexsearch`/`lunr`).

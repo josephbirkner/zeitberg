@@ -90,10 +90,15 @@ async function ghRawText(url, token) {
   return await resp.text();
 }
 
-function yearFromFilename(name) {
-  const m = /^(\d{4})\.json$/.exec(name);
-  if (!m) return null;
-  return Number.parseInt(m[1], 10);
+function getSourceMode() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = (params.get("source") || "").trim().toLowerCase();
+    if (raw === "local") return "local";
+  } catch {
+    // ignore
+  }
+  return "github";
 }
 
 function makeTzFormatters(timeZone) {
@@ -157,9 +162,9 @@ async function main() {
 
   const appSection = $("appSection");
   const repoLabelEl = $("repoLabel");
-  const refreshYearsBtn = $("refreshYearsBtn");
-  const loadSelectedYearsBtn = $("loadSelectedYearsBtn");
-  const yearsContainer = $("yearsContainer");
+  const reloadDataBtn = $("reloadDataBtn");
+  const loadProgressEl = $("loadProgress");
+  const loadProgressLabelEl = $("loadProgressLabel");
   const dataErrorEl = $("dataError");
 
   const searchInput = $("searchInput");
@@ -171,6 +176,9 @@ async function main() {
   const statsEl = $("stats");
   const entriesTbody = $("entriesTbody");
 
+  const sourceMode = getSourceMode();
+  const isLocalMode = sourceMode === "local";
+
   let config = loadConfig();
   $("ownerInput").value = config.owner;
   $("repoInput").value = config.repo;
@@ -179,8 +187,7 @@ async function main() {
 
   let token = loadToken();
   let ghUser = null;
-  let yearFiles = [];
-  const yearData = new Map(); // year -> { sha, payload, entries[] }
+  let chunkFiles = [];
   let allEntries = [];
 
   const { dateFmt, timeFmt } = makeTzFormatters(config.timezone);
@@ -201,38 +208,20 @@ async function main() {
 
   function setBusy(isBusy) {
     logoutBtn.disabled = isBusy;
-    refreshYearsBtn.disabled = isBusy;
-    loadSelectedYearsBtn.disabled = isBusy;
+    reloadDataBtn.disabled = isBusy;
+    searchInput.disabled = isBusy;
+    projectSelect.disabled = isBusy;
+    fromDateInput.disabled = isBusy;
+    toDateInput.disabled = isBusy;
+    maxRowsInput.disabled = isBusy;
+    sortSelect.disabled = isBusy;
   }
 
-  function selectedYears() {
-    return Array.from(yearsContainer.querySelectorAll("input[type=checkbox][data-year]"))
-      .filter((cb) => cb.checked)
-      .map((cb) => Number.parseInt(cb.dataset.year, 10))
-      .filter((y) => Number.isFinite(y))
-      .sort((a, b) => a - b);
-  }
-
-  function renderYears() {
-    yearsContainer.innerHTML = "";
-    const frag = document.createDocumentFragment();
-    const nowYear = new Date().getFullYear();
-    const maxYear = yearFiles.length ? Math.max(...yearFiles.map((f) => f.year)) : null;
-    const defaultYear = yearFiles.some((f) => f.year === nowYear) ? nowYear : maxYear;
-    for (const f of yearFiles) {
-      const pill = document.createElement("label");
-      pill.className = "year-pill";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.dataset.year = String(f.year);
-      cb.checked = defaultYear ? f.year === defaultYear : false;
-
-      const name = document.createElement("span");
-      name.textContent = String(f.year);
-      pill.append(cb, name);
-      frag.append(pill);
-    }
-    yearsContainer.append(frag);
+  function setProgress(loaded, total, label) {
+    const max = Math.max(1, total || 0);
+    loadProgressEl.max = max;
+    loadProgressEl.value = Math.min(Math.max(0, loaded), max);
+    loadProgressLabelEl.textContent = label || "";
   }
 
   function renderProjects(entries) {
@@ -321,68 +310,164 @@ async function main() {
     entriesTbody.append(frag);
   }
 
-  async function fetchYears() {
-    setBusy(true);
-    setError(dataErrorEl, "");
+  const chunkCache = new Map(); // key -> { sha, entries[] }
+
+  function chunkKey(year, week) {
+    return `${year}-W${String(week).padStart(2, "0")}`;
+  }
+
+  let entriesManifest = null;
+
+  function ghContentsUrl(repoPath) {
+    return `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(
+      config.repo,
+    )}/contents/${repoPath}?ref=${encodeURIComponent(config.ref)}`;
+  }
+
+  function localRepoUrl(repoPath) {
+    const clean = String(repoPath || "").replace(/^\/+/, "");
+    return new URL(`../${clean}`, window.location.href).toString();
+  }
+
+  function normalizeManifest(raw) {
+    if (!raw || typeof raw !== "object") throw new Error("entries-manifest.json must be a JSON object");
+    const chunksRaw = Array.isArray(raw.chunks) ? raw.chunks : [];
+
+    const chunks = [];
+    for (const c of chunksRaw) {
+      if (!c || typeof c !== "object") continue;
+      const year = Number(c.year);
+      const week = Number(c.week);
+      const sha = typeof c.sha === "string" ? c.sha : "";
+      const size = Number(c.size);
+      const path = typeof c.path === "string" ? c.path : "";
+      const entries = typeof c.entries === "number" && Number.isFinite(c.entries) && c.entries >= 0 ? c.entries : null;
+
+      if (!Number.isFinite(year) || year < 1970 || year > 9999) continue;
+      if (!Number.isFinite(week) || week < 1 || week > 53) continue;
+      if (!/^[0-9a-f]{40}$/i.test(sha)) continue;
+      if (!path.startsWith("data/entries/")) continue;
+
+      chunks.push({
+        entries,
+        path,
+        sha,
+        size: Number.isFinite(size) && size >= 0 ? size : null,
+        week,
+        year,
+      });
+    }
+
+    chunks.sort((a, b) => a.year - b.year || a.week - b.week);
+
+    return {
+      chunks,
+      generated_at: typeof raw.generated_at === "string" ? raw.generated_at : null,
+      schema_version: typeof raw.schema_version === "number" ? raw.schema_version : null,
+      timezone: typeof raw.timezone === "string" ? raw.timezone : null,
+      total_chunks: typeof raw.total_chunks === "number" ? raw.total_chunks : chunks.length,
+      total_entries: typeof raw.total_entries === "number" ? raw.total_entries : null,
+    };
+  }
+
+  async function fetchManifest() {
+    setProgress(0, 1, isLocalMode ? "Loading manifest (local)…" : "Loading manifest…");
+
+    let raw;
+    if (isLocalMode) {
+      const resp = await fetch(localRepoUrl("data/index/entries-manifest.json"), { cache: "no-store" });
+      if (!resp.ok) {
+        throw new Error(
+          `Local manifest not found (${resp.status}). Serve the repo root (not docs): python3 -m http.server`,
+        );
+      }
+      raw = await resp.text();
+    } else {
+      raw = await ghRawText(ghContentsUrl("data/index/entries-manifest.json"), token);
+    }
+
+    let parsed;
     try {
-      const url = `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(
-        config.repo,
-      )}/contents/data/entries?ref=${encodeURIComponent(config.ref)}`;
-      const items = await ghJson(url, token);
-      if (!Array.isArray(items)) throw new Error("Unexpected response for contents listing.");
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("Failed to parse entries-manifest.json");
+    }
 
-      yearFiles = items
-        .map((it) => {
-          const year = yearFromFilename(it.name || "");
-          if (!year) return null;
-          return { year, sha: it.sha, size: it.size };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.year - b.year);
+    entriesManifest = normalizeManifest(parsed);
+    chunkFiles = entriesManifest.chunks;
 
-      renderYears();
-      repoLabelEl.textContent = `${config.owner}/${config.repo}@${config.ref} • ${yearFiles.length} year file(s)`;
-    } catch (e) {
-      setError(dataErrorEl, safeText(e));
-      yearFiles = [];
-      renderYears();
-    } finally {
-      setBusy(false);
+    const totals = [];
+    totals.push(`${chunkFiles.length} week file(s)`);
+    if (typeof entriesManifest.total_entries === "number" && Number.isFinite(entriesManifest.total_entries)) {
+      totals.push(`${entriesManifest.total_entries} entries`);
+    }
+    if (entriesManifest.generated_at) totals.push(`manifest @ ${entriesManifest.generated_at}`);
+
+    if (isLocalMode) {
+      repoLabelEl.textContent = `Local data • ${totals.join(" • ")}`;
+    } else {
+      repoLabelEl.textContent = `${config.owner}/${config.repo}@${config.ref} • ${totals.join(" • ")}`;
     }
   }
 
-  async function loadYear(year) {
-    const file = yearFiles.find((f) => f.year === year);
-    if (!file) throw new Error(`Missing year file for ${year}.`);
-
-    const existing = yearData.get(year);
-    if (existing && existing.sha === file.sha) return;
+  async function fetchChunkRawText(chunk) {
+    if (isLocalMode) {
+      const resp = await fetch(localRepoUrl(chunk.path), { cache: "no-store" });
+      if (!resp.ok) throw new Error(`Local fetch failed (${resp.status}): ${chunk.path}`);
+      return await resp.text();
+    }
 
     const url = `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(
       config.repo,
-    )}/git/blobs/${encodeURIComponent(file.sha)}`;
-    const raw = await ghRawText(url, token);
-    const payload = JSON.parse(raw);
-    const entries = Array.isArray(payload.entries) ? payload.entries.map(normalizeEntry) : [];
-    yearData.set(year, { sha: file.sha, payload, entries });
+    )}/git/blobs/${encodeURIComponent(chunk.sha)}`;
+    return await ghRawText(url, token);
   }
 
-  async function loadSelectedYears() {
-    const years = selectedYears();
-    if (!years.length) {
-      setError(dataErrorEl, "Select at least one year.");
+  async function loadAllChunks() {
+    if (!entriesManifest) await fetchManifest();
+    if (!chunkFiles.length) {
+      allEntries = [];
+      renderProjects(allEntries);
+      applyFiltersAndRender();
       return;
     }
 
+    setProgress(0, chunkFiles.length, `Loading 0/${chunkFiles.length}…`);
+
+    const byId = new Map();
+    for (let i = 0; i < chunkFiles.length; i++) {
+      const chunk = chunkFiles[i];
+      const key = chunkKey(chunk.year, chunk.week);
+      setProgress(i, chunkFiles.length, `Loading ${i}/${chunkFiles.length} • ${key}`);
+
+      const cached = chunkCache.get(key);
+      if (cached && cached.sha === chunk.sha) {
+        for (const e of cached.entries) byId.set(e.id, e);
+        continue;
+      }
+
+      const raw = await fetchChunkRawText(chunk);
+      const payload = JSON.parse(raw);
+      const entries = Array.isArray(payload.entries) ? payload.entries.map(normalizeEntry) : [];
+      chunkCache.set(key, { sha: chunk.sha, entries });
+      for (const e of entries) byId.set(e.id, e);
+    }
+
+    setProgress(chunkFiles.length, chunkFiles.length, `Loaded ${chunkFiles.length}/${chunkFiles.length} week files`);
+
+    allEntries = Array.from(byId.values());
+    renderProjects(allEntries);
+    applyFiltersAndRender();
+  }
+
+  async function reloadData() {
     setBusy(true);
     setError(dataErrorEl, "");
+    entriesTbody.innerHTML = "";
+    statsEl.textContent = "";
     try {
-      for (const y of years) {
-        await loadYear(y);
-      }
-      allEntries = years.flatMap((y) => yearData.get(y)?.entries || []);
-      renderProjects(allEntries);
-      applyFiltersAndRender();
+      await fetchManifest();
+      await loadAllChunks();
     } catch (e) {
       setError(dataErrorEl, safeText(e));
     } finally {
@@ -411,7 +496,7 @@ async function main() {
       setVisible(logoutBtn, true);
       setVisible(loginSection, false);
       setVisible(appSection, true);
-      await fetchYears();
+      await reloadData();
     } catch (e) {
       ghUser = null;
       setAuthStatus("Not logged in");
@@ -424,12 +509,15 @@ async function main() {
   function logout() {
     token = "";
     ghUser = null;
-    yearFiles = [];
-    yearData.clear();
+    entriesManifest = null;
+    chunkFiles = [];
+    chunkCache.clear();
     allEntries = [];
     entriesTbody.innerHTML = "";
     projectSelect.innerHTML = "";
     statsEl.textContent = "";
+    repoLabelEl.textContent = "";
+    setProgress(0, 1, "");
     setAuthStatus("Not logged in");
     setVisible(logoutBtn, false);
     setVisible(appSection, false);
@@ -477,8 +565,7 @@ async function main() {
   });
 
   logoutBtn.addEventListener("click", () => logout());
-  refreshYearsBtn.addEventListener("click", () => fetchYears());
-  loadSelectedYearsBtn.addEventListener("click", () => loadSelectedYears());
+  reloadDataBtn.addEventListener("click", () => reloadData());
 
   for (const el of [searchInput, projectSelect, fromDateInput, toDateInput, maxRowsInput, sortSelect]) {
     el.addEventListener("input", () => applyFiltersAndRender());
@@ -486,6 +573,17 @@ async function main() {
   }
 
   // Initial boot
+  setProgress(0, 1, "");
+
+  if (isLocalMode) {
+    setAuthStatus("Local mode");
+    setVisible(logoutBtn, false);
+    setVisible(loginSection, false);
+    setVisible(appSection, true);
+    await reloadData();
+    return;
+  }
+
   setVisible(loginSection, true);
   setVisible(appSection, false);
   setVisible(logoutBtn, false);

@@ -66,12 +66,14 @@
               <div id="repoLabel" class="muted"></div>
             </div>
             <div class="row">
-              <button id="refreshYearsBtn" class="btn btn-secondary" type="button">Refresh years</button>
-              <button id="loadSelectedYearsBtn" class="btn" type="button">Load selected years</button>
+              <button id="reloadDataBtn" class="btn btn-secondary" type="button">Reload data</button>
             </div>
           </div>
 
-          <div id="yearsContainer" class="years" aria-label="Year selection"></div>
+          <div class="progress">
+            <progress id="loadProgress" max="1" value="0"></progress>
+            <div id="loadProgressLabel" class="muted"></div>
+          </div>
           <pre id="dataError" class="error" hidden></pre>
         </section>
 
@@ -137,11 +139,10 @@
     <footer class="footer container">
       <div class="muted">
         Tip: create a fine-grained PAT with <code>Contents: Read-only</code> for the private repo, and use Logout to clear
-        it from this browser.
+        it from this browser. Local testing: serve the repo root and open <code>/docs/?source=local</code>.
       </div>
     </footer>
 
     <script type="module" src="./app.js"></script>
   </body>
 </html>
-
