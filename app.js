@@ -513,7 +513,10 @@ async function main() {
     )}${sign}${String(offH).padStart(2, "0")}:${String(offM).padStart(2, "0")}`;
   }
 
-  let segmentsIndex = new Map(); // dateStr -> segment[]
+  let weekEntryIds = new Map(); // weekStart -> Set<entryId>
+  let weekSegmentsCache = new Map(); // weekStart -> Map<dateStr, segment[]>
+  let longEntryIds = new Set(); // entryId that spans > 7 days
+  let segmentsIndex = new Map(); // dateStr -> segment[] for the current week
   let latestWeekStartStr = null;
   let weekStartStr = null;
   let focusedDayIndex = 0; // 0..6 (Mon..Sun)
@@ -524,6 +527,7 @@ async function main() {
 
   const MIN_ENTRY_MINUTES = 15;
   const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
+  const LONG_ENTRY_MS = 7 * 24 * 60 * 60 * 1000;
 
   let selectedSegKey = null;
   let selectedEntryId = null;
@@ -543,6 +547,7 @@ async function main() {
   const undoStack = [];
   const redoStack = [];
   let nextEntryId = 1;
+  let searchDirty = false;
 
   function setAuthStatus(text) {
     authStatusEl.textContent = text;
@@ -658,6 +663,8 @@ async function main() {
         }
         updateWeekScaleAndReposition();
       });
+    } else {
+      queueMicrotask(() => applyFiltersAndRender());
     }
   }
 
@@ -696,6 +703,13 @@ async function main() {
   }
 
   function applyFiltersAndRender() {
+    if (searchDirty) {
+      const currentProject = projectSelect.value;
+      allEntries = Array.from(entriesById.values());
+      renderProjects(allEntries);
+      if (currentProject) projectSelect.value = currentProject;
+      searchDirty = false;
+    }
     const query = searchInput.value.trim().toLowerCase();
     const project = projectSelect.value;
     const from = fromDateInput.value ? fromDateInput.value : null;
@@ -894,8 +908,10 @@ async function main() {
     return colors;
   }
 
-  function buildSegmentsIndexFromEntries(entries) {
+  function buildSegmentsIndexForWeek(entries, weekStart) {
     const index = new Map();
+    if (!weekStart) return index;
+    const weekEnd = addIsoDays(weekStart, 7);
     const now = new Date();
 
     for (const entry of entries) {
@@ -907,6 +923,8 @@ async function main() {
 
       const startDay = dateFmt.format(start);
       const endDay = dateFmt.format(end);
+      if (endDay < weekStart || startDay >= weekEnd) continue;
+
       const startMin = hhmmToMinutes(timeFmt.format(start));
       const endMin = hhmmToMinutes(timeFmt.format(end));
       if (startMin === null || endMin === null) continue;
@@ -914,9 +932,10 @@ async function main() {
       let day = startDay;
       // Safety: cap at 14 days to avoid pathological entries.
       for (let iter = 0; iter < 14; iter++) {
+        if (day >= weekEnd) break;
         const segStart = day === startDay ? startMin : 0;
         const segEnd = day === endDay ? endMin : 1440;
-        if (segEnd > segStart) {
+        if (day >= weekStart && segEnd > segStart) {
           const key = `${entry.id}@${day}`;
           const seg = { key, day, entry, startMinutes: segStart, endMinutes: segEnd };
           const bucket = index.get(day);
@@ -932,14 +951,10 @@ async function main() {
     return index;
   }
 
-  function computeLatestWeekStart(entries) {
-    let latest = null;
-    for (const e of entries) {
-      if (!(e.startDate instanceof Date) || Number.isNaN(e.startDate.getTime())) continue;
-      if (!latest || e.startDate.getTime() > latest.getTime()) latest = e.startDate;
-    }
-    if (!latest) return null;
-    return isoWeekStart(dateFmt.format(latest));
+  function invalidateWeekSegmentsCache(weekStart) {
+    if (!weekStart) return;
+    weekSegmentsCache.delete(weekStart);
+    weekSegmentsCache.delete(addIsoDays(weekStart, 7));
   }
 
   function clampWeekFocus() {
@@ -1042,6 +1057,8 @@ async function main() {
       weekLabelEl.textContent = "";
       return;
     }
+
+    segmentsIndex = getWeekSegmentsIndex(weekStartStr);
 
     const days = Array.from({ length: 7 }, (_, i) => addIsoDays(weekStartStr, i));
     const weekEnd = days[6];
@@ -1431,6 +1448,59 @@ async function main() {
     return JSON.parse(JSON.stringify(value));
   }
 
+  function ensureEntryWeekStart(entry) {
+    if (!entry || !(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return null;
+    if (entry.weekStart) return entry.weekStart;
+    const weekStart = isoWeekStart(dateFmt.format(entry.startDate));
+    entry.weekStart = weekStart;
+    return weekStart;
+  }
+
+  function addEntryToWeekIndex(entry) {
+    if (!entry) return;
+    const weekStart = ensureEntryWeekStart(entry);
+    if (!weekStart) return;
+    let bucket = weekEntryIds.get(weekStart);
+    if (!bucket) {
+      bucket = new Set();
+      weekEntryIds.set(weekStart, bucket);
+    }
+    bucket.add(entry.id);
+
+    if (entry.endDate instanceof Date && !Number.isNaN(entry.endDate.getTime())) {
+      const span = entry.endDate.getTime() - entry.startDate.getTime();
+      if (span > LONG_ENTRY_MS) longEntryIds.add(entry.id);
+      else longEntryIds.delete(entry.id);
+    } else {
+      longEntryIds.delete(entry.id);
+    }
+  }
+
+  function removeEntryFromWeekIndex(entry) {
+    if (!entry) return;
+    const weekStart = entry.weekStart;
+    if (weekStart && weekEntryIds.has(weekStart)) {
+      const bucket = weekEntryIds.get(weekStart);
+      bucket?.delete(entry.id);
+      if (bucket && bucket.size === 0) weekEntryIds.delete(weekStart);
+    }
+    longEntryIds.delete(entry.id);
+  }
+
+  function rebuildWeekIndexes() {
+    weekEntryIds = new Map();
+    longEntryIds = new Set();
+    for (const entry of entriesById.values()) addEntryToWeekIndex(entry);
+  }
+
+  function recomputeLatestWeekStart() {
+    let latest = null;
+    for (const weekStart of weekEntryIds.keys()) {
+      if (!latest || weekStart > latest) latest = weekStart;
+    }
+    latestWeekStartStr = latest;
+  }
+
   function utcNowIso() {
     return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   }
@@ -1536,50 +1606,53 @@ async function main() {
   }
 
   function weekStartForEntry(entry) {
-    if (!entry || !(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return null;
-    return isoWeekStart(dateFmt.format(entry.startDate));
+    if (!entry) return null;
+    return ensureEntryWeekStart(entry);
   }
 
   function denormalizeEntry(entry) {
-    const { startDate, endDate, durationSeconds, ...raw } = entry || {};
+    const { startDate, endDate, durationSeconds, weekStart, ...raw } = entry || {};
     return deepClone(raw);
   }
 
   function snapshotWeekRaw(weekStart) {
     const out = [];
-    for (const entry of entriesById.values()) {
-      if (weekStartForEntry(entry) !== weekStart) continue;
-      out.push(denormalizeEntry(entry));
+    const ids = weekEntryIds.get(weekStart);
+    if (ids) {
+      for (const id of ids) {
+        const entry = entriesById.get(id);
+        if (!entry) continue;
+        out.push(denormalizeEntry(entry));
+      }
     }
     out.sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")) || (a.id || 0) - (b.id || 0));
     return out;
   }
 
   function applyWeekSnapshot(weekStart, rawEntries) {
-    const existingIds = [];
-    for (const entry of entriesById.values()) {
-      if (weekStartForEntry(entry) === weekStart) existingIds.push(entry.id);
+    const existingIds = Array.from(weekEntryIds.get(weekStart) || []);
+    for (const id of existingIds) {
+      const entry = entriesById.get(id);
+      if (entry) removeEntryFromWeekIndex(entry);
+      entriesById.delete(id);
     }
-    for (const id of existingIds) entriesById.delete(id);
 
     const nextEntries = Array.isArray(rawEntries) ? rawEntries : [];
     for (const raw of nextEntries) {
       if (!raw || typeof raw !== "object") continue;
       const id = Number(raw.id);
       if (!Number.isFinite(id)) continue;
-      entriesById.set(id, normalizeEntry(raw));
+      const entry = normalizeEntry(raw);
+      entriesById.set(id, entry);
+      addEntryToWeekIndex(entry);
     }
-
-    allEntries = Array.from(entriesById.values());
-    projectColorCache.clear();
-    segmentsIndex = buildSegmentsIndexFromEntries(allEntries);
-    latestWeekStartStr = computeLatestWeekStart(allEntries);
+    invalidateWeekSegmentsCache(weekStart);
+    recomputeLatestWeekStart();
     if (!weekStartStr && latestWeekStartStr) weekStartStr = latestWeekStartStr;
 
-    renderProjects(allEntries);
-    applyFiltersAndRender();
-    rebuildWeekView();
-    recomputeNextEntryId();
+    searchDirty = true;
+    if (activeTab === "search" && !searchViewEl.hidden) applyFiltersAndRender();
+    if (weekStartStr === weekStart) rebuildWeekView();
   }
 
   function recomputeNextEntryId() {
@@ -1599,16 +1672,50 @@ async function main() {
     return e > startMs && s < endMs;
   }
 
+  function collectEntriesForWeekWindow(weekStart, bounds) {
+    if (!bounds) throw new Error("Invalid week bounds");
+    const windowStartMs = bounds.startMs - 7 * 24 * 60 * 60 * 1000;
+    const windowEndMs = bounds.endMs + 7 * 24 * 60 * 60 * 1000;
+
+    const prevWeek = addIsoDays(weekStart, -7);
+    const nextWeek = addIsoDays(weekStart, 7);
+    const candidates = new Set();
+    for (const ws of [prevWeek, weekStart, nextWeek]) {
+      const bucket = weekEntryIds.get(ws);
+      if (!bucket) continue;
+      for (const id of bucket) candidates.add(id);
+    }
+    for (const id of longEntryIds) candidates.add(id);
+
+    const entries = [];
+    for (const id of candidates) {
+      const entry = entriesById.get(id);
+      if (!entry) continue;
+      if (entryIntersectsRange(entry, windowStartMs, windowEndMs)) entries.push(entry);
+    }
+
+    return { windowStartMs, windowEndMs, entries };
+  }
+
+  function getWeekSegmentsIndex(weekStart) {
+    if (!weekStart) return new Map();
+    const cached = weekSegmentsCache.get(weekStart);
+    if (cached) return cached;
+    const bounds = weekBoundsMs(weekStart);
+    if (!bounds) return new Map();
+    const { entries } = collectEntriesForWeekWindow(weekStart, bounds);
+    const index = buildSegmentsIndexForWeek(entries, weekStart);
+    weekSegmentsCache.set(weekStart, index);
+    return index;
+  }
+
   function buildWeekSchedule(weekStart) {
     const bounds = weekBoundsMs(weekStart);
     if (!bounds) throw new Error("Invalid week bounds");
 
-    const windowStartMs = bounds.startMs - 7 * 24 * 60 * 60 * 1000;
-    const windowEndMs = bounds.endMs + 7 * 24 * 60 * 60 * 1000;
-
+    const { entries } = collectEntriesForWeekWindow(weekStart, bounds);
     const nodes = [];
-    for (const entry of entriesById.values()) {
-      if (!entryIntersectsRange(entry, windowStartMs, windowEndMs)) continue;
+    for (const entry of entries) {
       const startMs = entry.startDate.getTime();
       const endMs = entry.endDate.getTime();
       const editable = weekStartForEntry(entry) === weekStart;
@@ -2127,7 +2234,7 @@ async function main() {
     const created = entriesById.get(newId);
     if (created) {
       openEntryDialog(newId);
-      recomputeNextEntryId();
+      nextEntryId = Math.max(nextEntryId, newId + 1);
     }
   }
 
@@ -2172,7 +2279,7 @@ async function main() {
     const created = entriesById.get(secondId);
     if (created) {
       openEntryDialog(secondId);
-      recomputeNextEntryId();
+      nextEntryId = Math.max(nextEntryId, secondId + 1);
     }
   }
 
@@ -2300,9 +2407,18 @@ async function main() {
   async function loadAllChunks() {
     if (!entriesManifest) await fetchManifest();
     if (!chunkFiles.length) {
+      entriesById = new Map();
+      rebuildWeekIndexes();
+      weekSegmentsCache = new Map();
+      segmentsIndex = new Map();
       allEntries = [];
+      searchDirty = false;
+      latestWeekStartStr = null;
+      weekStartStr = null;
+      projectColorCache.clear();
       renderProjects(allEntries);
       applyFiltersAndRender();
+      rebuildWeekView();
       return;
     }
 
@@ -2351,13 +2467,13 @@ async function main() {
     setProgress(chunkFiles.length, chunkFiles.length, `Loaded ${chunkFiles.length}/${chunkFiles.length} week files${cacheSummary}`);
 
     entriesById = byId;
-    allEntries = Array.from(entriesById.values());
+    rebuildWeekIndexes();
+    weekSegmentsCache = new Map();
     projectColorCache.clear();
-    segmentsIndex = buildSegmentsIndexFromEntries(allEntries);
-    latestWeekStartStr = computeLatestWeekStart(allEntries);
+    recomputeLatestWeekStart();
     if (!weekStartStr && latestWeekStartStr) weekStartStr = latestWeekStartStr;
 
-    renderProjects(allEntries);
+    searchDirty = true;
     applyFiltersAndRender();
     rebuildWeekView();
     recomputeNextEntryId();
@@ -2424,6 +2540,9 @@ async function main() {
 	    chunkCache.clear();
 	    entriesById = new Map();
 	    allEntries = [];
+	    weekEntryIds = new Map();
+	    weekSegmentsCache = new Map();
+	    longEntryIds = new Set();
 	    segmentsIndex = new Map();
 	    latestWeekStartStr = null;
 	    weekStartStr = null;
@@ -2431,6 +2550,7 @@ async function main() {
 	    selectedSegKey = null;
 	    selectedEntryId = null;
 	    dialogEntryId = null;
+	    searchDirty = false;
 	    dirtyWeekStarts.clear();
 	    undoStack.length = 0;
 	    redoStack.length = 0;
