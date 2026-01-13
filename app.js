@@ -221,6 +221,18 @@ async function ghJson(url, token) {
   return await resp.json();
 }
 
+async function ghJsonRequest(url, token, { method = "GET", body = null, accept = null } = {}) {
+  const headers = apiHeaders(token, accept || undefined);
+  const init = { method, headers };
+  if (body !== null && body !== undefined) {
+    init.body = JSON.stringify(body);
+    init.headers = { ...headers, "Content-Type": "application/json" };
+  }
+  const resp = await fetch(url, init);
+  if (!resp.ok) throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
+  return await resp.json();
+}
+
 async function ghRawText(url, token) {
   const resp = await fetch(url, { headers: apiHeaders(token, "application/vnd.github.raw") });
   if (!resp.ok) throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
@@ -384,6 +396,18 @@ async function main() {
   const nextWeekBtn = $("nextWeekBtn");
   const latestWeekBtn = $("latestWeekBtn");
   const zoomInput = $("zoomInput");
+  const editorBadgeEl = $("editorBadge");
+
+  const entryDialog = $("entryDialog");
+  const entryForm = $("entryForm");
+  const entryCloseBtn = $("entryCloseBtn");
+  const entryCancelBtn = $("entryCancelBtn");
+  const entryMetaEl = $("entryMeta");
+  const entryProjectInput = $("entryProject");
+  const entryTagsInput = $("entryTags");
+  const entryDescInput = $("entryDesc");
+  const entryBillableInput = $("entryBillable");
+  const projectDatalistEl = $("projectDatalist");
 
   const searchViewEl = $("searchView");
   const searchInput = $("searchInput");
@@ -409,9 +433,85 @@ async function main() {
   let token = loadToken();
   let ghUser = null;
   let chunkFiles = [];
+  let entriesById = new Map();
   let allEntries = [];
 
   const { dateFmt, timeFmt } = makeTzFormatters(config.timezone);
+  const tzPartsFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: config.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  function zonedParts(date) {
+    const parts = tzPartsFmt.formatToParts(date);
+    const out = {};
+    for (const p of parts) {
+      if (p.type === "year") out.year = Number(p.value);
+      if (p.type === "month") out.month = Number(p.value);
+      if (p.type === "day") out.day = Number(p.value);
+      if (p.type === "hour") out.hour = Number(p.value);
+      if (p.type === "minute") out.minute = Number(p.value);
+      if (p.type === "second") out.second = Number(p.value);
+    }
+    return {
+      year: out.year || 0,
+      month: out.month || 0,
+      day: out.day || 0,
+      hour: out.hour || 0,
+      minute: out.minute || 0,
+      second: out.second || 0,
+    };
+  }
+
+  function tzOffsetMinutesAt(date) {
+    const p = zonedParts(date);
+    const asUtcMs = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    return Math.round((asUtcMs - date.getTime()) / 60000);
+  }
+
+  function dateFromZonedParts({ year, month, day, hour, minute, second }) {
+    const localUtcMs = Date.UTC(year, month - 1, day, hour, minute, second || 0);
+    let guess = new Date(localUtcMs);
+    let offsetMin = tzOffsetMinutesAt(guess);
+    let dt = new Date(localUtcMs - offsetMin * 60000);
+    for (let i = 0; i < 2; i++) {
+      const nextOffsetMin = tzOffsetMinutesAt(dt);
+      if (nextOffsetMin === offsetMin) break;
+      offsetMin = nextOffsetMin;
+      dt = new Date(localUtcMs - offsetMin * 60000);
+    }
+    return dt;
+  }
+
+  function dateFromLocalDayMinutes(dayStr, minutes) {
+    const { year, month, day } = parseIsoDate(dayStr);
+    const m = Math.max(0, Math.min(1440, Math.round(minutes)));
+    const hour = Math.floor(m / 60);
+    const minute = m % 60;
+    return dateFromZonedParts({ year, month, day, hour, minute, second: 0 });
+  }
+
+  function formatIsoWithOffset(date) {
+    const p = zonedParts(date);
+    const offsetMin = tzOffsetMinutesAt(date);
+    const sign = offsetMin >= 0 ? "+" : "-";
+    const abs = Math.abs(offsetMin);
+    const offH = Math.floor(abs / 60);
+    const offM = abs % 60;
+    return `${String(p.year).padStart(4, "0")}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(
+      2,
+      "0",
+    )}T${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}:${String(p.second).padStart(
+      2,
+      "0",
+    )}${sign}${String(offH).padStart(2, "0")}:${String(offM).padStart(2, "0")}`;
+  }
 
   let segmentsIndex = new Map(); // dateStr -> segment[]
   let latestWeekStartStr = null;
@@ -421,6 +521,28 @@ async function main() {
   let weekDom = null;
   let zoom = Number.parseFloat(zoomInput.value || "1");
   if (!Number.isFinite(zoom) || zoom < 1) zoom = 1;
+
+  const MIN_ENTRY_MINUTES = 15;
+  const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
+
+  let selectedSegKey = null;
+  let selectedEntryId = null;
+
+  let editMode = "normal"; // normal | add | split
+  let cursor = null; // { kind: "add"|"split", ms: number }
+  let cursorEl = null;
+
+  let dialogEntryId = null;
+
+  const dirtyWeekStarts = new Set();
+  let lastEditAt = 0;
+  let autosaveTimer = 0;
+  let saveInFlight = false;
+  let toastTimer = 0;
+
+  const undoStack = [];
+  const redoStack = [];
+  let nextEntryId = 1;
 
   function setAuthStatus(text) {
     authStatusEl.textContent = text;
@@ -434,6 +556,15 @@ async function main() {
     }
     el.textContent = message;
     setVisible(el, true);
+  }
+
+  function toast(message, timeoutMs = 2400) {
+    window.clearTimeout(toastTimer);
+    setError(dataErrorEl, message ? String(message) : "");
+    if (!message) return;
+    toastTimer = window.setTimeout(() => {
+      setError(dataErrorEl, "");
+    }, Math.max(400, timeoutMs));
   }
 
   function setBusy(isBusy) {
@@ -458,6 +589,56 @@ async function main() {
     loadProgressEl.max = max;
     loadProgressEl.value = Math.min(Math.max(0, loaded), max);
     loadProgressLabelEl.textContent = label || "";
+  }
+
+  function updateEditorBadge() {
+    const dirty = dirtyWeekStarts.size > 0;
+    const mode = String(editMode || "normal").toUpperCase();
+    const save = saveInFlight ? "Saving…" : dirty ? "Unsaved" : "Saved";
+
+    editorBadgeEl.classList.toggle("is-dirty", dirty);
+    editorBadgeEl.innerHTML = `<span class="dot"></span><span class="mode">${mode}</span><span class="save">${save}</span>`;
+  }
+
+  function clearCursor() {
+    cursor = null;
+    if (cursorEl) cursorEl.remove();
+    cursorEl = null;
+  }
+
+  function updateCursorLine() {
+    if (!weekDom || !cursor || !weekDom.metrics) {
+      clearCursor();
+      return;
+    }
+
+    const dt = new Date(cursor.ms);
+    if (Number.isNaN(dt.getTime())) return clearCursor();
+    const dayStr = dateFmt.format(dt);
+    const dayIdx = weekDom.days.indexOf(dayStr);
+    if (dayIdx < 0) return clearCursor();
+
+    const minutes = hhmmToMinutes(timeFmt.format(dt));
+    if (minutes === null) return clearCursor();
+
+    if (!cursorEl) {
+      cursorEl = document.createElement("div");
+      cursorEl.className = "cursor-line";
+    }
+
+    cursorEl.classList.toggle("is-split", cursor.kind === "split");
+    cursorEl.style.top = `${minutes * weekDom.metrics.pxPerMinute}px`;
+
+    const parent = weekDom.dayColEls[dayIdx];
+    if (cursorEl.parentElement !== parent) parent.append(cursorEl);
+  }
+
+  function setEditMode(nextMode) {
+    const next = nextMode === "add" ? "add" : nextMode === "split" ? "split" : "normal";
+    editMode = next;
+    if (next === "normal") clearCursor();
+    updateCursorLine();
+    updateEditorBadge();
   }
 
   function setTab(tab) {
@@ -504,6 +685,13 @@ async function main() {
       opt.value = p;
       opt.textContent = p;
       projectSelect.append(opt);
+    }
+
+    projectDatalistEl.innerHTML = "";
+    for (const p of sorted) {
+      const opt = document.createElement("option");
+      opt.value = p;
+      projectDatalistEl.append(opt);
     }
   }
 
@@ -619,6 +807,65 @@ async function main() {
     }
   }
 
+  function tagsToText(tags) {
+    if (!Array.isArray(tags)) return "";
+    return tags.filter((t) => typeof t === "string" && t.trim()).join(", ");
+  }
+
+  function textToTags(text) {
+    return String(text || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+
+  function closeEntryDialog() {
+    dialogEntryId = null;
+    if (entryDialog.open) entryDialog.close();
+    queueMicrotask(() => {
+      try {
+        weekScrollEl.focus();
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  function openEntryDialog(entryId) {
+    const id = Number(entryId);
+    if (!Number.isFinite(id)) return;
+    const entry = entriesById.get(id);
+    if (!entry) return;
+    if (!(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return;
+    if (!(entry.endDate instanceof Date) || Number.isNaN(entry.endDate.getTime())) return;
+    if (weekStartStr && weekStartForEntry(entry) !== weekStartStr) {
+      toast(`This entry belongs to ${isoWeekInfo(weekStartForEntry(entry)).isoYear}-W${String(isoWeekInfo(weekStartForEntry(entry)).week).padStart(2,"0")}; open that week to edit.`);
+      return;
+    }
+
+    dialogEntryId = id;
+    entryProjectInput.value = safeText(entry.project);
+    entryDescInput.value = safeText(entry.description);
+    entryTagsInput.value = tagsToText(entry.tags);
+    entryBillableInput.checked = entry.billable === true;
+
+    const day = dateFmt.format(entry.startDate);
+    const start = timeFmt.format(entry.startDate);
+    const end = timeFmt.format(entry.endDate);
+    const dur = formatDuration(entry.durationSeconds);
+    entryMetaEl.textContent = `${day} ${start}–${end} • ${dur} • id ${id}`;
+
+    if (!entryDialog.open) entryDialog.showModal();
+    queueMicrotask(() => {
+      try {
+        entryProjectInput.focus();
+        entryProjectInput.select();
+      } catch {
+        // ignore
+      }
+    });
+  }
+
   const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const projectColorCache = new Map(); // project -> { bg, border }
 
@@ -717,6 +964,14 @@ async function main() {
 
     const dayKeys = weekDom.dayKeys[focusedDayIndex] || [];
     const selectedKey = dayKeys.length ? dayKeys[focusedEntryIndexByDay[focusedDayIndex] || 0] : null;
+    selectedSegKey = selectedKey || null;
+    selectedEntryId = null;
+    if (selectedKey && typeof selectedKey === "string") {
+      const at = selectedKey.indexOf("@");
+      const idText = at >= 0 ? selectedKey.slice(0, at) : selectedKey;
+      const idNum = Number.parseInt(idText, 10);
+      if (Number.isFinite(idNum)) selectedEntryId = idNum;
+    }
     for (const [key, el] of weekDom.entryElsByKey.entries()) {
       el.classList.toggle("is-selected", Boolean(selectedKey && key === selectedKey));
     }
@@ -775,6 +1030,7 @@ async function main() {
       el.style.height = `${heightPx}px`;
     }
 
+    updateCursorLine();
     scrollWeekFocusIntoView();
   }
 
@@ -946,7 +1202,9 @@ async function main() {
     }
 
     applyWeekFocusAndSelection();
+    updateCursorLine();
     scrollWeekFocusIntoView();
+    updateEditorBadge();
 
     latestWeekBtn.disabled = Boolean(latestWeekStartStr && latestWeekStartStr === weekStartStr);
   }
@@ -996,6 +1254,926 @@ async function main() {
     focusedEntryIndexByDay[focusedDayIndex] = next;
     applyWeekFocusAndSelection();
     scrollWeekFocusIntoView();
+  }
+
+  function weekBoundsMs(weekStart) {
+    if (!weekStart) return null;
+    const startMs = dateFromLocalDayMinutes(weekStart, 0).getTime();
+    const endMs = dateFromLocalDayMinutes(addIsoDays(weekStart, 7), 0).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+    return { startMs, endMs };
+  }
+
+  function snapAddCursorMs(ms, direction) {
+    if (!Number.isFinite(ms)) return ms;
+    const bounds = weekBoundsMs(weekStartStr);
+    if (!bounds) return ms;
+
+    const dt = new Date(ms);
+    if (Number.isNaN(dt.getTime())) return ms;
+    const dayStr = dateFmt.format(dt);
+    const minutes = hhmmToMinutes(timeFmt.format(dt));
+    if (minutes === null) return ms;
+
+    const segs = segmentsIndex.get(dayStr) || [];
+    for (const seg of segs) {
+      if (minutes >= seg.startMinutes && minutes < seg.endMinutes) {
+        const entry = seg.entry;
+        const startMs = entry?.startDate instanceof Date ? entry.startDate.getTime() : null;
+        const endMs = entry?.endDate instanceof Date ? entry.endDate.getTime() : null;
+        const jumpMs = direction < 0 ? startMs : endMs;
+        if (Number.isFinite(jumpMs) && jumpMs >= bounds.startMs && jumpMs <= bounds.endMs) return jumpMs;
+        // If we cannot jump beyond (e.g., would exit the week), keep the original ms.
+        return ms;
+      }
+    }
+
+    return ms;
+  }
+
+  function enterAddMode() {
+    if (!weekStartStr) return;
+    const bounds = weekBoundsMs(weekStartStr);
+    if (!bounds) return;
+
+    let ms = null;
+    if (selectedEntryId) {
+      const e = entriesById.get(selectedEntryId);
+      if (e?.endDate instanceof Date && !Number.isNaN(e.endDate.getTime())) ms = e.endDate.getTime();
+    }
+
+    if (!Number.isFinite(ms)) {
+      const dayStr = weekDom?.days?.[focusedDayIndex] || weekStartStr;
+      ms = dateFromLocalDayMinutes(dayStr, 8 * 60).getTime();
+    }
+
+    ms = Math.max(bounds.startMs, Math.min(bounds.endMs, ms));
+    ms = snapAddCursorMs(ms, 1);
+    cursor = { kind: "add", ms };
+    setEditMode("add");
+
+    const dayStr = dateFmt.format(new Date(ms));
+    const dayIdx = weekDom?.days?.indexOf(dayStr) ?? -1;
+    if (dayIdx >= 0) {
+      focusedDayIndex = dayIdx;
+      applyWeekFocusAndSelection();
+    }
+    updateCursorLine();
+  }
+
+  function nudgeAddCursor(deltaSteps) {
+    if (!cursor || cursor.kind !== "add") return;
+    const bounds = weekBoundsMs(weekStartStr);
+    if (!bounds) return;
+
+    const direction = deltaSteps < 0 ? -1 : 1;
+    let nextMs = cursor.ms + deltaSteps * MIN_ENTRY_MS;
+    if (nextMs < bounds.startMs || nextMs > bounds.endMs) return;
+
+    nextMs = snapAddCursorMs(nextMs, direction);
+    cursor.ms = nextMs;
+
+    const dayStr = dateFmt.format(new Date(nextMs));
+    const dayIdx = weekDom?.days?.indexOf(dayStr) ?? -1;
+    if (dayIdx >= 0) focusedDayIndex = dayIdx;
+    updateCursorLine();
+    applyWeekFocusAndSelection();
+    scrollWeekFocusIntoView();
+  }
+
+  function shiftAddCursorDay(deltaDays) {
+    if (!cursor || cursor.kind !== "add") return;
+    const bounds = weekBoundsMs(weekStartStr);
+    if (!bounds) return;
+
+    const dt = new Date(cursor.ms);
+    if (Number.isNaN(dt.getTime())) return;
+    const dayStr = dateFmt.format(dt);
+    const minutes = hhmmToMinutes(timeFmt.format(dt));
+    if (minutes === null) return;
+
+    const nextDayStr = addIsoDays(dayStr, deltaDays);
+    if (weekDom && !weekDom.days.includes(nextDayStr)) return;
+
+    let nextMs = dateFromLocalDayMinutes(nextDayStr, minutes).getTime();
+    nextMs = Math.max(bounds.startMs, Math.min(bounds.endMs, nextMs));
+    nextMs = snapAddCursorMs(nextMs, deltaDays < 0 ? -1 : 1);
+    cursor.ms = nextMs;
+
+    const idx = weekDom?.days?.indexOf(dateFmt.format(new Date(nextMs))) ?? -1;
+    if (idx >= 0) focusedDayIndex = idx;
+    updateCursorLine();
+    applyWeekFocusAndSelection();
+    scrollWeekFocusIntoView();
+  }
+
+	  function enterSplitMode() {
+	    if (!selectedEntryId) return toast("Select an entry first.");
+	    const entry = entriesById.get(selectedEntryId);
+	    if (!entry) return;
+	    if (!(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return;
+	    if (!(entry.endDate instanceof Date) || Number.isNaN(entry.endDate.getTime())) return;
+	    if (weekStartStr && weekStartForEntry(entry) !== weekStartStr) return toast("Split works only for entries in this week.");
+
+	    const startMs = entry.startDate.getTime();
+	    const endMs = entry.endDate.getTime();
+    if (endMs - startMs < 2 * MIN_ENTRY_MS) return toast("Entry too short to split (min 30 min).");
+
+    const bounds = weekBoundsMs(weekStartStr);
+    if (!bounds) return;
+    const minMs = Math.max(bounds.startMs, startMs + MIN_ENTRY_MS);
+    const maxMs = Math.min(bounds.endMs, endMs - MIN_ENTRY_MS);
+    if (maxMs < minMs) return toast("Cannot split outside the current week.");
+
+    let ms = cursor && cursor.kind === "split" ? cursor.ms : startMs + MIN_ENTRY_MS;
+    ms = Math.max(minMs, Math.min(maxMs, ms));
+    cursor = { kind: "split", ms };
+    setEditMode("split");
+
+    const dayStr = dateFmt.format(new Date(ms));
+    const dayIdx = weekDom?.days?.indexOf(dayStr) ?? -1;
+    if (dayIdx >= 0) focusedDayIndex = dayIdx;
+    updateCursorLine();
+    applyWeekFocusAndSelection();
+    scrollWeekFocusIntoView();
+  }
+
+  function nudgeSplitCursor(deltaSteps) {
+    if (!cursor || cursor.kind !== "split") return;
+    const entry = selectedEntryId ? entriesById.get(selectedEntryId) : null;
+    if (!entry) return;
+    if (!(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return;
+    if (!(entry.endDate instanceof Date) || Number.isNaN(entry.endDate.getTime())) return;
+
+    const bounds = weekBoundsMs(weekStartStr);
+    if (!bounds) return;
+
+    const startMs = entry.startDate.getTime();
+    const endMs = entry.endDate.getTime();
+    const minMs = Math.max(bounds.startMs, startMs + MIN_ENTRY_MS);
+    const maxMs = Math.min(bounds.endMs, endMs - MIN_ENTRY_MS);
+    if (maxMs < minMs) return toast("Entry too short to split (min 30 min).");
+
+    let nextMs = cursor.ms + deltaSteps * MIN_ENTRY_MS;
+    nextMs = Math.max(minMs, Math.min(maxMs, nextMs));
+    cursor.ms = nextMs;
+
+    const dayStr = dateFmt.format(new Date(nextMs));
+    const dayIdx = weekDom?.days?.indexOf(dayStr) ?? -1;
+    if (dayIdx >= 0) focusedDayIndex = dayIdx;
+    updateCursorLine();
+    applyWeekFocusAndSelection();
+    scrollWeekFocusIntoView();
+  }
+
+  function deepClone(value) {
+    if (typeof structuredClone === "function") return structuredClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function utcNowIso() {
+    return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  }
+
+  function sortJsonValue(value) {
+    if (Array.isArray(value)) return value.map(sortJsonValue);
+    if (value && typeof value === "object" && value.constructor === Object) {
+      const out = {};
+      const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
+      for (const k of keys) out[k] = sortJsonValue(value[k]);
+      return out;
+    }
+    return value;
+  }
+
+  function jsonStringifySorted(value) {
+    return JSON.stringify(sortJsonValue(value), null, 2) + "\n";
+  }
+
+  function utf8ByteLength(text) {
+    return new TextEncoder().encode(String(text || "")).length;
+  }
+
+  function weekFileInfoForStart(weekStart) {
+    const { isoYear, week } = isoWeekInfo(weekStart);
+    const path = `data/entries/${isoYear}/${String(week).padStart(2, "0")}.json`;
+    return { year: isoYear, week, path };
+  }
+
+  function buildWeekFileForSave(weekStart, nowIso = utcNowIso()) {
+    const info = weekFileInfoForStart(weekStart);
+    const entries = snapshotWeekRaw(weekStart);
+    const timezone = entriesManifest?.timezone || config.timezone;
+
+    const payload = {
+      entries,
+      generated_at: nowIso,
+      schema_version: 1,
+      timezone,
+      week: info.week,
+      year: info.year,
+    };
+    const content = jsonStringifySorted(payload);
+    return {
+      ...info,
+      weekStart,
+      entries: entries.length,
+      payload,
+      content,
+      size: utf8ByteLength(content),
+    };
+  }
+
+  function buildManifestForSave(updates, nowIso = utcNowIso()) {
+    const timezone = entriesManifest?.timezone || config.timezone;
+    const byKey = new Map();
+    const baseChunks = Array.isArray(entriesManifest?.chunks) ? entriesManifest.chunks : [];
+    for (const c of baseChunks) {
+      byKey.set(chunkKey(c.year, c.week), { ...c });
+    }
+
+    const list = Array.isArray(updates) ? updates : [];
+    for (const u of list) {
+      if (!u) continue;
+      const year = Number(u.year);
+      const week = Number(u.week);
+      const sha = typeof u.sha === "string" ? u.sha : "";
+      const path = typeof u.path === "string" ? u.path : "";
+      const size = typeof u.size === "number" && Number.isFinite(u.size) && u.size >= 0 ? u.size : null;
+      const entries = typeof u.entries === "number" && Number.isFinite(u.entries) && u.entries >= 0 ? u.entries : null;
+      if (!Number.isFinite(year) || year < 1970 || year > 9999) continue;
+      if (!Number.isFinite(week) || week < 1 || week > 53) continue;
+      if (!/^[0-9a-f]{40}$/i.test(sha)) continue;
+
+      byKey.set(chunkKey(year, week), {
+        entries,
+        path: path || `data/entries/${year}/${String(week).padStart(2, "0")}.json`,
+        sha,
+        size,
+        week,
+        year,
+      });
+    }
+
+    const chunks = Array.from(byKey.values());
+    chunks.sort((a, b) => a.year - b.year || a.week - b.week);
+
+    let totalEntries = 0;
+    for (const c of chunks) {
+      if (typeof c.entries === "number" && Number.isFinite(c.entries) && c.entries >= 0) totalEntries += c.entries;
+    }
+
+    const manifest = {
+      chunks,
+      generated_at: nowIso,
+      schema_version: 1,
+      timezone,
+      total_chunks: chunks.length,
+      total_entries: totalEntries,
+    };
+    const content = jsonStringifySorted(manifest);
+    return { manifest, content };
+  }
+
+  function weekStartForEntry(entry) {
+    if (!entry || !(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return null;
+    return isoWeekStart(dateFmt.format(entry.startDate));
+  }
+
+  function denormalizeEntry(entry) {
+    const { startDate, endDate, durationSeconds, ...raw } = entry || {};
+    return deepClone(raw);
+  }
+
+  function snapshotWeekRaw(weekStart) {
+    const out = [];
+    for (const entry of entriesById.values()) {
+      if (weekStartForEntry(entry) !== weekStart) continue;
+      out.push(denormalizeEntry(entry));
+    }
+    out.sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")) || (a.id || 0) - (b.id || 0));
+    return out;
+  }
+
+  function applyWeekSnapshot(weekStart, rawEntries) {
+    const existingIds = [];
+    for (const entry of entriesById.values()) {
+      if (weekStartForEntry(entry) === weekStart) existingIds.push(entry.id);
+    }
+    for (const id of existingIds) entriesById.delete(id);
+
+    const nextEntries = Array.isArray(rawEntries) ? rawEntries : [];
+    for (const raw of nextEntries) {
+      if (!raw || typeof raw !== "object") continue;
+      const id = Number(raw.id);
+      if (!Number.isFinite(id)) continue;
+      entriesById.set(id, normalizeEntry(raw));
+    }
+
+    allEntries = Array.from(entriesById.values());
+    projectColorCache.clear();
+    segmentsIndex = buildSegmentsIndexFromEntries(allEntries);
+    latestWeekStartStr = computeLatestWeekStart(allEntries);
+    if (!weekStartStr && latestWeekStartStr) weekStartStr = latestWeekStartStr;
+
+    renderProjects(allEntries);
+    applyFiltersAndRender();
+    rebuildWeekView();
+    recomputeNextEntryId();
+  }
+
+  function recomputeNextEntryId() {
+    let maxId = 0;
+    for (const entry of entriesById.values()) {
+      const id = Number(entry?.id);
+      if (Number.isFinite(id) && id > maxId) maxId = id;
+    }
+    nextEntryId = maxId + 1;
+  }
+
+  function entryIntersectsRange(entry, startMs, endMs) {
+    if (!entry || !(entry.startDate instanceof Date) || !(entry.endDate instanceof Date)) return false;
+    const s = entry.startDate.getTime();
+    const e = entry.endDate.getTime();
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return false;
+    return e > startMs && s < endMs;
+  }
+
+  function buildWeekSchedule(weekStart) {
+    const bounds = weekBoundsMs(weekStart);
+    if (!bounds) throw new Error("Invalid week bounds");
+
+    const windowStartMs = bounds.startMs - 7 * 24 * 60 * 60 * 1000;
+    const windowEndMs = bounds.endMs + 7 * 24 * 60 * 60 * 1000;
+
+    const nodes = [];
+    for (const entry of entriesById.values()) {
+      if (!entryIntersectsRange(entry, windowStartMs, windowEndMs)) continue;
+      const startMs = entry.startDate.getTime();
+      const endMs = entry.endDate.getTime();
+      const editable = weekStartForEntry(entry) === weekStart;
+      nodes.push({
+        id: entry.id,
+        startMs,
+        endMs,
+        editable,
+        raw: editable ? denormalizeEntry(entry) : null,
+      });
+    }
+
+    nodes.sort((a, b) => a.startMs - b.startMs || a.id - b.id);
+    return { bounds, nodes };
+  }
+
+  function ensureEditableNode(node) {
+    if (!node) throw new Error("Missing entry");
+    if (!node.editable) throw new Error("Entry is outside this week; open its start week to edit.");
+    if (!Number.isFinite(node.startMs) || !Number.isFinite(node.endMs)) throw new Error("Entry has invalid time range.");
+    if (node.endMs <= node.startMs) throw new Error("Entry has end before start.");
+  }
+
+  function enforceEditableBounds(node, bounds) {
+    if (!node.editable) return;
+    if (node.startMs < bounds.startMs || node.startMs >= bounds.endMs) {
+      throw new Error("Edit would move an entry across week boundaries.");
+    }
+  }
+
+  function resolveNonOverlapping(nodes, targetId, bounds) {
+    nodes.sort((a, b) => a.startMs - b.startMs || a.id - b.id);
+    const idx = nodes.findIndex((n) => n.id === targetId);
+    if (idx < 0) throw new Error("Missing edited entry");
+
+    // Validate editable entries.
+    for (const n of nodes) {
+      if (n.editable) {
+        ensureEditableNode(n);
+        if (n.endMs - n.startMs < MIN_ENTRY_MS) throw new Error("Entry shorter than 15 minutes.");
+        enforceEditableBounds(n, bounds);
+      }
+    }
+
+    // Backward pass: compress/move earlier entries.
+    for (let i = idx - 1; i >= 0; i--) {
+      const prev = nodes[i];
+      const next = nodes[i + 1];
+      if (prev.endMs <= next.startMs) continue;
+      if (!prev.editable) throw new Error("Would need to modify an entry outside this week.");
+
+      const overlap = prev.endMs - next.startMs;
+      const minEnd = prev.startMs + MIN_ENTRY_MS;
+      prev.endMs = Math.max(minEnd, prev.endMs - overlap);
+
+      if (prev.endMs > next.startMs) {
+        const remaining = prev.endMs - next.startMs;
+        prev.startMs -= remaining;
+        prev.endMs -= remaining;
+      }
+
+      if (prev.endMs > next.startMs) throw new Error("Failed to resolve overlap (backward).");
+      if (prev.endMs - prev.startMs < MIN_ENTRY_MS) throw new Error("Entry shorter than 15 minutes.");
+      enforceEditableBounds(prev, bounds);
+    }
+
+    // Forward pass: move later entries only.
+    for (let i = idx + 1; i < nodes.length; i++) {
+      const prev = nodes[i - 1];
+      const next = nodes[i];
+      if (next.startMs >= prev.endMs) continue;
+      if (!next.editable) throw new Error("Would need to modify an entry outside this week.");
+
+      const shift = prev.endMs - next.startMs;
+      next.startMs += shift;
+      next.endMs += shift;
+
+      if (next.startMs < prev.endMs) throw new Error("Failed to resolve overlap (forward).");
+      if (next.endMs - next.startMs < MIN_ENTRY_MS) throw new Error("Entry shorter than 15 minutes.");
+      enforceEditableBounds(next, bounds);
+    }
+
+    // Final sanity: verify adjacent non-overlap.
+    nodes.sort((a, b) => a.startMs - b.startMs || a.id - b.id);
+    for (let i = 1; i < nodes.length; i++) {
+      if (nodes[i - 1].endMs > nodes[i].startMs) throw new Error("Overlaps remain after resolve.");
+    }
+  }
+
+  function applyTimesToRaw(raw, startMs, endMs) {
+    const start = new Date(startMs);
+    const end = new Date(endMs);
+    raw.start = formatIsoWithOffset(start);
+    raw.end = formatIsoWithOffset(end);
+    raw.is_running = false;
+    raw.duration_seconds = Math.max(0, Math.round((endMs - startMs) / 1000));
+    if (!Array.isArray(raw.tags)) raw.tags = [];
+    raw.updated_at = raw.updated_at || formatIsoWithOffset(new Date());
+  }
+
+  function makeNewRawEntry({ id, startMs, endMs }) {
+    const raw = {
+      billable: false,
+      client: null,
+      client_id: null,
+      created_at: null,
+      description: "",
+      duration_seconds: null,
+      end: null,
+      id,
+      is_running: false,
+      project: "",
+      project_id: null,
+      start: null,
+      tags: [],
+      updated_at: null,
+      user_id: null,
+    };
+    applyTimesToRaw(raw, startMs, endMs);
+    return raw;
+  }
+
+  function weekRawFromNodes(nodes) {
+    const out = [];
+    for (const n of nodes) {
+      if (!n.editable) continue;
+      if (!n.raw) throw new Error("Missing raw entry payload");
+      applyTimesToRaw(n.raw, n.startMs, n.endMs);
+      out.push(n.raw);
+    }
+    out.sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")) || (a.id || 0) - (b.id || 0));
+    return out;
+  }
+
+  function focusEntryByIdInWeek(entryId, preferredDayStr = null) {
+    if (!weekDom || !entryId) return;
+    const id = Number(entryId);
+    if (!Number.isFinite(id)) return;
+
+    if (preferredDayStr && typeof preferredDayStr === "string") {
+      const dayIdx = weekDom.days.indexOf(preferredDayStr);
+      if (dayIdx >= 0) {
+        const key = `${id}@${preferredDayStr}`;
+        const idx = weekDom.keyToIndexByDay?.[dayIdx]?.get(key);
+        if (typeof idx === "number") {
+          focusedDayIndex = dayIdx;
+          focusedEntryIndexByDay[dayIdx] = idx;
+          applyWeekFocusAndSelection();
+          scrollWeekFocusIntoView();
+          return;
+        }
+      }
+    }
+
+    const prefix = `${id}@`;
+    for (let i = 0; i < 7; i++) {
+      const keys = weekDom.dayKeys[i] || [];
+      const found = keys.findIndex((k) => typeof k === "string" && k.startsWith(prefix));
+      if (found >= 0) {
+        focusedDayIndex = i;
+        focusedEntryIndexByDay[i] = found;
+        applyWeekFocusAndSelection();
+        scrollWeekFocusIntoView();
+        return;
+      }
+    }
+  }
+
+  function scheduleAutosave() {
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = 0;
+    if (!dirtyWeekStarts.size) return;
+
+    const sinceLastEdit = Date.now() - lastEditAt;
+    const dueIn = Math.max(500, 30_000 - (Number.isFinite(sinceLastEdit) ? sinceLastEdit : 0));
+    autosaveTimer = window.setTimeout(() => {
+      autosaveTimer = 0;
+      if (!dirtyWeekStarts.size) return;
+      if (saveInFlight) return scheduleAutosave();
+      if (Date.now() - lastEditAt < 30_000) return scheduleAutosave();
+      saveDirtyWeeksNow("autosave");
+    }, dueIn);
+  }
+
+  function markDirty(weekStart) {
+    if (!weekStart) return;
+    dirtyWeekStarts.add(weekStart);
+    lastEditAt = Date.now();
+    updateEditorBadge();
+    scheduleAutosave();
+  }
+
+  function pushUndoAction(action) {
+    undoStack.push(action);
+    redoStack.length = 0;
+  }
+
+  function applyEditorActionSnapshot(weekStart, rawEntries, focusEntryId = null) {
+    if (!weekStart) return;
+    if (weekStartStr !== weekStart) setWeekStart(weekStart);
+    applyWeekSnapshot(weekStart, rawEntries);
+    setEditMode("normal");
+    if (focusEntryId) {
+      const entry = entriesById.get(focusEntryId);
+      const day = entry?.startDate instanceof Date ? dateFmt.format(entry.startDate) : null;
+      focusEntryByIdInWeek(focusEntryId, day);
+    }
+    updateEditorBadge();
+  }
+
+  function undo() {
+    const action = undoStack.pop();
+    if (!action) return;
+    applyEditorActionSnapshot(action.weekStart, action.before, action.focusBefore || null);
+    redoStack.push(action);
+    markDirty(action.weekStart);
+  }
+
+  function redo() {
+    const action = redoStack.pop();
+    if (!action) return;
+    applyEditorActionSnapshot(action.weekStart, action.after, action.focusAfter || null);
+    undoStack.push(action);
+    markDirty(action.weekStart);
+  }
+
+  async function applyPostSaveUpdates({ manifest, weekUpdates }) {
+    if (manifest && typeof manifest === "object") {
+      entriesManifest = normalizeManifest(manifest);
+      chunkFiles = entriesManifest.chunks;
+      refreshRepoLabel();
+    }
+
+    const updates = Array.isArray(weekUpdates) ? weekUpdates : [];
+    for (const u of updates) {
+      if (!u) continue;
+      const year = Number(u.year);
+      const week = Number(u.week);
+      const sha = typeof u.sha === "string" ? u.sha : "";
+      const payload = u.payload && typeof u.payload === "object" ? u.payload : null;
+      if (!Number.isFinite(year) || !Number.isFinite(week) || !/^[0-9a-f]{40}$/i.test(sha) || !payload) continue;
+
+      const key = chunkKey(year, week);
+      const entries = Array.isArray(payload.entries) ? payload.entries.map(normalizeEntry) : [];
+      chunkCache.set(key, { sha, entries });
+      await chunkCachePutRaw(sha, JSON.stringify(payload));
+
+      const oldSha = typeof u.oldSha === "string" ? u.oldSha : "";
+      if (oldSha && oldSha !== sha) {
+        await chunkCacheDeleteRaw(oldSha);
+      }
+    }
+  }
+
+  async function saveWeeksToGitHub(weekStarts, reason) {
+    if (!token) throw new Error("Not logged in.");
+    if (!entriesManifest) await fetchManifest();
+
+    const baseUrl = `https://api.github.com/repos/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}`;
+    const branch = String(config.ref || "").trim();
+    if (!branch) throw new Error("Missing branch ref.");
+
+    const refInfo = await ghJsonRequest(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`, token);
+    const baseCommitSha = refInfo?.object?.sha;
+    if (!/^[0-9a-f]{40}$/i.test(baseCommitSha || "")) throw new Error("Failed to resolve branch ref.");
+
+    const baseCommit = await ghJsonRequest(`${baseUrl}/git/commits/${encodeURIComponent(baseCommitSha)}`, token);
+    const baseTreeSha = baseCommit?.tree?.sha;
+    if (!/^[0-9a-f]{40}$/i.test(baseTreeSha || "")) throw new Error("Failed to resolve base tree.");
+
+    const nowIso = utcNowIso();
+    const weekList = Array.isArray(weekStarts) ? weekStarts : [];
+    const weekFiles = weekList.map((ws) => buildWeekFileForSave(ws, nowIso));
+
+    const existingByKey = new Map();
+    for (const c of chunkFiles) existingByKey.set(chunkKey(c.year, c.week), c);
+
+    const weekUpdates = [];
+    for (const wf of weekFiles) {
+      const blob = await ghJsonRequest(`${baseUrl}/git/blobs`, token, {
+        method: "POST",
+        body: { content: wf.content, encoding: "utf-8" },
+      });
+      const sha = blob?.sha;
+      if (!/^[0-9a-f]{40}$/i.test(sha || "")) throw new Error(`Failed to create blob for ${wf.path}`);
+
+      const existing = existingByKey.get(chunkKey(wf.year, wf.week));
+      weekUpdates.push({
+        ...wf,
+        sha,
+        oldSha: existing?.sha || "",
+      });
+    }
+
+    const { manifest, content: manifestContent } = buildManifestForSave(weekUpdates, nowIso);
+    const manifestBlob = await ghJsonRequest(`${baseUrl}/git/blobs`, token, {
+      method: "POST",
+      body: { content: manifestContent, encoding: "utf-8" },
+    });
+    const manifestSha = manifestBlob?.sha;
+    if (!/^[0-9a-f]{40}$/i.test(manifestSha || "")) throw new Error("Failed to create manifest blob.");
+
+    const tree = [];
+    for (const u of weekUpdates) tree.push({ path: u.path, mode: "100644", type: "blob", sha: u.sha });
+    tree.push({ path: "data/index/entries-manifest.json", mode: "100644", type: "blob", sha: manifestSha });
+
+    const treeRes = await ghJsonRequest(`${baseUrl}/git/trees`, token, {
+      method: "POST",
+      body: { base_tree: baseTreeSha, tree },
+    });
+    const newTreeSha = treeRes?.sha;
+    if (!/^[0-9a-f]{40}$/i.test(newTreeSha || "")) throw new Error("Failed to create tree.");
+
+    const labels = weekUpdates
+      .map((u) => `${u.year}-W${String(u.week).padStart(2, "0")}`)
+      .sort((a, b) => a.localeCompare(b))
+      .join(", ");
+    const message = reason === "autosave" ? `Autosave time entries (${labels})` : `Edit time entries (${labels})`;
+
+    const commitRes = await ghJsonRequest(`${baseUrl}/git/commits`, token, {
+      method: "POST",
+      body: { message, tree: newTreeSha, parents: [baseCommitSha] },
+    });
+    const newCommitSha = commitRes?.sha;
+    if (!/^[0-9a-f]{40}$/i.test(newCommitSha || "")) throw new Error("Failed to create commit.");
+
+    await ghJsonRequest(`${baseUrl}/git/refs/heads/${encodeURIComponent(branch)}`, token, {
+      method: "PATCH",
+      body: { sha: newCommitSha, force: false },
+    });
+
+    await applyPostSaveUpdates({ manifest, weekUpdates });
+  }
+
+  async function saveWeeksToLocalServer(weekStarts, _reason) {
+    if (!entriesManifest) await fetchManifest();
+
+    const nowIso = utcNowIso();
+    const weekList = Array.isArray(weekStarts) ? weekStarts : [];
+    const weekFiles = weekList.map((ws) => buildWeekFileForSave(ws, nowIso));
+
+    const existingByKey = new Map();
+    for (const c of chunkFiles) existingByKey.set(chunkKey(c.year, c.week), c);
+
+    const reqWeeks = weekFiles.map((wf) => ({
+      year: wf.year,
+      week: wf.week,
+      entries: Array.isArray(wf.payload?.entries) ? wf.payload.entries : [],
+    }));
+
+    const timezone = entriesManifest?.timezone || config.timezone;
+    let resp;
+    try {
+      resp = await fetch(localRepoUrl("save"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weeks: reqWeeks, timezone }),
+      });
+    } catch {
+      throw new Error("Local save failed. Run the app via: python3 server.py");
+    }
+
+    if (!resp.ok) throw new Error(`Local save failed (${resp.status}): ${await resp.text()}`);
+
+    const result = await resp.json();
+    if (!result || result.ok !== true) throw new Error(typeof result?.error === "string" ? result.error : "Local save failed.");
+
+    const saved = Array.isArray(result.saved) ? result.saved : [];
+    const savedByKey = new Map();
+    for (const s of saved) {
+      const year = Number(s?.year);
+      const week = Number(s?.week);
+      const sha = typeof s?.sha === "string" ? s.sha : "";
+      if (!Number.isFinite(year) || !Number.isFinite(week) || !/^[0-9a-f]{40}$/i.test(sha)) continue;
+      savedByKey.set(chunkKey(year, week), sha);
+    }
+
+    const weekUpdates = [];
+    for (const wf of weekFiles) {
+      const sha = savedByKey.get(chunkKey(wf.year, wf.week));
+      if (!sha) throw new Error(`Local save did not return a sha for ${wf.year}-W${String(wf.week).padStart(2, "0")}.`);
+      const existing = existingByKey.get(chunkKey(wf.year, wf.week));
+      weekUpdates.push({ ...wf, sha, oldSha: existing?.sha || "" });
+    }
+
+    await applyPostSaveUpdates({ manifest: result.manifest, weekUpdates });
+  }
+
+  async function saveDirtyWeeksNow(reason) {
+    if (saveInFlight) return;
+    const weekStarts = Array.from(dirtyWeekStarts).filter(Boolean);
+    if (!weekStarts.length) {
+      if (reason === "manual") toast("Nothing to save.");
+      return;
+    }
+
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = 0;
+
+    saveInFlight = true;
+    setBusy(true);
+    updateEditorBadge();
+
+    const sortedWeeks = weekStarts.slice().sort((a, b) => a.localeCompare(b));
+    try {
+      if (isLocalMode) {
+        await saveWeeksToLocalServer(sortedWeeks, reason);
+      } else {
+        await saveWeeksToGitHub(sortedWeeks, reason);
+      }
+
+      for (const ws of sortedWeeks) dirtyWeekStarts.delete(ws);
+      if (reason === "manual") toast("Saved.");
+    } catch (e) {
+      toast(safeText(e), 5000);
+    } finally {
+      saveInFlight = false;
+      setBusy(false);
+      updateEditorBadge();
+    }
+  }
+
+  function applyWeekEdit({ weekStart, label, getAfterRaw, focusAfter }) {
+    if (saveInFlight) return toast("Saving in progress…");
+    const before = snapshotWeekRaw(weekStart);
+    const focusBefore = selectedEntryId;
+    let after;
+    try {
+      after = getAfterRaw();
+    } catch (e) {
+      toast(safeText(e));
+      return;
+    }
+
+    applyWeekSnapshot(weekStart, after);
+    pushUndoAction({ weekStart, label, before, after, focusBefore, focusAfter });
+    markDirty(weekStart);
+    setEditMode("normal");
+    if (focusAfter) {
+      const entry = entriesById.get(focusAfter);
+      const day = entry?.startDate instanceof Date ? dateFmt.format(entry.startDate) : null;
+      focusEntryByIdInWeek(focusAfter, day);
+    }
+  }
+
+  function extendSelectedEntry(deltaStartMs, deltaEndMs) {
+    if (!weekStartStr) return;
+    if (!selectedEntryId) return;
+
+    applyWeekEdit({
+      weekStart: weekStartStr,
+      label: "extend",
+      focusAfter: selectedEntryId,
+      getAfterRaw: () => {
+        const { bounds, nodes } = buildWeekSchedule(weekStartStr);
+        const node = nodes.find((n) => n.id === selectedEntryId);
+        ensureEditableNode(node);
+
+        node.startMs += deltaStartMs;
+        node.endMs += deltaEndMs;
+        if (node.endMs - node.startMs < MIN_ENTRY_MS) throw new Error("Entry shorter than 15 minutes.");
+        enforceEditableBounds(node, bounds);
+
+        resolveNonOverlapping(nodes, selectedEntryId, bounds);
+        return weekRawFromNodes(nodes);
+      },
+    });
+  }
+
+  function moveSelectedEntry(deltaMs) {
+    extendSelectedEntry(deltaMs, deltaMs);
+  }
+
+  function deleteSelectedEntry() {
+    if (!weekStartStr) return;
+    if (!selectedEntryId) return;
+
+    const deletedId = selectedEntryId;
+    applyWeekEdit({
+      weekStart: weekStartStr,
+      label: "delete",
+      focusAfter: null,
+      getAfterRaw: () => {
+        const { nodes } = buildWeekSchedule(weekStartStr);
+        const node = nodes.find((n) => n.id === deletedId);
+        ensureEditableNode(node);
+        const remaining = nodes.filter((n) => !(n.editable && n.id === deletedId));
+        return weekRawFromNodes(remaining);
+      },
+    });
+  }
+
+  function addEntryFromCursor() {
+    if (!weekStartStr) return;
+    if (!cursor || cursor.kind !== "add") return;
+
+    const startMs = cursor.ms;
+    const endMs = startMs + MIN_ENTRY_MS;
+    const newId = nextEntryId;
+
+    applyWeekEdit({
+      weekStart: weekStartStr,
+      label: "add",
+      focusAfter: newId,
+      getAfterRaw: () => {
+        const { bounds, nodes } = buildWeekSchedule(weekStartStr);
+        const newNode = { id: newId, startMs, endMs, editable: true, raw: makeNewRawEntry({ id: newId, startMs, endMs }) };
+        enforceEditableBounds(newNode, bounds);
+        if (endMs - startMs < MIN_ENTRY_MS) throw new Error("Entry shorter than 15 minutes.");
+        nodes.push(newNode);
+        resolveNonOverlapping(nodes, newId, bounds);
+        return weekRawFromNodes(nodes);
+      },
+    });
+
+    const created = entriesById.get(newId);
+    if (created) {
+      openEntryDialog(newId);
+      recomputeNextEntryId();
+    }
+  }
+
+  function splitSelectedEntryAtCursor() {
+    if (!weekStartStr) return;
+    if (!selectedEntryId) return;
+    if (!cursor || cursor.kind !== "split") return;
+
+    const splitMs = cursor.ms;
+    const firstId = selectedEntryId;
+    const secondId = nextEntryId;
+
+    applyWeekEdit({
+      weekStart: weekStartStr,
+      label: "split",
+      focusAfter: secondId,
+      getAfterRaw: () => {
+        const { bounds, nodes } = buildWeekSchedule(weekStartStr);
+        const node = nodes.find((n) => n.id === firstId);
+        ensureEditableNode(node);
+        if (node.endMs - node.startMs < 2 * MIN_ENTRY_MS) throw new Error("Entry too short to split.");
+
+        const minMs = node.startMs + MIN_ENTRY_MS;
+        const maxMs = node.endMs - MIN_ENTRY_MS;
+        if (splitMs < minMs || splitMs > maxMs) throw new Error("Invalid split point.");
+
+        const secondRaw = deepClone(node.raw);
+        secondRaw.id = secondId;
+
+        const secondNode = { id: secondId, startMs: splitMs, endMs: node.endMs, editable: true, raw: secondRaw };
+        node.endMs = splitMs;
+
+        enforceEditableBounds(node, bounds);
+        enforceEditableBounds(secondNode, bounds);
+
+        nodes.push(secondNode);
+        resolveNonOverlapping(nodes, secondId, bounds);
+        return weekRawFromNodes(nodes);
+      },
+    });
+
+    const created = entriesById.get(secondId);
+    if (created) {
+      openEntryDialog(secondId);
+      recomputeNextEntryId();
+    }
   }
 
   const chunkCache = new Map(); // key -> { sha, entries[] }
@@ -1058,6 +2236,26 @@ async function main() {
     };
   }
 
+  function refreshRepoLabel() {
+    if (!entriesManifest) {
+      repoLabelEl.textContent = "";
+      return;
+    }
+
+    const totals = [];
+    totals.push(`${chunkFiles.length} week file(s)`);
+    if (typeof entriesManifest.total_entries === "number" && Number.isFinite(entriesManifest.total_entries)) {
+      totals.push(`${entriesManifest.total_entries} entries`);
+    }
+    if (entriesManifest.generated_at) totals.push(`manifest @ ${entriesManifest.generated_at}`);
+
+    if (isLocalMode) {
+      repoLabelEl.textContent = `Local data • ${totals.join(" • ")}`;
+    } else {
+      repoLabelEl.textContent = `${config.owner}/${config.repo}@${config.ref} • ${totals.join(" • ")}`;
+    }
+  }
+
   async function fetchManifest() {
     setProgress(0, 1, isLocalMode ? "Loading manifest (local)…" : "Loading manifest…");
 
@@ -1066,7 +2264,7 @@ async function main() {
       const resp = await fetch(localRepoUrl("data/index/entries-manifest.json"), { cache: "no-store" });
       if (!resp.ok) {
         throw new Error(
-          `Local manifest not found (${resp.status}). Serve the repo root (not docs): python3 -m http.server`,
+          `Local manifest not found (${resp.status}). Run the local server from repo root: python3 server.py`,
         );
       }
       raw = await resp.text();
@@ -1083,19 +2281,7 @@ async function main() {
 
     entriesManifest = normalizeManifest(parsed);
     chunkFiles = entriesManifest.chunks;
-
-    const totals = [];
-    totals.push(`${chunkFiles.length} week file(s)`);
-    if (typeof entriesManifest.total_entries === "number" && Number.isFinite(entriesManifest.total_entries)) {
-      totals.push(`${entriesManifest.total_entries} entries`);
-    }
-    if (entriesManifest.generated_at) totals.push(`manifest @ ${entriesManifest.generated_at}`);
-
-    if (isLocalMode) {
-      repoLabelEl.textContent = `Local data • ${totals.join(" • ")}`;
-    } else {
-      repoLabelEl.textContent = `${config.owner}/${config.repo}@${config.ref} • ${totals.join(" • ")}`;
-    }
+    refreshRepoLabel();
   }
 
   async function fetchChunkRawText(chunk) {
@@ -1164,7 +2350,8 @@ async function main() {
     const cacheSummary = ` • cached ${cacheHits} • downloaded ${downloads}`;
     setProgress(chunkFiles.length, chunkFiles.length, `Loaded ${chunkFiles.length}/${chunkFiles.length} week files${cacheSummary}`);
 
-    allEntries = Array.from(byId.values());
+    entriesById = byId;
+    allEntries = Array.from(entriesById.values());
     projectColorCache.clear();
     segmentsIndex = buildSegmentsIndexFromEntries(allEntries);
     latestWeekStartStr = computeLatestWeekStart(allEntries);
@@ -1173,6 +2360,7 @@ async function main() {
     renderProjects(allEntries);
     applyFiltersAndRender();
     rebuildWeekView();
+    recomputeNextEntryId();
   }
 
   async function reloadData() {
@@ -1232,17 +2420,25 @@ async function main() {
     token = "";
     ghUser = null;
     entriesManifest = null;
-    chunkFiles = [];
-    chunkCache.clear();
-    allEntries = [];
-    segmentsIndex = new Map();
-    latestWeekStartStr = null;
-    weekStartStr = null;
-    weekDom = null;
-    entriesTbody.innerHTML = "";
-    projectSelect.innerHTML = "";
-    statsEl.textContent = "";
-    repoLabelEl.textContent = "";
+	    chunkFiles = [];
+	    chunkCache.clear();
+	    entriesById = new Map();
+	    allEntries = [];
+	    segmentsIndex = new Map();
+	    latestWeekStartStr = null;
+	    weekStartStr = null;
+	    weekDom = null;
+	    selectedSegKey = null;
+	    selectedEntryId = null;
+	    dialogEntryId = null;
+	    dirtyWeekStarts.clear();
+	    undoStack.length = 0;
+	    redoStack.length = 0;
+	    setEditMode("normal");
+	    entriesTbody.innerHTML = "";
+	    projectSelect.innerHTML = "";
+	    statsEl.textContent = "";
+	    repoLabelEl.textContent = "";
     weekScrollEl.innerHTML = "";
     weekLabelEl.textContent = "";
     setProgress(0, 1, "");
@@ -1345,6 +2541,47 @@ async function main() {
   logoutBtn.addEventListener("click", () => logout());
   reloadDataBtn.addEventListener("click", () => reloadData());
 
+  entryCloseBtn.addEventListener("click", () => closeEntryDialog());
+  entryCancelBtn.addEventListener("click", () => closeEntryDialog());
+  entryDialog.addEventListener("cancel", (ev) => {
+    ev.preventDefault();
+    closeEntryDialog();
+  });
+  entryForm.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const id = dialogEntryId;
+    if (!id) return closeEntryDialog();
+    if (!weekStartStr) return closeEntryDialog();
+
+    const entry = entriesById.get(id);
+    if (!entry) return closeEntryDialog();
+    if (weekStartForEntry(entry) !== weekStartStr) return closeEntryDialog();
+
+    const project = entryProjectInput.value.trim();
+    const description = entryDescInput.value.trim();
+    const tags = textToTags(entryTagsInput.value);
+    const billable = entryBillableInput.checked;
+
+    applyWeekEdit({
+      weekStart: weekStartStr,
+      label: "details",
+      focusAfter: id,
+      getAfterRaw: () => {
+        const raws = snapshotWeekRaw(weekStartStr);
+        const idx = raws.findIndex((r) => Number(r?.id) === id);
+        if (idx < 0) throw new Error("Entry not found in this week");
+        raws[idx].project = project;
+        raws[idx].description = description;
+        raws[idx].tags = tags;
+        raws[idx].billable = billable;
+        raws[idx].updated_at = formatIsoWithOffset(new Date());
+        return raws;
+      },
+    });
+
+    closeEntryDialog();
+  });
+
   for (const el of [searchInput, projectSelect, fromDateInput, toDateInput, maxRowsInput, sortSelect]) {
     el.addEventListener("input", () => applyFiltersAndRender());
     // Avoid re-rendering the table on input blur (some inputs fire `change` on blur),
@@ -1390,42 +2627,173 @@ async function main() {
 
     if (activeTab !== "week") return;
     if (appSection.hidden || weekViewSection.hidden) return;
+    if (entryDialog.open) return;
     if (isEditableTarget(ev.target)) return;
 
-    if (ev.key === "ArrowLeft") {
+    const key = String(ev.key || "");
+    const keyLower = key.toLowerCase();
+
+    if (ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+      if (keyLower === "z") {
+        ev.preventDefault();
+        undo();
+        return;
+      }
+      if (keyLower === "y") {
+        ev.preventDefault();
+        redo();
+        return;
+      }
+      if (keyLower === "s") {
+        ev.preventDefault();
+        saveDirtyWeeksNow("manual");
+        return;
+      }
+    }
+
+    if (key === "Escape") {
+      ev.preventDefault();
+      setEditMode("normal");
+      weekScrollEl.focus();
+      return;
+    }
+
+    if (!ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      if (keyLower === "a") {
+        ev.preventDefault();
+        enterAddMode();
+        weekScrollEl.focus();
+        return;
+      }
+      if (keyLower === "s") {
+        ev.preventDefault();
+        enterSplitMode();
+        weekScrollEl.focus();
+        return;
+      }
+    }
+
+    if (editMode === "add") {
+      if (key === "ArrowLeft") {
+        ev.preventDefault();
+        shiftAddCursorDay(-1);
+        weekScrollEl.focus();
+        return;
+      }
+      if (key === "ArrowRight") {
+        ev.preventDefault();
+        shiftAddCursorDay(1);
+        weekScrollEl.focus();
+        return;
+      }
+      if (key === "ArrowUp") {
+        ev.preventDefault();
+        nudgeAddCursor(-1);
+        weekScrollEl.focus();
+        return;
+      }
+      if (key === "ArrowDown") {
+        ev.preventDefault();
+        nudgeAddCursor(1);
+        weekScrollEl.focus();
+        return;
+      }
+      if (key === "Enter") {
+        ev.preventDefault();
+        addEntryFromCursor();
+        weekScrollEl.focus();
+        return;
+      }
+      return;
+    }
+
+    if (editMode === "split") {
+      if (key === "ArrowUp") {
+        ev.preventDefault();
+        nudgeSplitCursor(-1);
+        weekScrollEl.focus();
+        return;
+      }
+      if (key === "ArrowDown") {
+        ev.preventDefault();
+        nudgeSplitCursor(1);
+        weekScrollEl.focus();
+        return;
+      }
+      if (key === "Enter") {
+        ev.preventDefault();
+        splitSelectedEntryAtCursor();
+        weekScrollEl.focus();
+        return;
+      }
+      return;
+    }
+
+    if (key === "Enter") {
+      if (!selectedEntryId) return;
+      ev.preventDefault();
+      openEntryDialog(selectedEntryId);
+      return;
+    }
+
+    if (keyLower === "d") {
+      ev.preventDefault();
+      deleteSelectedEntry();
+      weekScrollEl.focus();
+      return;
+    }
+
+    if (ev.shiftKey && !ev.ctrlKey && !ev.altKey && (key === "ArrowUp" || key === "ArrowDown")) {
+      ev.preventDefault();
+      if (key === "ArrowUp") extendSelectedEntry(-MIN_ENTRY_MS, 0);
+      else extendSelectedEntry(0, MIN_ENTRY_MS);
+      weekScrollEl.focus();
+      return;
+    }
+
+    if (ev.ctrlKey && !ev.altKey && (key === "ArrowUp" || key === "ArrowDown")) {
+      ev.preventDefault();
+      moveSelectedEntry(key === "ArrowUp" ? -MIN_ENTRY_MS : MIN_ENTRY_MS);
+      weekScrollEl.focus();
+      return;
+    }
+
+    if (key === "ArrowLeft") {
       ev.preventDefault();
       moveFocusDay(-1);
       weekScrollEl.focus();
       return;
     }
-    if (ev.key === "ArrowRight") {
+    if (key === "ArrowRight") {
       ev.preventDefault();
       moveFocusDay(1);
       weekScrollEl.focus();
       return;
     }
-    if (ev.key === "ArrowUp") {
+    if (key === "ArrowUp") {
       ev.preventDefault();
       moveFocusEntry(-1);
       weekScrollEl.focus();
       return;
     }
-    if (ev.key === "ArrowDown") {
+    if (key === "ArrowDown") {
       ev.preventDefault();
       moveFocusEntry(1);
       weekScrollEl.focus();
       return;
     }
-    if (ev.key === "PageUp") {
+    if (key === "PageUp") {
       if (!weekStartStr) return;
       ev.preventDefault();
+      setEditMode("normal");
       setWeekStart(addIsoDays(weekStartStr, -7));
       weekScrollEl.focus();
       return;
     }
-    if (ev.key === "PageDown") {
+    if (key === "PageDown") {
       if (!weekStartStr) return;
       ev.preventDefault();
+      setEditMode("normal");
       setWeekStart(addIsoDays(weekStartStr, 7));
       weekScrollEl.focus();
       return;

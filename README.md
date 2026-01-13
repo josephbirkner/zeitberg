@@ -1,4 +1,4 @@
-# Timetracking Viewer (Static)
+# Timetracking Viewer / Editor (Static)
 
 This is a static HTML5 viewer that stays “public” as code, but loads **private** time-entry data from GitHub via the API after you provide a token.
 
@@ -8,6 +8,7 @@ This is a static HTML5 viewer that stays “public” as code, but loads **priva
 - After login, it fetches `data/index/entries-manifest.json` in your private repo via GitHub’s API.
 - The manifest lists weekly chunks in `data/entries/<iso-year>/<week>.json` (and their Git blob SHAs), which are then loaded via the Git blob API.
 - Your token is stored in the browser (localStorage if “Remember” is enabled; otherwise sessionStorage).
+- Edits are saved back into the repo as commits (GitHub mode) or written to disk via `server.py` (local mode).
 
 ## Views
 
@@ -16,10 +17,10 @@ This is a static HTML5 viewer that stays “public” as code, but loads **priva
 
 ## Local testing
 
-You can test the viewer against local files (no GitHub token) by serving the **repo root** so `/data/` is reachable:
+Local mode requires `server.py` (serves the repo root and exposes `POST /save`):
 
 ```bash
-python3 -m http.server 8000
+python3 server.py --port 8000
 ```
 
 Then open:
@@ -29,7 +30,7 @@ Then open:
 
 Prefer a **fine-grained PAT**:
 - Repository access: only `josephbirkner/timetracking` (or whichever repo you use)
-- Permissions: `Contents: Read-only`
+- Permissions: `Contents: Read-only` for browsing; `Contents: Read & write` to save edits/commits
 
 Avoid classic PAT `repo` scope unless you really need it.
 

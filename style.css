@@ -315,7 +315,8 @@ label span {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -326,7 +327,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: rgba(124, 92, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
 }
@@ -398,6 +400,43 @@ select:focus {
   margin: 0;
   width: min(720px, calc(100% - 28px));
   max-height: 46vh;
+}
+
+.editor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.15px;
+  white-space: nowrap;
+}
+
+.editor-badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.editor-badge.is-dirty .dot {
+  background: rgba(255, 77, 109, 0.92);
+}
+
+.editor-badge .mode {
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.editor-badge .save {
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 .data-badge {
@@ -618,6 +657,88 @@ progress {
   -webkit-line-clamp: 4;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.82);
+}
+
+.cursor-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid rgba(124, 92, 255, 0.9);
+  opacity: 0.95;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cursor-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(124, 92, 255, 0.95);
+  box-shadow: 0 0 0 2px rgba(11, 16, 32, 0.85);
+}
+
+.cursor-line.is-split {
+  border-top-color: rgba(57, 217, 138, 0.95);
+}
+
+.cursor-line.is-split::after {
+  background: rgba(57, 217, 138, 0.95);
+}
+
+.dialog {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  max-width: min(720px, calc(100vw - 24px));
+  width: 100%;
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.dialog-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(11, 16, 32, 0.92);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.dialog-title {
+  font-weight: 900;
+  letter-spacing: 0.2px;
+}
+
+.dialog-meta {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.dialog-grid label textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .week-card {
