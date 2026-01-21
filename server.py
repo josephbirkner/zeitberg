@@ -3,28 +3,15 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-from zoneinfo import ZoneInfo
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-ENTRIES_DIR = REPO_ROOT / "data" / "entries"
 MANIFEST_PATH = REPO_ROOT / "data" / "index" / "entries-manifest.json"
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _git_blob_sha1(content: bytes) -> str:
-    header = f"blob {len(content)}\0".encode("utf-8")
-    return hashlib.sha1(header + content).hexdigest()  # noqa: S324 (git compatibility)
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -32,70 +19,13 @@ def _write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _load_entry_count(path: Path) -> int | None:
+def _safe_repo_path(path_text: str) -> Path:
+    target = (REPO_ROOT / path_text).resolve()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        return None
-    if not isinstance(payload, dict):
-        return None
-    entries = payload.get("entries")
-    if not isinstance(entries, list):
-        return None
-    return len(entries)
-
-
-def _build_manifest(*, tz: ZoneInfo) -> dict[str, Any]:
-    chunks: list[dict[str, Any]] = []
-    total_entries = 0
-
-    if ENTRIES_DIR.exists():
-        for year_dir in sorted(ENTRIES_DIR.iterdir()):
-            if not year_dir.is_dir():
-                continue
-            if not year_dir.name.isdigit() or len(year_dir.name) != 4:
-                continue
-            year = int(year_dir.name)
-
-            for week_file in sorted(year_dir.glob("*.json")):
-                try:
-                    week = int(week_file.stem)
-                except ValueError:
-                    continue
-                if week < 1 or week > 53:
-                    continue
-
-                content_bytes = week_file.read_bytes()
-                sha = _git_blob_sha1(content_bytes)
-                size = len(content_bytes)
-                entry_count = _load_entry_count(week_file)
-                if isinstance(entry_count, int):
-                    total_entries += entry_count
-
-                chunks.append(
-                    {
-                        "entries": entry_count,
-                        "path": week_file.relative_to(REPO_ROOT).as_posix(),
-                        "sha": sha,
-                        "size": size,
-                        "week": week,
-                        "year": year,
-                    }
-                )
-
-    chunks.sort(key=lambda c: (c["year"], c["week"]))
-    return {
-        "chunks": chunks,
-        "generated_at": _utc_now_iso(),
-        "schema_version": 1,
-        "timezone": tz.key,
-        "total_chunks": len(chunks),
-        "total_entries": total_entries,
-    }
-
-
-def _week_file_path(year: int, week: int) -> Path:
-    return ENTRIES_DIR / f"{year}" / f"{week:02}.json"
+        target.relative_to(REPO_ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError("Invalid path") from exc
+    return target
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -140,60 +70,35 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(req, dict):
             return self._send_json(400, {"ok": False, "error": "Request JSON must be an object"})
 
-        tz_raw = req.get("timezone")
-        try:
-            tz = ZoneInfo(str(tz_raw or "Europe/Berlin"))
-        except Exception:  # noqa: BLE001
-            tz = ZoneInfo("Europe/Berlin")
-
         weeks = req.get("weeks")
         if not isinstance(weeks, list):
             return self._send_json(400, {"ok": False, "error": "'weeks' must be an array"})
 
-        saved: list[dict[str, Any]] = []
         for item in weeks:
             if not isinstance(item, dict):
                 continue
-            year = item.get("year")
-            week = item.get("week")
-            entries = item.get("entries")
-            if not isinstance(year, int) or year < 1970 or year > 9999:
-                return self._send_json(400, {"ok": False, "error": f"Invalid year: {year}"})
-            if not isinstance(week, int) or week < 1 or week > 53:
-                return self._send_json(400, {"ok": False, "error": f"Invalid week: {week}"})
-            if not isinstance(entries, list):
-                return self._send_json(400, {"ok": False, "error": f"Week {year}-W{week:02}: 'entries' must be an array"})
+            path_text = str(item.get("path") or "")
+            content = item.get("content")
+            if not path_text.startswith("data/entries/") or not path_text.endswith(".json"):
+                return self._send_json(400, {"ok": False, "error": f"Invalid week path: {path_text}"})
+            if not isinstance(content, str):
+                return self._send_json(400, {"ok": False, "error": f"Week {path_text}: 'content' must be a string"})
 
-            entries_dicts = [e for e in entries if isinstance(e, dict)]
-            entries_sorted = sorted(entries_dicts, key=lambda e: (str(e.get("start", "")), int(e.get("id") or 0)))
-
-            payload = {
-                "entries": entries_sorted,
-                "generated_at": _utc_now_iso(),
-                "schema_version": 1,
-                "timezone": tz.key,
-                "week": week,
-                "year": year,
-            }
-            content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-            out_path = _week_file_path(year, week)
+            out_path = _safe_repo_path(path_text)
             _write_text(out_path, content)
 
-            content_bytes = content.encode("utf-8")
-            saved.append(
-                {
-                    "entries": len(entries_sorted),
-                    "path": out_path.relative_to(REPO_ROOT).as_posix(),
-                    "sha": _git_blob_sha1(content_bytes),
-                    "size": len(content_bytes),
-                    "week": week,
-                    "year": year,
-                }
-            )
+        manifest = req.get("manifest")
+        if not isinstance(manifest, dict):
+            return self._send_json(400, {"ok": False, "error": "'manifest' must be an object"})
+        manifest_path = str(manifest.get("path") or "")
+        manifest_content = manifest.get("content")
+        if manifest_path != "data/index/entries-manifest.json":
+            return self._send_json(400, {"ok": False, "error": "Invalid manifest path"})
+        if not isinstance(manifest_content, str):
+            return self._send_json(400, {"ok": False, "error": "'manifest.content' must be a string"})
 
-        manifest = _build_manifest(tz=tz)
-        _write_text(MANIFEST_PATH, json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
-        return self._send_json(200, {"ok": True, "manifest": manifest, "saved": saved})
+        _write_text(MANIFEST_PATH, manifest_content)
+        return self._send_json(200, {"ok": True})
 
 
 def main(argv: list[str]) -> int:
