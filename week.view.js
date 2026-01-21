@@ -2,6 +2,7 @@ import {
     addIsoDays,
     cloneJson,
     formatDuration,
+    parseHexColor,
     hhmmToMinutes,
     chunkKey,
     isoWeekInfo,
@@ -21,6 +22,7 @@ const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /**
  * @typedef {Object} WeekViewOptions
+ * @description Dependency bundle for week view rendering and editing.
  * @property {import("./store.js").EntryStore} store
  * @property {import("./cache.js").ChunkCache} chunkCache
  * @property {import("./appstate.js").AppState} appState
@@ -41,10 +43,9 @@ const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
  * @property {HTMLButtonElement} elements.entryCloseBtn
  * @property {HTMLButtonElement} elements.entryCancelBtn
  * @property {HTMLElement} elements.entryMeta
- * @property {HTMLInputElement} elements.entryProject
+ * @property {HTMLSelectElement} elements.entryProject
  * @property {HTMLInputElement} elements.entryTags
  * @property {HTMLTextAreaElement} elements.entryDesc
- * @property {HTMLInputElement} elements.entryBillable
  * @property {(message: string, timeout?: number) => void} onToast
  * @property {(isBusy: boolean) => void} onBusy
  * @property {() => void} onSearchDirty
@@ -53,9 +54,12 @@ const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /**
  * Renders the week view and manages editor interactions.
+ * Owns keyboard navigation, selection, and edit/save workflows.
  */
 export class WeekView {
     /**
+     * Initializes view state and captures UI element references.
+     * Part of the week view interaction flow.
      * @param {WeekViewOptions} options
      */
     constructor(options) {
@@ -80,10 +84,9 @@ export class WeekView {
         this.entryCloseBtn = options.elements.entryCloseBtn;
         this.entryCancelBtn = options.elements.entryCancelBtn;
         this.entryMetaEl = options.elements.entryMeta;
-        this.entryProjectInput = options.elements.entryProject;
+        this.entryProjectSelect = options.elements.entryProject;
         this.entryTagsInput = options.elements.entryTags;
         this.entryDescInput = options.elements.entryDesc;
-        this.entryBillableInput = options.elements.entryBillable;
 
         this.onToast = options.onToast;
         this.onBusy = options.onBusy;
@@ -101,6 +104,7 @@ export class WeekView {
         this.cursor = null;
         this.cursorEl = null;
         this.dialogEntryId = null;
+        this.dialogAllowUnlistedProject = false;
 
         this.dirtyWeekStarts = new Set();
         this.lastEditAt = 0;
@@ -118,6 +122,8 @@ export class WeekView {
     }
 
     /**
+     * Updates the data source for future save requests.
+     * Part of the week view interaction flow.
      * @param {import("./datasource.js").DataSource} dataSource
      * @returns {void}
      */
@@ -126,6 +132,34 @@ export class WeekView {
     }
 
     /**
+     * Applies a new project list and refreshes cached colors.
+     * Part of the week view interaction flow.
+     * @param {import("./model.js").ProjectList | null} projectList
+     * @returns {void}
+     */
+    setProjects(projectList) {
+        if (projectList) {
+            this.store.setProjectList(projectList);
+        }
+        this.projectColorCache.clear();
+        if (this.entryDialog.open && this.dialogEntryId) {
+            const entry = this.store.getEntryById(this.dialogEntryId);
+            if (entry) {
+                this.populateProjectSelect({
+                    selected: safeText(entry.project),
+                    allowUnlisted: !this.store.getProjectByName(entry.project || ""),
+                });
+                this.applyProjectSelectionRules();
+            }
+        }
+        if (this.appState.weekStart) {
+            this.rebuildWeekView();
+        }
+    }
+
+    /**
+     * Registers UI events for navigation and dialog actions.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     bindEvents() {
@@ -144,6 +178,8 @@ export class WeekView {
     }
 
     /**
+     * Shows or hides the week view and repositions the timeline.
+     * Part of the week view interaction flow.
      * @param {boolean} isActive
      * @returns {void}
      */
@@ -163,6 +199,7 @@ export class WeekView {
 
     /**
      * Resets view state for logout or reload.
+     * Clears selection, cached DOM, and undo history.
      * @returns {void}
      */
     reset() {
@@ -176,6 +213,7 @@ export class WeekView {
         this.selectedSegKey = null;
         this.selectedEntryId = null;
         this.dialogEntryId = null;
+        this.dialogAllowUnlistedProject = false;
         this.saveInFlight = false;
         window.clearTimeout(this.autosaveTimer);
         this.autosaveTimer = 0;
@@ -187,6 +225,8 @@ export class WeekView {
     }
 
     /**
+     * Sets the active week and rebuilds the timeline.
+     * Part of the week view interaction flow.
      * @param {string | null} weekStart
      * @param {number} [focusedDayIndex]
      * @returns {void}
@@ -199,6 +239,8 @@ export class WeekView {
     }
 
     /**
+     * Updates latest week metadata and button state.
+     * Part of the week view interaction flow.
      * @param {string | null} latestWeekStart
      * @returns {void}
      */
@@ -212,6 +254,8 @@ export class WeekView {
     }
 
     /**
+     * Moves focus to the previous week.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     handlePrevWeek() {
@@ -220,6 +264,8 @@ export class WeekView {
     }
 
     /**
+     * Moves focus to the next week.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     handleNextWeek() {
@@ -228,6 +274,8 @@ export class WeekView {
     }
 
     /**
+     * Jumps focus to the latest available week.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     handleLatestWeek() {
@@ -236,6 +284,8 @@ export class WeekView {
     }
 
     /**
+     * Updates zoom state from the range input.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     handleZoomInput() {
@@ -247,6 +297,8 @@ export class WeekView {
     }
 
     /**
+     * Adjusts zoom by discrete steps and clamps to range bounds.
+     * Part of the week view interaction flow.
      * @param {number} deltaSteps
      * @returns {void}
      */
@@ -275,6 +327,8 @@ export class WeekView {
     }
 
     /**
+     * Updates the editor badge with mode and save status.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     updateEditorBadge() {
@@ -286,6 +340,8 @@ export class WeekView {
     }
 
     /**
+     * Clears the cursor line from the DOM.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     clearCursor() {
@@ -295,6 +351,8 @@ export class WeekView {
     }
 
     /**
+     * Positions the cursor line within the current week grid.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     updateCursorLine() {
@@ -334,6 +392,8 @@ export class WeekView {
     }
 
     /**
+     * Switches between normal, add, and split edit modes.
+     * Part of the week view interaction flow.
      * @param {"normal" | "add" | "split"} nextMode
      * @returns {void}
      */
@@ -346,6 +406,8 @@ export class WeekView {
     }
 
     /**
+     * Clamps focus indices to available entries in the week.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     clampWeekFocus() {
@@ -361,6 +423,8 @@ export class WeekView {
     }
 
     /**
+     * Applies focus styling and updates selected entry metadata.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     applyWeekFocusAndSelection() {
@@ -387,6 +451,8 @@ export class WeekView {
     }
 
     /**
+     * Scrolls the focused day or entry into view.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     scrollWeekFocusIntoView() {
@@ -400,6 +466,8 @@ export class WeekView {
     }
 
     /**
+     * Computes layout metrics based on zoom and container height.
+     * Part of the week view interaction flow.
      * @returns {{baseHeight: number, headerHeight: number, timelineHeight: number, pxPerMinute: number} | null}
      */
     computeWeekMetrics() {
@@ -412,6 +480,8 @@ export class WeekView {
     }
 
     /**
+     * Renders hour labels along the time axis.
+     * Part of the week view interaction flow.
      * @param {{timelineHeight: number, pxPerMinute: number}} metrics
      * @returns {void}
      */
@@ -433,6 +503,8 @@ export class WeekView {
     }
 
     /**
+     * Repositions entry blocks after zoom or resize changes.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     updateWeekScaleAndReposition() {
@@ -457,6 +529,8 @@ export class WeekView {
     }
 
     /**
+     * Rebuilds the week DOM from the store segment index.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     rebuildWeekView() {
@@ -576,7 +650,8 @@ export class WeekView {
             for (let idx = 0; idx < assigned.length; idx++) {
                 const { lane, seg } = assigned[idx];
                 const entry = seg.entry || {};
-                const project = entry.project || "—";
+                const projectName = entry.project || "";
+                const projectLabel = projectName || "No project";
                 const description = entry.description || "";
 
                 dayKeys[dayIdx].push(seg.key);
@@ -589,7 +664,7 @@ export class WeekView {
                 el.dataset.start = String(seg.startMinutes);
                 el.dataset.end = String(seg.endMinutes);
 
-                const colors = this.projectColors(project);
+                const colors = this.projectColors(projectName);
                 el.style.setProperty("--entry-bg", colors.bg);
                 el.style.setProperty("--entry-border", colors.border);
 
@@ -604,13 +679,13 @@ export class WeekView {
 
                 const projectEl = document.createElement("div");
                 projectEl.className = "entry-project";
-                projectEl.textContent = project;
+                projectEl.textContent = projectLabel;
                 const descEl = document.createElement("div");
                 descEl.className = "entry-desc";
                 descEl.textContent = description;
                 el.append(projectEl, descEl);
 
-                el.title = `${dateStr} ${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)} • ${project}${
+                el.title = `${dateStr} ${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)} • ${projectLabel}${
                     description ? ` • ${description}` : ""
                 }`;
 
@@ -638,6 +713,8 @@ export class WeekView {
     }
 
     /**
+     * Returns a cached color pair for a project name.
+     * Part of the week view interaction flow.
      * @param {string} project
      * @returns {{bg: string, border: string}}
      */
@@ -650,6 +727,19 @@ export class WeekView {
             const neutral = { bg: "rgba(255, 255, 255, 0.06)", border: "rgba(255, 255, 255, 0.16)" };
             this.projectColorCache.set(key, neutral);
             return neutral;
+        }
+
+        const projectDef = this.store.getProjectByName(key);
+        if (projectDef && projectDef.color) {
+            const rgb = parseHexColor(projectDef.color);
+            if (rgb) {
+                const colors = {
+                    bg: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.26)`,
+                    border: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.55)`,
+                };
+                this.projectColorCache.set(key, colors);
+                return colors;
+            }
         }
 
         let hash = 2166136261;
@@ -667,6 +757,8 @@ export class WeekView {
     }
 
     /**
+     * Focuses an entry by id within the current week grid.
+     * Part of the week view interaction flow.
      * @param {number} entryId
      * @param {string | null} preferredDayStr
      * @returns {void}
@@ -706,6 +798,8 @@ export class WeekView {
     }
 
     /**
+     * Handles resize events by recalculating layout metrics.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     handleResize() {
@@ -715,6 +809,8 @@ export class WeekView {
     }
 
     /**
+     * Processes keyboard navigation and editing shortcuts.
+     * Part of the week view interaction flow.
      * @param {KeyboardEvent} ev
      * @returns {void}
      */
@@ -895,6 +991,8 @@ export class WeekView {
     }
 
     /**
+     * Moves day focus left/right, wrapping across weeks when needed.
+     * Part of the week view interaction flow.
      * @param {number} deltaDays
      * @returns {void}
      */
@@ -909,6 +1007,8 @@ export class WeekView {
     }
 
     /**
+     * Moves focus between entries within the current day.
+     * Part of the week view interaction flow.
      * @param {number} deltaEntries
      * @returns {void}
      */
@@ -943,6 +1043,8 @@ export class WeekView {
     }
 
     /**
+     * Snaps the add cursor around existing entries when overlapping.
+     * Part of the week view interaction flow.
      * @param {number} ms
      * @param {number} direction
      * @returns {number}
@@ -974,6 +1076,8 @@ export class WeekView {
     }
 
     /**
+     * Enters add mode and positions the cursor at a sensible time.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     enterAddMode() {
@@ -1008,6 +1112,8 @@ export class WeekView {
     }
 
     /**
+     * Moves the add cursor up or down in fixed increments.
+     * Part of the week view interaction flow.
      * @param {number} deltaSteps
      * @returns {void}
      */
@@ -1032,6 +1138,8 @@ export class WeekView {
     }
 
     /**
+     * Moves the add cursor across days while keeping the time.
+     * Part of the week view interaction flow.
      * @param {number} deltaDays
      * @returns {void}
      */
@@ -1062,6 +1170,8 @@ export class WeekView {
     }
 
     /**
+     * Enters split mode and positions the split cursor inside the entry.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     enterSplitMode() {
@@ -1096,6 +1206,8 @@ export class WeekView {
     }
 
     /**
+     * Nudges the split cursor by fixed increments within the entry.
+     * Part of the week view interaction flow.
      * @param {number} deltaSteps
      * @returns {void}
      */
@@ -1128,6 +1240,8 @@ export class WeekView {
     }
 
     /**
+     * Updates raw entry timestamps and duration fields.
+     * Part of the week view interaction flow.
      * @param {Object} raw
      * @param {number} startMs
      * @param {number} endMs
@@ -1145,12 +1259,14 @@ export class WeekView {
     }
 
     /**
+     * Creates a new raw entry payload with default fields.
+     * Part of the week view interaction flow.
      * @param {{id: number, startMs: number, endMs: number}} params
      * @returns {Object}
      */
     makeNewRawEntry(params) {
         const raw = {
-            billable: false,
+            billable: null,
             client: null,
             client_id: null,
             created_at: null,
@@ -1171,6 +1287,8 @@ export class WeekView {
     }
 
     /**
+     * Converts schedule nodes back into raw entry payloads.
+     * Part of the week view interaction flow.
      * @param {Array<{id: number, startMs: number, endMs: number, editable: boolean, raw: Object | null}>} nodes
      * @returns {Object[]}
      */
@@ -1187,6 +1305,8 @@ export class WeekView {
     }
 
     /**
+     * Validates that a node is editable and has a sane time range.
+     * Part of the week view interaction flow.
      * @param {Object} node
      * @returns {void}
      */
@@ -1198,6 +1318,8 @@ export class WeekView {
     }
 
     /**
+     * Ensures edits do not move entries across week boundaries.
+     * Part of the week view interaction flow.
      * @param {Object} node
      * @param {{startMs: number, endMs: number}} bounds
      * @returns {void}
@@ -1210,6 +1332,8 @@ export class WeekView {
     }
 
     /**
+     * Resolves overlaps by shifting or compressing neighboring entries.
+     * Part of the week view interaction flow.
      * @param {Array<{id: number, startMs: number, endMs: number, editable: boolean, raw: Object | null}>} nodes
      * @param {number} targetId
      * @param {{startMs: number, endMs: number}} bounds
@@ -1271,6 +1395,8 @@ export class WeekView {
     }
 
     /**
+     * Applies an edit by recomputing the week snapshot and pushing undo state.
+     * Part of the week view interaction flow.
      * @param {{weekStart: string, label: string, getAfterRaw: () => Object[], focusAfter: number | null}} params
      * @returns {void}
      */
@@ -1319,6 +1445,8 @@ export class WeekView {
     }
 
     /**
+     * Applies a stored undo/redo snapshot and refreshes selection.
+     * Part of the week view interaction flow.
      * @param {string} weekStart
      * @param {Object[]} rawEntries
      * @param {number | null} focusEntryId
@@ -1340,6 +1468,8 @@ export class WeekView {
     }
 
     /**
+     * Pops the undo stack and restores the previous snapshot.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     undo() {
@@ -1351,6 +1481,8 @@ export class WeekView {
     }
 
     /**
+     * Pops the redo stack and reapplies the next snapshot.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     redo() {
@@ -1362,6 +1494,8 @@ export class WeekView {
     }
 
     /**
+     * Marks a week as dirty and schedules autosave.
+     * Part of the week view interaction flow.
      * @param {string} weekStart
      * @returns {void}
      */
@@ -1374,6 +1508,8 @@ export class WeekView {
     }
 
     /**
+     * Schedules an autosave based on last edit time.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     scheduleAutosave() {
@@ -1393,6 +1529,8 @@ export class WeekView {
     }
 
     /**
+     * Saves all dirty weeks immediately if possible.
+     * Part of the week view interaction flow.
      * @param {"manual" | "autosave"} reason
      * @returns {Promise<void>}
      */
@@ -1426,6 +1564,8 @@ export class WeekView {
     }
 
     /**
+     * Serializes week files, writes them, and refreshes caches.
+     * Part of the week view interaction flow.
      * @param {string[]} weekStarts
      * @param {"manual" | "autosave"} reason
      * @returns {Promise<void>}
@@ -1435,8 +1575,21 @@ export class WeekView {
         const weekFiles = this.store.serializeWeeks(weekStarts, nowIso);
         const oldManifest = this.store.getManifest();
         let manifest = this.store.buildManifest(weekFiles, nowIso);
-        const result = await this.dataSource.saveWeeks(weekFiles, manifest, reason);
-        const updatedWeekFiles = Array.isArray(result?.weekFiles) ? result.weekFiles : weekFiles;
+        const manifestContent = manifest.toJson();
+        const files = weekFiles.map((file) => ({ path: file.path, content: file.content }));
+        files.push({ path: "data/index/entries-manifest.json", content: manifestContent });
+
+        const message = this.buildWeekSaveMessage(reason, weekFiles);
+        const result = await this.dataSource.saveFiles(files, message);
+        const savedFiles = Array.isArray(result?.files) ? result.files : files;
+        const shaByPath = new Map();
+        for (const file of savedFiles) {
+            if (file?.path && file?.sha) shaByPath.set(file.path, file.sha);
+        }
+        const updatedWeekFiles = weekFiles.map((file) => {
+            const sha = shaByPath.get(file.path);
+            return sha ? { ...file, sha } : file;
+        });
 
         if (!this.weekFilesMatchManifest(updatedWeekFiles, manifest)) {
             manifest = this.store.buildManifest(updatedWeekFiles, nowIso);
@@ -1448,6 +1601,26 @@ export class WeekView {
     }
 
     /**
+     * Builds a commit message for week save operations.
+     * Part of the week view interaction flow.
+     * @param {"manual" | "autosave"} reason
+     * @param {Array<import("./store.js").WeekFile>} weekFiles
+     * @returns {string}
+     */
+    buildWeekSaveMessage(reason, weekFiles) {
+        const labels = weekFiles
+            .map((file) => `${file.year}-W${String(file.week).padStart(2, "0")}`)
+            .sort((a, b) => a.localeCompare(b))
+            .join(", ");
+        if (reason === "autosave") {
+            return labels ? `Autosave time entries (${labels})` : "Autosave time entries";
+        }
+        return labels ? `Edit time entries (${labels})` : "Edit time entries";
+    }
+
+    /**
+     * Verifies that manifest shas match the saved week files.
+     * Part of the week view interaction flow.
      * @param {Array<import("./store.js").WeekFile>} weekFiles
      * @param {import("./model.js").Manifest} manifest
      * @returns {boolean}
@@ -1465,6 +1638,8 @@ export class WeekView {
     }
 
     /**
+     * Updates in-memory and IndexedDB caches after saving.
+     * Part of the week view interaction flow.
      * @param {Array<import("./store.js").WeekFile>} weekFiles
      * @param {import("./model.js").Manifest | null} oldManifest
      * @returns {Promise<void>}
@@ -1491,6 +1666,8 @@ export class WeekView {
     }
 
     /**
+     * Jumps to the week containing the entry and selects it.
+     * Part of the week view interaction flow.
      * @param {import("./model.js").Entry} entry
      * @returns {void}
      */
@@ -1510,6 +1687,8 @@ export class WeekView {
     }
 
     /**
+     * Validates and saves dialog edits back into the entry.
+     * Part of the week view interaction flow.
      * @param {Event} ev
      * @returns {void}
      */
@@ -1523,10 +1702,23 @@ export class WeekView {
         if (!entry) return this.closeEntryDialog();
         if (entry.weekStart !== this.appState.weekStart) return this.closeEntryDialog();
 
-        const project = this.entryProjectInput.value.trim();
+        const project = this.entryProjectSelect.value.trim();
+        if (project && !this.store.getProjectByName(project) && !this.dialogAllowUnlistedProject) {
+            this.onToast("Please select a project from the list (or choose No project).");
+            return;
+        }
         const description = this.entryDescInput.value.trim();
         const tags = this.textToTags(this.entryTagsInput.value);
-        const billable = this.entryBillableInput.checked;
+
+        let billable = null;
+        if (project) {
+            const projectDef = this.store.getProjectByName(project);
+            if (projectDef) {
+                billable = projectDef.billable;
+            } else if (this.dialogAllowUnlistedProject) {
+                billable = entry.billable === true ? true : entry.billable === false ? false : null;
+            }
+        }
 
         this.applyWeekEdit({
             weekStart: this.appState.weekStart,
@@ -1549,6 +1741,69 @@ export class WeekView {
     }
 
     /**
+     * Builds the project select options for the entry dialog.
+     * Part of the week view interaction flow.
+     * @param {{selected?: string, allowUnlisted?: boolean}} options
+     * @returns {void}
+     */
+    populateProjectSelect(options) {
+        const selected = String(options?.selected || "");
+        const allowUnlisted = Boolean(options?.allowUnlisted);
+        const projects = this.store.getProjects();
+        const byName = new Map();
+        for (const project of projects) {
+            if (!project || !project.name) continue;
+            byName.set(project.name, project);
+        }
+
+        this.entryProjectSelect.innerHTML = "";
+        this.dialogAllowUnlistedProject = false;
+
+        const noneOpt = document.createElement("option");
+        noneOpt.value = "";
+        noneOpt.textContent = "No project";
+        this.entryProjectSelect.append(noneOpt);
+
+        const activeGroup = document.createElement("optgroup");
+        activeGroup.label = "Active projects";
+        const archivedGroup = document.createElement("optgroup");
+        archivedGroup.label = "Archived projects";
+
+        const sorted = projects.slice().sort((a, b) => a.name.localeCompare(b.name));
+        for (const project of sorted) {
+            const opt = document.createElement("option");
+            opt.value = project.name;
+            opt.textContent = project.archived ? `${project.name} (archived)` : project.name;
+            if (project.archived) {
+                archivedGroup.append(opt);
+            } else {
+                activeGroup.append(opt);
+            }
+        }
+
+        if (activeGroup.children.length) this.entryProjectSelect.append(activeGroup);
+        if (archivedGroup.children.length) this.entryProjectSelect.append(archivedGroup);
+
+        if (selected && !byName.has(selected) && allowUnlisted) {
+            const unlistedGroup = document.createElement("optgroup");
+            unlistedGroup.label = "Unlisted";
+            const opt = document.createElement("option");
+            opt.value = selected;
+            opt.textContent = `${selected} (unlisted)`;
+            unlistedGroup.append(opt);
+            this.entryProjectSelect.append(unlistedGroup);
+            this.dialogAllowUnlistedProject = true;
+        }
+
+        this.entryProjectSelect.value = selected;
+        if (!this.entryProjectSelect.value) {
+            this.entryProjectSelect.value = "";
+        }
+    }
+
+    /**
+     * Converts tag arrays into a comma-separated string.
+     * Part of the week view interaction flow.
      * @param {string[]} tags
      * @returns {string}
      */
@@ -1558,6 +1813,8 @@ export class WeekView {
     }
 
     /**
+     * Parses comma-separated tags into a normalized array.
+     * Part of the week view interaction flow.
      * @param {string} text
      * @returns {string[]}
      */
@@ -1569,10 +1826,13 @@ export class WeekView {
     }
 
     /**
+     * Closes the entry dialog and restores focus to the timeline.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     closeEntryDialog() {
         this.dialogEntryId = null;
+        this.dialogAllowUnlistedProject = false;
         if (this.entryDialog.open) this.entryDialog.close();
         queueMicrotask(() => {
             try {
@@ -1584,6 +1844,8 @@ export class WeekView {
     }
 
     /**
+     * Opens the entry dialog for the given entry id.
+     * Part of the week view interaction flow.
      * @param {number} entryId
      * @returns {void}
      */
@@ -1601,10 +1863,12 @@ export class WeekView {
         }
 
         this.dialogEntryId = id;
-        this.entryProjectInput.value = safeText(entry.project);
+        this.populateProjectSelect({
+            selected: safeText(entry.project),
+            allowUnlisted: !this.store.getProjectByName(entry.project || ""),
+        });
         this.entryDescInput.value = safeText(entry.description);
         this.entryTagsInput.value = this.tagsToText(entry.tags);
-        this.entryBillableInput.checked = entry.billable === true;
 
         const day = this.timeContext.formatDate(entry.startDate);
         const start = this.timeContext.formatTime(entry.startDate);
@@ -1615,8 +1879,7 @@ export class WeekView {
         if (!this.entryDialog.open) this.entryDialog.showModal();
         queueMicrotask(() => {
             try {
-                this.entryProjectInput.focus();
-                this.entryProjectInput.select();
+                this.entryProjectSelect.focus();
             } catch {
                 // ignore
             }
@@ -1624,6 +1887,8 @@ export class WeekView {
     }
 
     /**
+     * Creates a new entry from the add-mode cursor position.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     addEntryFromCursor() {
@@ -1657,6 +1922,8 @@ export class WeekView {
     }
 
     /**
+     * Splits the selected entry at the split cursor position.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     splitSelectedEntryAtCursor() {
@@ -1680,7 +1947,7 @@ export class WeekView {
         const minMs = node.startMs + MIN_ENTRY_MS;
         const maxMs = node.endMs - MIN_ENTRY_MS;
         if (splitMs < minMs || splitMs > maxMs) {
-            return this.onToast("Entry too short to split (min 30 min)." );
+            return this.onToast("Entry too short to split (min 30 min).");
         }
 
         const secondId = this.store.reserveEntryId();
@@ -1708,6 +1975,8 @@ export class WeekView {
     }
 
     /**
+     * Deletes the currently selected entry from the week.
+     * Part of the week view interaction flow.
      * @returns {void}
      */
     deleteSelectedEntry() {
@@ -1728,6 +1997,8 @@ export class WeekView {
     }
 
     /**
+     * Extends the selected entry earlier or later in time.
+     * Part of the week view interaction flow.
      * @param {number} extendStartBy
      * @param {number} extendEndBy
      * @returns {void}
@@ -1764,6 +2035,8 @@ export class WeekView {
     }
 
     /**
+     * Moves the selected entry forward or backward in time.
+     * Part of the week view interaction flow.
      * @param {number} deltaMs
      * @returns {void}
      */

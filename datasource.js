@@ -2,6 +2,7 @@ import { gitBlobSha1 } from "./utils.js";
 
 /**
  * @typedef {Object} RepoConfig
+ * @description Identifies the GitHub repository and ref to read/write.
  * @property {string} owner
  * @property {string} repo
  * @property {string} ref
@@ -9,14 +10,26 @@ import { gitBlobSha1 } from "./utils.js";
 
 /**
  * @typedef {Object} SaveResult
- * @property {Array<import("./store.js").WeekFile>} weekFiles
+ * @description Response payload for save operations.
+ * @property {SaveFile[]} files
+ */
+
+/**
+ * @typedef {Object} SaveFile
+ * @description File payload to write via the data source.
+ * @property {string} path
+ * @property {string} content
+ * @property {string} [sha]
  */
 
 /**
  * Base data source interface for loading and saving.
+ * Subclasses implement either GitHub API or local server workflows.
  */
 export class DataSource {
     /**
+     * Stores the repository configuration for later requests.
+     * Used by the app to read or persist data.
      * @param {RepoConfig} config
      */
     constructor(config) {
@@ -24,6 +37,8 @@ export class DataSource {
     }
 
     /**
+     * Updates the configuration for subsequent requests.
+     * Used by the app to read or persist data.
      * @param {RepoConfig} config
      * @returns {void}
      */
@@ -32,6 +47,8 @@ export class DataSource {
     }
 
     /**
+     * Loads the entries manifest JSON payload.
+     * Used by the app to read or persist data.
      * @returns {Promise<Object>}
      */
     async fetchManifest() {
@@ -39,6 +56,8 @@ export class DataSource {
     }
 
     /**
+     * Fetches the raw JSON for a week chunk by sha/path.
+     * Used by the app to read or persist data.
      * @param {import("./model.js").ManifestChunk} chunk
      * @returns {Promise<string>}
      */
@@ -47,21 +66,34 @@ export class DataSource {
     }
 
     /**
-     * @param {Array<import("./store.js").WeekFile>} weekFiles
-     * @param {import("./model.js").Manifest} manifest
-     * @param {string} reason
+     * Loads the project definitions JSON payload.
+     * Used by the app to read or persist data.
+     * @returns {Promise<Object>}
+     */
+    async fetchProjects() {
+        throw new Error("Not implemented");
+    }
+
+    /**
+     * Writes a set of files with a commit message, returning shas when available.
+     * Used by the app to read or persist data.
+     * @param {SaveFile[]} files
+     * @param {string} message
      * @returns {Promise<SaveResult>}
      */
-    async saveWeeks(weekFiles, manifest, reason) {
+    async saveFiles(files, message) {
         throw new Error("Not implemented");
     }
 }
 
 /**
  * GitHub-backed data source.
+ * Uses the GitHub REST API for reads and commits.
  */
 export class GitHubDataSource extends DataSource {
     /**
+     * Creates a GitHub data source with an optional access token.
+     * Used by the app to read or persist data.
      * @param {RepoConfig} config
      * @param {string} token
      */
@@ -71,6 +103,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Updates the bearer token used for API calls.
+     * Used by the app to read or persist data.
      * @param {string} token
      * @returns {void}
      */
@@ -79,6 +113,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Builds standard headers for GitHub API requests.
+     * Used by the app to read or persist data.
      * @param {string} accept
      * @returns {HeadersInit}
      */
@@ -94,6 +130,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Fetches JSON data and throws on non-2xx responses.
+     * Used by the app to read or persist data.
      * @param {string} url
      * @returns {Promise<any>}
      */
@@ -106,6 +144,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Sends a JSON request and returns the parsed JSON response.
+     * Used by the app to read or persist data.
      * @param {string} url
      * @param {Object} options
      * @returns {Promise<any>}
@@ -126,6 +166,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Fetches raw text from the GitHub API.
+     * Used by the app to read or persist data.
      * @param {string} url
      * @returns {Promise<string>}
      */
@@ -138,6 +180,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Builds a contents API URL for a repository path.
+     * Used by the app to read or persist data.
      * @param {string} repoPath
      * @returns {string}
      */
@@ -148,6 +192,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Loads the manifest file from the repository.
+     * Used by the app to read or persist data.
      * @returns {Promise<Object>}
      */
     async fetchManifest() {
@@ -160,6 +206,8 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Fetches the raw chunk JSON text by blob sha.
+     * Used by the app to read or persist data.
      * @param {import("./model.js").ManifestChunk} chunk
      * @returns {Promise<string>}
      */
@@ -171,14 +219,33 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
-     * @param {Array<import("./store.js").WeekFile>} weekFiles
-     * @param {import("./model.js").Manifest} manifest
-     * @param {string} reason
+     * Loads the projects.json file from the repository.
+     * Used by the app to read or persist data.
+     * @returns {Promise<Object>}
+     */
+    async fetchProjects() {
+        const raw = await this.fetchRaw(this.buildContentsUrl("data/projects.json"));
+        try {
+            return JSON.parse(raw);
+        } catch {
+            throw new Error("Failed to parse projects.json");
+        }
+    }
+
+    /**
+     * Commits a set of files to the repository.
+     * Used by the app to read or persist data.
+     * @param {SaveFile[]} files
+     * @param {string} message
      * @returns {Promise<SaveResult>}
      */
-    async saveWeeks(weekFiles, manifest, reason) {
+    async saveFiles(files, message) {
         if (!this.token) {
             throw new Error("Not logged in.");
+        }
+        const inputFiles = Array.isArray(files) ? files.filter((file) => file && file.path) : [];
+        if (!inputFiles.length) {
+            throw new Error("Nothing to save.");
         }
         const baseUrl = `https://api.github.com/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repo)}`;
         const branch = String(this.config.ref || "").trim();
@@ -194,8 +261,8 @@ export class GitHubDataSource extends DataSource {
         const baseTreeSha = baseCommit?.tree?.sha;
         if (!/^[0-9a-f]{40}$/i.test(baseTreeSha || "")) throw new Error("Failed to resolve base tree.");
 
-        const updatedWeekFiles = [];
-        for (const file of weekFiles) {
+        const updatedFiles = [];
+        for (const file of inputFiles) {
             const blob = await this.fetchJsonRequest(`${baseUrl}/git/blobs`, {
                 method: "POST",
                 body: { content: file.content, encoding: "utf-8" },
@@ -207,22 +274,13 @@ export class GitHubDataSource extends DataSource {
             if (gitBlobSha1(file.content) !== sha) {
                 throw new Error(`Blob sha mismatch for ${file.path}`);
             }
-            updatedWeekFiles.push({ ...file, sha });
+            updatedFiles.push({ ...file, sha });
         }
-
-        const manifestContent = manifest.toJson();
-        const manifestBlob = await this.fetchJsonRequest(`${baseUrl}/git/blobs`, {
-            method: "POST",
-            body: { content: manifestContent, encoding: "utf-8" },
-        });
-        const manifestSha = manifestBlob?.sha;
-        if (!/^[0-9a-f]{40}$/i.test(manifestSha || "")) throw new Error("Failed to create manifest blob.");
 
         const tree = [];
-        for (const file of updatedWeekFiles) {
+        for (const file of updatedFiles) {
             tree.push({ path: file.path, mode: "100644", type: "blob", sha: file.sha });
         }
-        tree.push({ path: "data/index/entries-manifest.json", mode: "100644", type: "blob", sha: manifestSha });
 
         const treeRes = await this.fetchJsonRequest(`${baseUrl}/git/trees`, {
             method: "POST",
@@ -231,15 +289,11 @@ export class GitHubDataSource extends DataSource {
         const newTreeSha = treeRes?.sha;
         if (!/^[0-9a-f]{40}$/i.test(newTreeSha || "")) throw new Error("Failed to create tree.");
 
-        const labels = updatedWeekFiles
-            .map((file) => `${file.year}-W${String(file.week).padStart(2, "0")}`)
-            .sort((a, b) => a.localeCompare(b))
-            .join(", ");
-        const message = reason === "autosave" ? `Autosave time entries (${labels})` : `Edit time entries (${labels})`;
+        const messageText = String(message || "").trim() || "Update timetracking data";
 
         const commitRes = await this.fetchJsonRequest(`${baseUrl}/git/commits`, {
             method: "POST",
-            body: { message, tree: newTreeSha, parents: [baseCommitSha] },
+            body: { message: messageText, tree: newTreeSha, parents: [baseCommitSha] },
         });
         const newCommitSha = commitRes?.sha;
         if (!/^[0-9a-f]{40}$/i.test(newCommitSha || "")) throw new Error("Failed to create commit.");
@@ -249,10 +303,12 @@ export class GitHubDataSource extends DataSource {
             body: { sha: newCommitSha, force: false },
         });
 
-        return { weekFiles: updatedWeekFiles };
+        return { files: updatedFiles };
     }
 
     /**
+     * Checks repository and user access with the current token.
+     * Used by the app to read or persist data.
      * @returns {Promise<{repoInfo: any, userInfo: any}>}
      */
     async checkConnection() {
@@ -271,6 +327,7 @@ export class GitHubDataSource extends DataSource {
 
 /**
  * Local server data source.
+ * Talks to the lightweight Python server via HTTP.
  */
 export class LocalDataSource extends DataSource {
     constructor() {
@@ -278,6 +335,8 @@ export class LocalDataSource extends DataSource {
     }
 
     /**
+     * Builds a URL relative to the repo root for local fetches.
+     * Used by the app to read or persist data.
      * @param {string} repoPath
      * @returns {string}
      */
@@ -287,6 +346,8 @@ export class LocalDataSource extends DataSource {
     }
 
     /**
+     * Loads the local manifest file without caching.
+     * Used by the app to read or persist data.
      * @returns {Promise<Object>}
      */
     async fetchManifest() {
@@ -303,6 +364,8 @@ export class LocalDataSource extends DataSource {
     }
 
     /**
+     * Fetches the raw week JSON from the local filesystem server.
+     * Used by the app to read or persist data.
      * @param {import("./model.js").ManifestChunk} chunk
      * @returns {Promise<string>}
      */
@@ -313,15 +376,39 @@ export class LocalDataSource extends DataSource {
     }
 
     /**
-     * @param {Array<import("./store.js").WeekFile>} weekFiles
-     * @param {import("./model.js").Manifest} manifest
-     * @param {string} reason
+     * Loads the local projects.json file without caching.
+     * Used by the app to read or persist data.
+     * @returns {Promise<Object>}
+     */
+    async fetchProjects() {
+        const resp = await fetch(this.buildLocalUrl("data/projects.json"), { cache: "no-store" });
+        if (!resp.ok) {
+            throw new Error(`Local projects.json not found (${resp.status}).`);
+        }
+        const raw = await resp.text();
+        try {
+            return JSON.parse(raw);
+        } catch {
+            throw new Error("Failed to parse projects.json");
+        }
+    }
+
+    /**
+     * Writes files through the local /save endpoint.
+     * Used by the app to read or persist data.
+     * @param {SaveFile[]} files
+     * @param {string} message
      * @returns {Promise<SaveResult>}
      */
-    async saveWeeks(weekFiles, manifest, reason) {
+    async saveFiles(files, message) {
+        const inputFiles = Array.isArray(files) ? files.filter((file) => file && file.path) : [];
+        if (!inputFiles.length) {
+            throw new Error("Nothing to save.");
+        }
+
         const body = {
-            weeks: weekFiles.map((file) => ({ path: file.path, content: file.content })),
-            manifest: { path: "data/index/entries-manifest.json", content: manifest.toJson() },
+            files: inputFiles.map((file) => ({ path: file.path, content: file.content })),
+            message: String(message || "").trim(),
         };
 
         let resp;
@@ -344,6 +431,6 @@ export class LocalDataSource extends DataSource {
             throw new Error(typeof result?.error === "string" ? result.error : "Local save failed.");
         }
 
-        return { weekFiles };
+        return { files: inputFiles };
     }
 }

@@ -1,5 +1,6 @@
 /**
  * @typedef {Object} ChunkCacheEntry
+ * @description In-memory representation of a cached week payload.
  * @property {string} sha
  * @property {Array<Object>} entriesRaw
  */
@@ -12,6 +13,7 @@ const CHUNK_CACHE = {
 
 /**
  * Caches chunk payloads in memory + IndexedDB.
+ * Used to reduce load times and avoid repeated network fetches.
  */
 export class ChunkCache {
     constructor() {
@@ -22,6 +24,8 @@ export class ChunkCache {
     }
 
     /**
+     * Wraps an IndexedDB request in a Promise.
+     * Supports cache reuse across reloads and edits.
      * @param {IDBRequest} req
      * @returns {Promise<any>}
      */
@@ -33,6 +37,8 @@ export class ChunkCache {
     }
 
     /**
+     * Resolves when an IndexedDB transaction completes or fails.
+     * Supports cache reuse across reloads and edits.
      * @param {IDBTransaction} tx
      * @returns {Promise<void>}
      */
@@ -45,6 +51,8 @@ export class ChunkCache {
     }
 
     /**
+     * Detects quota-related IndexedDB errors to disable writes.
+     * Supports cache reuse across reloads and edits.
      * @param {unknown} err
      * @returns {boolean}
      */
@@ -56,6 +64,8 @@ export class ChunkCache {
     }
 
     /**
+     * Opens the IndexedDB database, creating stores on first use.
+     * Supports cache reuse across reloads and edits.
      * @returns {Promise<IDBDatabase | null>}
      */
     async openDb() {
@@ -89,6 +99,8 @@ export class ChunkCache {
     }
 
     /**
+     * Retrieves a cached entry from the in-memory map.
+     * Supports cache reuse across reloads and edits.
      * @param {string} key
      * @returns {ChunkCacheEntry | null}
      */
@@ -97,6 +109,8 @@ export class ChunkCache {
     }
 
     /**
+     * Stores a cache entry in the in-memory map.
+     * Supports cache reuse across reloads and edits.
      * @param {string} key
      * @param {ChunkCacheEntry} entry
      * @returns {void}
@@ -106,6 +120,8 @@ export class ChunkCache {
     }
 
     /**
+     * Clears only the in-memory cache.
+     * Supports cache reuse across reloads and edits.
      * @returns {void}
      */
     clearMemory() {
@@ -113,6 +129,8 @@ export class ChunkCache {
     }
 
     /**
+     * Reads a raw chunk payload from IndexedDB by sha.
+     * Supports cache reuse across reloads and edits.
      * @param {string} sha
      * @returns {Promise<string | null>}
      */
@@ -137,6 +155,8 @@ export class ChunkCache {
     }
 
     /**
+     * Persists a raw chunk payload to IndexedDB by sha.
+     * Supports cache reuse across reloads and edits.
      * @param {string} sha
      * @param {string} raw
      * @returns {Promise<void>}
@@ -161,6 +181,8 @@ export class ChunkCache {
     }
 
     /**
+     * Removes a chunk payload from IndexedDB by sha.
+     * Supports cache reuse across reloads and edits.
      * @param {string} sha
      * @returns {Promise<void>}
      */
@@ -182,6 +204,8 @@ export class ChunkCache {
     }
 
     /**
+     * Clears both memory cache and IndexedDB database.
+     * Supports cache reuse across reloads and edits.
      * @returns {void}
      */
     clearAll() {

@@ -1,5 +1,6 @@
 /**
  * @typedef {Object} AppConfig
+ * @description Repository settings and user preferences for the viewer.
  * @property {string} owner
  * @property {string} repo
  * @property {string} ref
@@ -21,6 +22,7 @@ const STORAGE_KEYS = {
 
 /**
  * Manages local/session storage for config and tokens.
+ * Keeps persistence concerns out of the main app controller.
  */
 export class ConfigService {
     constructor() {
@@ -28,6 +30,8 @@ export class ConfigService {
     }
 
     /**
+     * Loads persisted config, falling back to defaults when missing or invalid.
+     * Keeps storage logic separated from the UI.
      * @returns {AppConfig}
      */
     loadConfig() {
@@ -44,6 +48,8 @@ export class ConfigService {
     }
 
     /**
+     * Persists config overrides to local storage.
+     * Keeps storage logic separated from the UI.
      * @param {AppConfig} config
      * @returns {void}
      */
@@ -52,6 +58,8 @@ export class ConfigService {
     }
 
     /**
+     * Loads the stored token, respecting the remember flag.
+     * Keeps storage logic separated from the UI.
      * @returns {string}
      */
     loadToken() {
@@ -63,6 +71,8 @@ export class ConfigService {
     }
 
     /**
+     * Stores the token in either localStorage or sessionStorage.
+     * Keeps storage logic separated from the UI.
      * @param {string} token
      * @param {boolean} remember
      * @returns {void}
@@ -79,6 +89,8 @@ export class ConfigService {
     }
 
     /**
+     * Returns true when the token is stored in localStorage.
+     * Keeps storage logic separated from the UI.
      * @returns {boolean}
      */
     isTokenRemembered() {
@@ -86,6 +98,8 @@ export class ConfigService {
     }
 
     /**
+     * Clears all saved config and token state from storage.
+     * Keeps storage logic separated from the UI.
      * @returns {void}
      */
     clearSaved() {

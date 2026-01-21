@@ -41,6 +41,7 @@
         </div>
 
         <div class="topbar-actions">
+          <button id="projectsBtn" class="btn btn-secondary" type="button" hidden>Projects</button>
           <button id="reloadDataBtn" class="btn btn-secondary" type="button" hidden>Reload</button>
           <div id="authStatus" class="auth-status" aria-live="polite"></div>
           <button id="logoutBtn" class="btn btn-secondary" type="button" hidden>Logout</button>
@@ -169,7 +170,7 @@
         <div class="grid dialog-grid">
           <label>
             <span>Project</span>
-            <input id="entryProject" type="text" list="projectDatalist" spellcheck="false" />
+            <select id="entryProject"></select>
           </label>
           <label>
             <span>Tags (comma separated)</span>
@@ -179,10 +180,6 @@
             <span>Description</span>
             <textarea id="entryDesc" rows="4"></textarea>
           </label>
-          <label class="checkbox col-span-2">
-            <input id="entryBillable" type="checkbox" />
-            <span>Billable</span>
-          </label>
         </div>
 
         <div class="row dialog-actions">
@@ -191,8 +188,26 @@
         </div>
       </form>
     </dialog>
+    <dialog id="projectsDialog" class="dialog">
+      <form id="projectsForm" method="dialog" class="dialog-card">
+        <div class="dialog-head">
+          <div class="dialog-title">Projects</div>
+          <button id="projectsCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">✕</button>
+        </div>
 
-    <datalist id="projectDatalist"></datalist>
+        <div class="projects-toolbar row">
+          <div class="muted">Manage project defaults, colors, and archive state.</div>
+          <button id="addProjectBtn" class="btn btn-secondary" type="button">Add project</button>
+        </div>
+
+        <div id="projectsList" class="projects-list"></div>
+
+        <div class="row dialog-actions">
+          <button id="projectsOkBtn" class="btn" type="submit">Ok</button>
+          <button id="projectsCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="./app.js"></script>
   </body>

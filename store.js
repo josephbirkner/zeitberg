@@ -1,5 +1,5 @@
-import { addIsoDays, chunkKey, gitBlobSha1, hhmmToMinutes, isoWeekInfo, isoWeekStart, utcNowIso } from "./utils.js";
-import { Entry, Manifest, Week } from "./model.js";
+import { addIsoDays, chunkKey, gitBlobSha1, hashColorHex, hhmmToMinutes, isoWeekInfo, isoWeekStart, utcNowIso } from "./utils.js";
+import { Entry, Manifest, ProjectList, Week } from "./model.js";
 
 /**
  * @typedef {Object} WeekFile
@@ -48,9 +48,12 @@ const LONG_ENTRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Stores entries as Week objects and provides fast indexes.
+ * Centralizes all derived data structures used by the views.
  */
 export class EntryStore {
     /**
+     * Initializes the store with a timezone-aware TimeContext.
+     * Supports derived data and serialization steps.
      * @param {import("./utils.js").TimeContext} timeContext
      */
     constructor(timeContext) {
@@ -62,9 +65,13 @@ export class EntryStore {
         this.latestWeekStart = null;
         this.nextEntryId = 1;
         this.manifest = null;
+        this.projectList = null;
+        this.projectsByName = new Map();
     }
 
     /**
+     * Updates the TimeContext used for date math.
+     * Supports derived data and serialization steps.
      * @param {import("./utils.js").TimeContext} timeContext
      * @returns {void}
      */
@@ -73,9 +80,12 @@ export class EntryStore {
     }
 
     /**
+     * Clears entry data and caches, optionally preserving projects.
+     * Supports derived data and serialization steps.
+     * @param {{keepProjects?: boolean}} [options]
      * @returns {void}
      */
-    clear() {
+    clear(options = {}) {
         this.weeks.clear();
         this.entriesById.clear();
         this.weekSegmentsCache.clear();
@@ -83,9 +93,15 @@ export class EntryStore {
         this.latestWeekStart = null;
         this.nextEntryId = 1;
         this.manifest = null;
+        if (!options.keepProjects) {
+            this.projectList = null;
+            this.projectsByName.clear();
+        }
     }
 
     /**
+     * Sets the current manifest for later serialization.
+     * Supports derived data and serialization steps.
      * @param {Manifest | null} manifest
      * @returns {void}
      */
@@ -94,6 +110,8 @@ export class EntryStore {
     }
 
     /**
+     * Returns the manifest if it has been loaded.
+     * Supports derived data and serialization steps.
      * @returns {Manifest | null}
      */
     getManifest() {
@@ -101,6 +119,105 @@ export class EntryStore {
     }
 
     /**
+     * Stores the project list and rebuilds the name index.
+     * Supports derived data and serialization steps.
+     * @param {ProjectList | null} projectList
+     * @returns {void}
+     */
+    setProjectList(projectList) {
+        this.projectList = projectList;
+        this.projectsByName.clear();
+        if (!projectList) return;
+        for (const project of projectList.list()) {
+            if (!project || !project.name) continue;
+            this.projectsByName.set(project.name, project);
+        }
+    }
+
+    /**
+     * Returns the project list payload.
+     * Supports derived data and serialization steps.
+     * @returns {ProjectList | null}
+     */
+    getProjectList() {
+        return this.projectList;
+    }
+
+    /**
+     * Returns a copy of projects for UI consumption.
+     * Supports derived data and serialization steps.
+     * @returns {import("./model.js").Project[]}
+     */
+    getProjects() {
+        return this.projectList ? this.projectList.list() : [];
+    }
+
+    /**
+     * Looks up a project by its exact name.
+     * Supports derived data and serialization steps.
+     * @param {string} name
+     * @returns {import("./model.js").Project | null}
+     */
+    getProjectByName(name) {
+        return this.projectsByName.get(String(name || "")) || null;
+    }
+
+    /**
+     * Adds missing projects based on entry data.
+     * Uses deterministic colors and billable defaults from existing entries.
+     * @returns {{projectList: ProjectList | null, added: number}}
+     */
+    mergeProjectsFromEntries() {
+        const existing = this.projectList ? this.projectList.list() : [];
+        const existingByLower = new Map();
+        for (const project of existing) {
+            if (!project || !project.name) continue;
+            existingByLower.set(project.name.toLowerCase(), project);
+        }
+
+        const statsByLower = new Map();
+        for (const entry of this.entriesById.values()) {
+            const name = String(entry?.project || "").trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (!statsByLower.has(key)) {
+                statsByLower.set(key, { name, trueCount: 0, falseCount: 0 });
+            }
+            const stats = statsByLower.get(key);
+            if (!stats) continue;
+            if (entry.billable === true) stats.trueCount += 1;
+            if (entry.billable === false) stats.falseCount += 1;
+        }
+
+        const rawProjects = existing.map((project) => project.toRaw());
+        let added = 0;
+
+        for (const [key, stats] of statsByLower.entries()) {
+            if (existingByLower.has(key)) continue;
+            const votes = stats.trueCount + stats.falseCount;
+            const billable = votes ? stats.trueCount >= stats.falseCount : false;
+            rawProjects.push({
+                name: stats.name,
+                color: hashColorHex(stats.name),
+                billable,
+                archived: false,
+            });
+            added += 1;
+        }
+
+        if (!rawProjects.length || added === 0) {
+            return { projectList: this.projectList, added: 0 };
+        }
+
+        const generatedAt = this.projectList ? this.projectList.generated_at : "";
+        const projectList = ProjectList.fromRaw({ generated_at: generatedAt, projects: rawProjects });
+        this.setProjectList(projectList);
+        return { projectList, added };
+    }
+
+    /**
+     * Returns the manifest chunk list or an empty array.
+     * Supports derived data and serialization steps.
      * @returns {import("./model.js").ManifestChunk[]}
      */
     getChunks() {
@@ -108,6 +225,8 @@ export class EntryStore {
     }
 
     /**
+     * Returns a week object by weekStart key.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @returns {Week | null}
      */
@@ -116,6 +235,8 @@ export class EntryStore {
     }
 
     /**
+     * Returns all entries currently loaded into the store.
+     * Supports derived data and serialization steps.
      * @returns {import("./model.js").Entry[]}
      */
     getAllEntries() {
@@ -123,6 +244,8 @@ export class EntryStore {
     }
 
     /**
+     * Looks up an entry by id.
+     * Supports derived data and serialization steps.
      * @param {number} entryId
      * @returns {import("./model.js").Entry | null}
      */
@@ -131,6 +254,8 @@ export class EntryStore {
     }
 
     /**
+     * Returns the most recent weekStart seen in loaded data.
+     * Supports derived data and serialization steps.
      * @returns {string | null}
      */
     getLatestWeekStart() {
@@ -138,6 +263,8 @@ export class EntryStore {
     }
 
     /**
+     * Reserves and returns a new unique entry id.
+     * Supports derived data and serialization steps.
      * @returns {number}
      */
     reserveEntryId() {
@@ -147,6 +274,8 @@ export class EntryStore {
     }
 
     /**
+     * Recomputes the next id based on existing entries.
+     * Supports derived data and serialization steps.
      * @returns {void}
      */
     recomputeNextEntryId() {
@@ -159,6 +288,8 @@ export class EntryStore {
     }
 
     /**
+     * Updates the long-entry index used for cross-week lookups.
+     * Supports derived data and serialization steps.
      * @param {import("./model.js").Entry} entry
      * @returns {void}
      */
@@ -182,6 +313,8 @@ export class EntryStore {
     }
 
     /**
+     * Ensures the entry has a cached weekStart value.
+     * Supports derived data and serialization steps.
      * @param {import("./model.js").Entry} entry
      * @returns {string | null}
      */
@@ -197,6 +330,8 @@ export class EntryStore {
     }
 
     /**
+     * Replaces all entries for a week and updates indexes.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @param {import("./model.js").Entry[]} entries
      * @returns {void}
@@ -214,6 +349,8 @@ export class EntryStore {
     }
 
     /**
+     * Removes a week and clears its entries from indexes.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @returns {void}
      */
@@ -228,6 +365,8 @@ export class EntryStore {
     }
 
     /**
+     * Applies a raw snapshot of entries to rebuild a week.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @param {import("./model.js").EntryRaw[]} rawEntries
      * @returns {void}
@@ -248,6 +387,8 @@ export class EntryStore {
     }
 
     /**
+     * Returns raw entries for a week, sorted for serialization.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @returns {import("./model.js").EntryRaw[]}
      */
@@ -258,6 +399,8 @@ export class EntryStore {
     }
 
     /**
+     * Recomputes the latest weekStart from all loaded weeks.
+     * Supports derived data and serialization steps.
      * @returns {void}
      */
     recomputeLatestWeekStart() {
@@ -271,6 +414,8 @@ export class EntryStore {
     }
 
     /**
+     * Clears cached segment data for a week and its overflow week.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @returns {void}
      */
@@ -281,6 +426,8 @@ export class EntryStore {
     }
 
     /**
+     * Returns true if an entry intersects a time range in ms.
+     * Supports derived data and serialization steps.
      * @param {import("./model.js").Entry} entry
      * @param {number} startMs
      * @param {number} endMs
@@ -295,6 +442,8 @@ export class EntryStore {
     }
 
     /**
+     * Collects entries for a week plus surrounding overflow window.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @param {WeekBounds} bounds
      * @returns {{windowStartMs: number, windowEndMs: number, entries: import("./model.js").Entry[]}}
@@ -330,6 +479,8 @@ export class EntryStore {
     }
 
     /**
+     * Builds a per-day segment index used for week rendering.
+     * Supports derived data and serialization steps.
      * @param {Entry[]} entries
      * @param {string} weekStart
      * @returns {Map<string, Segment[]>}
@@ -377,6 +528,8 @@ export class EntryStore {
     }
 
     /**
+     * Returns the cached or computed segment index for a week.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @returns {Map<string, Segment[]>}
      */
@@ -393,6 +546,8 @@ export class EntryStore {
     }
 
     /**
+     * Builds a schedule of editable and overflow entries for the week.
+     * Supports derived data and serialization steps.
      * @param {string} weekStart
      * @returns {WeekSchedule}
      */
@@ -420,6 +575,8 @@ export class EntryStore {
     }
 
     /**
+     * Serializes selected weeks into file payloads with blob shas.
+     * Supports derived data and serialization steps.
      * @param {string[]} weekStarts
      * @param {string} [nowIso]
      * @returns {WeekFile[]}
@@ -449,6 +606,8 @@ export class EntryStore {
     }
 
     /**
+     * Builds an updated manifest from new week file metadata.
+     * Supports derived data and serialization steps.
      * @param {WeekFile[]} weekFiles
      * @param {string} [nowIso]
      * @returns {Manifest}

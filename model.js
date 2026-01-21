@@ -6,6 +6,7 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
  * @property {string} start
  * @property {string | null} [end]
  * @property {string | null} [project]
+ * @property {number | null} [project_id]
  * @property {string | null} [description]
  * @property {string | null} [client]
  * @property {string[] | null} [tags]
@@ -13,6 +14,21 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
  * @property {boolean | null} [is_running]
  * @property {number | null} [duration_seconds]
  * @property {string | null} [updated_at]
+ */
+
+/**
+ * @typedef {Object} ProjectRaw
+ * @property {string} name
+ * @property {string} color
+ * @property {boolean} billable
+ * @property {boolean} archived
+ */
+
+/**
+ * @typedef {Object} ProjectsFileRaw
+ * @property {string} [generated_at]
+ * @property {number} [schema_version]
+ * @property {ProjectRaw[]} [projects]
  */
 
 /**
@@ -27,9 +43,12 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
 
 /**
  * Represents a time entry with derived metadata.
+ * Wraps the raw entry payload with computed fields for fast access.
  */
 export class Entry {
     /**
+     * Creates an Entry from the raw payload and computes derived fields.
+     * Defines the data shape used by the store.
      * @param {EntryRaw} raw
      */
     constructor(raw) {
@@ -40,6 +59,8 @@ export class Entry {
     }
 
     /**
+     * Recomputes cached fields such as duration and search text.
+     * Defines the data shape used by the store.
      * @returns {void}
      */
     updateDerived() {
@@ -68,6 +89,8 @@ export class Entry {
     }
 
     /**
+     * Returns the ISO week start for the entry, caching the result.
+     * Defines the data shape used by the store.
      * @param {import("./utils.js").TimeContext} timeContext
      * @returns {string | null}
      */
@@ -84,6 +107,8 @@ export class Entry {
     }
 
     /**
+     * Sets a known week start on the entry to avoid recomputation.
+     * Defines the data shape used by the store.
      * @param {string} weekStart
      * @returns {void}
      */
@@ -92,6 +117,8 @@ export class Entry {
     }
 
     /**
+     * Returns a deep-cloned raw payload for safe editing.
+     * Defines the data shape used by the store.
      * @returns {EntryRaw}
      */
     toRaw() {
@@ -99,7 +126,9 @@ export class Entry {
     }
 
     /**
-     * @param {{project: string, description: string, tags: string[], billable: boolean, updatedAt: string}} details
+     * Applies edited metadata fields and refreshes derived fields.
+     * Defines the data shape used by the store.
+     * @param {{project: string, description: string, tags: string[], billable: boolean | null, updatedAt: string}} details
      * @returns {void}
      */
     applyDetails(details) {
@@ -112,6 +141,8 @@ export class Entry {
     }
 
     /**
+     * Updates the entry start/end times and duration using timezone-aware formatting.
+     * Defines the data shape used by the store.
      * @param {number} startMs
      * @param {number} endMs
      * @param {import("./utils.js").TimeContext} timeContext
@@ -135,9 +166,12 @@ export class Entry {
 
 /**
  * Represents a week containing entries.
+ * Stores entries in the ISO week that begins on the provided Monday.
  */
 export class Week {
     /**
+     * Initializes the week metadata based on a week start date.
+     * Defines the data shape used by the store.
      * @param {string} weekStart
      */
     constructor(weekStart) {
@@ -149,6 +183,8 @@ export class Week {
     }
 
     /**
+     * Adds an Entry to the week without sorting.
+     * Defines the data shape used by the store.
      * @param {Entry} entry
      * @returns {void}
      */
@@ -157,6 +193,8 @@ export class Week {
     }
 
     /**
+     * Finds an Entry by id within the week.
+     * Defines the data shape used by the store.
      * @param {number} entryId
      * @returns {Entry | null}
      */
@@ -170,6 +208,8 @@ export class Week {
     }
 
     /**
+     * Removes an Entry by id and returns true when removed.
+     * Defines the data shape used by the store.
      * @param {number} entryId
      * @returns {boolean}
      */
@@ -181,6 +221,8 @@ export class Week {
     }
 
     /**
+     * Sorts entries by start time, then id for stability.
+     * Defines the data shape used by the store.
      * @returns {void}
      */
     sortEntries() {
@@ -193,6 +235,8 @@ export class Week {
     }
 
     /**
+     * Returns sorted raw payloads for serialization.
+     * Defines the data shape used by the store.
      * @returns {EntryRaw[]}
      */
     snapshotRawEntries() {
@@ -202,6 +246,8 @@ export class Week {
     }
 
     /**
+     * Serializes the week into its JSON file payload.
+     * Defines the data shape used by the store.
      * @param {string} nowIso
      * @param {string} timezone
      * @returns {{payload: Object, content: string, size: number, entries: number}}
@@ -221,10 +267,140 @@ export class Week {
 }
 
 /**
+ * Represents a single project definition from projects.json.
+ * Used to assign colors and defaults to time entries.
+ */
+export class Project {
+    /**
+     * Normalizes raw project fields into a consistent shape.
+     * Defines the data shape used by the store.
+     * @param {ProjectRaw} raw
+     */
+    constructor(raw) {
+        const name = typeof raw?.name === "string" ? raw.name.trim() : "";
+        this.name = name;
+        this.color = typeof raw?.color === "string" ? raw.color.trim() : "";
+        this.billable = raw?.billable === true;
+        this.archived = raw?.archived === true;
+    }
+
+    /**
+     * Returns a JSON-ready project object.
+     * Defines the data shape used by the store.
+     * @returns {ProjectRaw}
+     */
+    toRaw() {
+        return {
+            name: this.name,
+            color: this.color,
+            billable: this.billable,
+            archived: this.archived,
+        };
+    }
+}
+
+/**
+ * Represents the projects.json payload with validation and serialization.
+ * Provides lookup helpers and consistent ordering.
+ */
+export class ProjectList {
+    /**
+     * Creates a project list with metadata.
+     * Defines the data shape used by the store.
+     * @param {Project[]} projects
+     * @param {string} generatedAt
+     */
+    constructor(projects, generatedAt) {
+        this.projects = projects;
+        this.generated_at = generatedAt;
+        this.schema_version = 1;
+    }
+
+    /**
+     * Builds a ProjectList from raw JSON data.
+     * Defines the data shape used by the store.
+     * @param {ProjectsFileRaw} raw
+     * @returns {ProjectList}
+     */
+    static fromRaw(raw) {
+        const list = [];
+        const seen = new Set();
+        const projects = Array.isArray(raw?.projects) ? raw.projects : [];
+
+        for (const item of projects) {
+            if (!item || typeof item !== "object") continue;
+            const name = typeof item.name === "string" ? item.name.trim() : "";
+            if (!name || seen.has(name.toLowerCase())) continue;
+            const rawColor = typeof item.color === "string" ? item.color.trim() : "";
+            const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : "";
+            list.push(
+                new Project({
+                    name,
+                    color,
+                    billable: item.billable === true,
+                    archived: item.archived === true,
+                }),
+            );
+            seen.add(name.toLowerCase());
+        }
+
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        const generatedAt = typeof raw?.generated_at === "string" ? raw.generated_at : "";
+        return new ProjectList(list, generatedAt);
+    }
+
+    /**
+     * Returns a project by name or null when missing.
+     * Defines the data shape used by the store.
+     * @param {string} name
+     * @returns {Project | null}
+     */
+    getProjectByName(name) {
+        const key = String(name || "");
+        if (!key) return null;
+        return this.projects.find((project) => project.name === key) || null;
+    }
+
+    /**
+     * Returns a shallow copy of the project array.
+     * Defines the data shape used by the store.
+     * @returns {Project[]}
+     */
+    list() {
+        return this.projects.slice();
+    }
+
+    /**
+     * Returns a JSON-serializable payload object.
+     * Defines the data shape used by the store.
+     * @returns {ProjectsFileRaw}
+     */
+    toObject() {
+        return {
+            generated_at: this.generated_at,
+            projects: this.projects.map((project) => project.toRaw()),
+            schema_version: this.schema_version,
+        };
+    }
+
+    /**
+     * Returns stable JSON output for projects.json.
+     * Defines the data shape used by the store.
+     * @returns {string}
+     */
+    toJson() {
+        return jsonStringifySorted(this.toObject());
+    }
+}
+
+/**
  * Represents the entries manifest.
+ * Stores week file metadata for loading and validation.
  */
 export class Manifest {
     /**
+     * Initializes a manifest with chunk metadata and totals.
+     * Defines the data shape used by the store.
      * @param {ManifestChunk[]} chunks
      * @param {string} timezone
      * @param {string} generatedAt
@@ -240,6 +416,8 @@ export class Manifest {
     }
 
     /**
+     * Parses a raw manifest JSON object and validates its entries.
+     * Defines the data shape used by the store.
      * @param {unknown} raw
      * @returns {Manifest}
      */
@@ -289,6 +467,8 @@ export class Manifest {
     }
 
     /**
+     * Builds a manifest from the provided chunk list.
+     * Defines the data shape used by the store.
      * @param {ManifestChunk[]} chunks
      * @param {string} timezone
      * @param {string} generatedAt
@@ -306,6 +486,8 @@ export class Manifest {
     }
 
     /**
+     * Returns a JSON-ready object for serialization.
+     * Defines the data shape used by the store.
      * @returns {Object}
      */
     toObject() {
@@ -320,6 +502,8 @@ export class Manifest {
     }
 
     /**
+     * Returns stable JSON output for entries-manifest.json.
+     * Defines the data shape used by the store.
      * @returns {string}
      */
     toJson() {

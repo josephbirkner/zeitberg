@@ -5,13 +5,292 @@ import { GitHubDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore } from "./store.js";
 import { SearchView } from "./search.view.js";
 import { WeekView } from "./week.view.js";
-import { getRequiredElement, getSourceMode, safeText, setVisible, isoWeekStartFromYearWeek, chunkKey, TimeContext } from "./utils.js";
-import { Manifest } from "./model.js";
+import {
+    chunkKey,
+    getRequiredElement,
+    getSourceMode,
+    isoWeekStartFromYearWeek,
+    safeText,
+    setVisible,
+    TimeContext,
+    utcNowIso,
+} from "./utils.js";
+import { Manifest, ProjectList } from "./model.js";
+
+/**
+ * @typedef {Object} ProjectDialogOptions
+ * @property {import("./store.js").EntryStore} store
+ * @property {import("./datasource.js").DataSource} dataSource
+ * @property {Object} elements
+ * @property {HTMLDialogElement} elements.dialog
+ * @property {HTMLFormElement} elements.form
+ * @property {HTMLButtonElement} elements.closeBtn
+ * @property {HTMLButtonElement} elements.cancelBtn
+ * @property {HTMLButtonElement} elements.addBtn
+ * @property {HTMLElement} elements.list
+ * @property {(message: string, timeout?: number) => void} onToast
+ * @property {(isBusy: boolean) => void} onBusy
+ * @property {(projectList: import("./model.js").ProjectList) => void} onProjectsSaved
+ */
+
+/**
+ * Manages the project list dialog UI and persistence.
+ * Reads and writes projects.json using the shared save pipeline.
+ */
+class ProjectDialog {
+    /**
+     * Captures references to UI elements and callback hooks.
+     * Keeps the main UI flow and data loading coordinated.
+     * @param {ProjectDialogOptions} options
+     */
+    constructor(options) {
+        this.store = options.store;
+        this.dataSource = options.dataSource;
+        this.dialog = options.elements.dialog;
+        this.form = options.elements.form;
+        this.closeBtn = options.elements.closeBtn;
+        this.cancelBtn = options.elements.cancelBtn;
+        this.addBtn = options.elements.addBtn;
+        this.listEl = options.elements.list;
+        this.onToast = options.onToast;
+        this.onBusy = options.onBusy;
+        this.onProjectsSaved = options.onProjectsSaved;
+
+        this.bindEvents();
+    }
+
+    /**
+     * Updates the data source after login or mode changes.
+     * Keeps the main UI flow and data loading coordinated.
+     * @param {import("./datasource.js").DataSource} dataSource
+     * @returns {void}
+     */
+    setDataSource(dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    /**
+     * Wires click and submit handlers for dialog controls.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {void}
+     */
+    bindEvents() {
+        this.closeBtn.addEventListener("click", () => this.close());
+        this.cancelBtn.addEventListener("click", () => this.close());
+        this.dialog.addEventListener("cancel", (ev) => {
+            ev.preventDefault();
+            this.close();
+        });
+        this.addBtn.addEventListener("click", () => this.addProjectRow());
+        this.form.addEventListener("submit", (ev) => this.handleSubmit(ev));
+    }
+
+    /**
+     * Populates the list and opens the modal dialog.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {void}
+     */
+    open() {
+        this.renderList();
+        if (!this.dialog.open) this.dialog.showModal();
+        queueMicrotask(() => {
+            const input = this.listEl.querySelector(".project-name");
+            if (input instanceof HTMLInputElement) input.focus();
+        });
+    }
+
+    /**
+     * Closes the dialog if it is currently open.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {void}
+     */
+    close() {
+        if (this.dialog.open) this.dialog.close();
+    }
+
+    /**
+     * Rebuilds the project rows from the store state.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {void}
+     */
+    renderList() {
+        this.listEl.innerHTML = "";
+        const projects = this.store.getProjects();
+        const sorted = projects.slice().sort((a, b) => {
+            if (a.archived !== b.archived) return a.archived ? 1 : -1;
+            return a.name.localeCompare(b.name);
+        });
+
+        const frag = document.createDocumentFragment();
+        for (const project of sorted) {
+            frag.append(this.buildProjectRow(project));
+        }
+        this.listEl.append(frag);
+    }
+
+    /**
+     * Adds a blank project row for quick creation.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {void}
+     */
+    addProjectRow() {
+        const row = this.buildProjectRow({
+            name: "",
+            color: "#7c5cff",
+            billable: false,
+            archived: false,
+        });
+        this.listEl.append(row);
+        const input = row.querySelector(".project-name");
+        if (input instanceof HTMLInputElement) input.focus();
+    }
+
+    /**
+     * Builds a project row DOM element with editable controls.
+     * Keeps the main UI flow and data loading coordinated.
+     * @param {{name: string, color: string, billable: boolean, archived: boolean}} project
+     * @returns {HTMLElement}
+     */
+    buildProjectRow(project) {
+        const row = document.createElement("div");
+        row.className = "project-row";
+
+        const nameWrap = document.createElement("label");
+        nameWrap.className = "project-field";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = "Name";
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.className = "project-name";
+        nameInput.value = project.name || "";
+        nameInput.spellcheck = false;
+        nameWrap.append(nameSpan, nameInput);
+
+        const colorWrap = document.createElement("label");
+        colorWrap.className = "project-field";
+        const colorSpan = document.createElement("span");
+        colorSpan.textContent = "Color";
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.className = "project-color";
+        colorInput.value = /^#[0-9a-f]{6}$/i.test(project.color || "") ? project.color : "#7c5cff";
+        colorWrap.append(colorSpan, colorInput);
+
+        const billableWrap = document.createElement("label");
+        billableWrap.className = "checkbox project-field";
+        const billableInput = document.createElement("input");
+        billableInput.type = "checkbox";
+        billableInput.className = "project-billable";
+        billableInput.checked = project.billable === true;
+        const billableSpan = document.createElement("span");
+        billableSpan.textContent = "Billable";
+        billableWrap.append(billableInput, billableSpan);
+
+        const archivedWrap = document.createElement("label");
+        archivedWrap.className = "checkbox project-field";
+        const archivedInput = document.createElement("input");
+        archivedInput.type = "checkbox";
+        archivedInput.className = "project-archived";
+        archivedInput.checked = project.archived === true;
+        const archivedSpan = document.createElement("span");
+        archivedSpan.textContent = "Archived";
+        archivedWrap.append(archivedInput, archivedSpan);
+
+        row.append(nameWrap, colorWrap, billableWrap, archivedWrap);
+        return row;
+    }
+
+    /**
+     * Reads and validates project rows from the dialog.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {{projects: Array<{name: string, color: string, billable: boolean, archived: boolean}>, error: string | null}}
+     */
+    collectProjects() {
+        const rows = Array.from(this.listEl.querySelectorAll(".project-row"));
+        const projects = [];
+        const seen = new Set();
+
+        for (const row of rows) {
+            const nameInput = row.querySelector(".project-name");
+            const colorInput = row.querySelector(".project-color");
+            const billableInput = row.querySelector(".project-billable");
+            const archivedInput = row.querySelector(".project-archived");
+            if (!(nameInput instanceof HTMLInputElement)) continue;
+            if (!(colorInput instanceof HTMLInputElement)) continue;
+            if (!(billableInput instanceof HTMLInputElement)) continue;
+            if (!(archivedInput instanceof HTMLInputElement)) continue;
+
+            const name = nameInput.value.trim();
+            if (!name) {
+                return { projects: [], error: "Every project needs a name." };
+            }
+            const key = name.toLowerCase();
+            if (seen.has(key)) {
+                return { projects: [], error: `Duplicate project name: ${name}` };
+            }
+            seen.add(key);
+
+            const color = colorInput.value.trim();
+            if (!/^#[0-9a-f]{6}$/i.test(color)) {
+                return { projects: [], error: `Invalid color for ${name}.` };
+            }
+
+            projects.push({
+                name,
+                color,
+                billable: billableInput.checked,
+                archived: archivedInput.checked,
+            });
+        }
+
+        return { projects, error: null };
+    }
+
+    /**
+     * Validates input and saves projects.json through the data source.
+     * Keeps the main UI flow and data loading coordinated.
+     * @param {Event} ev
+     * @returns {Promise<void>}
+     */
+    async handleSubmit(ev) {
+        ev.preventDefault();
+        const { projects, error } = this.collectProjects();
+        if (error) {
+            this.onToast(error, 4000);
+            return;
+        }
+
+        const payload = {
+            generated_at: utcNowIso(),
+            projects,
+            schema_version: 1,
+        };
+        const projectList = ProjectList.fromRaw(payload);
+        const content = projectList.toJson();
+
+        this.onBusy(true);
+        try {
+            await this.dataSource.saveFiles([{ path: "data/projects.json", content }], "Update projects");
+            this.store.setProjectList(projectList);
+            this.onProjectsSaved(projectList);
+            this.close();
+        } catch (err) {
+            this.onToast(String(err), 5000);
+        } finally {
+            this.onBusy(false);
+        }
+    }
+}
 
 /**
  * Main application controller.
+ * Coordinates data loading, UI wiring, and view lifecycle.
  */
 class App {
+    /**
+     * Initializes state, data sources, and UI element references.
+     * Does not perform network requests until start() is called.
+     */
     constructor() {
         this.configService = new ConfigService();
         this.config = this.configService.loadConfig();
@@ -36,6 +315,7 @@ class App {
         this.tabWeekBtn = getRequiredElement("tabWeek");
         this.tabSearchBtn = getRequiredElement("tabSearch");
         this.weekControlsEl = getRequiredElement("weekControls");
+        this.projectsBtn = getRequiredElement("projectsBtn");
 
         this.appSection = getRequiredElement("appSection");
         this.repoLabelEl = getRequiredElement("repoLabel");
@@ -58,11 +338,16 @@ class App {
         this.entryCloseBtn = getRequiredElement("entryCloseBtn");
         this.entryCancelBtn = getRequiredElement("entryCancelBtn");
         this.entryMetaEl = getRequiredElement("entryMeta");
-        this.entryProjectInput = getRequiredElement("entryProject");
+        this.entryProjectSelect = getRequiredElement("entryProject");
         this.entryTagsInput = getRequiredElement("entryTags");
         this.entryDescInput = getRequiredElement("entryDesc");
-        this.entryBillableInput = getRequiredElement("entryBillable");
-        this.projectDatalistEl = getRequiredElement("projectDatalist");
+        this.projectsDialog = getRequiredElement("projectsDialog");
+        this.projectsForm = getRequiredElement("projectsForm");
+        this.projectsCloseBtn = getRequiredElement("projectsCloseBtn");
+        this.projectsCancelBtn = getRequiredElement("projectsCancelBtn");
+        this.projectsOkBtn = getRequiredElement("projectsOkBtn");
+        this.addProjectBtn = getRequiredElement("addProjectBtn");
+        this.projectsList = getRequiredElement("projectsList");
 
         this.searchViewEl = getRequiredElement("searchView");
         this.searchInput = getRequiredElement("searchInput");
@@ -101,10 +386,9 @@ class App {
                 entryCloseBtn: this.entryCloseBtn,
                 entryCancelBtn: this.entryCancelBtn,
                 entryMeta: this.entryMetaEl,
-                entryProject: this.entryProjectInput,
+                entryProject: this.entryProjectSelect,
                 entryTags: this.entryTagsInput,
                 entryDesc: this.entryDescInput,
-                entryBillable: this.entryBillableInput,
             },
             onToast: (message, timeout) => this.toast(message, timeout),
             onBusy: (busy) => this.setBusy(busy),
@@ -125,7 +409,6 @@ class App {
                 sortSelect: this.sortSelect,
                 stats: this.statsEl,
                 entriesTbody: this.entriesTbody,
-                projectDatalist: this.projectDatalistEl,
             },
             onJumpToEntry: (entry) => {
                 if (this.viewTabsEl.hidden) return;
@@ -134,11 +417,29 @@ class App {
             },
         });
 
+        this.projectDialog = new ProjectDialog({
+            store: this.store,
+            dataSource: this.dataSource,
+            elements: {
+                dialog: this.projectsDialog,
+                form: this.projectsForm,
+                closeBtn: this.projectsCloseBtn,
+                cancelBtn: this.projectsCancelBtn,
+                addBtn: this.addProjectBtn,
+                list: this.projectsList,
+            },
+            onToast: (message, timeout) => this.toast(message, timeout),
+            onBusy: (busy) => this.setBusy(busy),
+            onProjectsSaved: (projectList) => this.handleProjectsSaved(projectList),
+        });
+
         this.toastTimer = 0;
         this.resizeRaf = 0;
     }
 
     /**
+     * Boots the application and triggers the initial load flow.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
      */
     start() {
@@ -151,6 +452,7 @@ class App {
         this.clearSavedBtn.addEventListener("click", () => this.handleClearSaved());
         this.tabWeekBtn.addEventListener("click", () => this.setTab("week"));
         this.tabSearchBtn.addEventListener("click", () => this.setTab("search"));
+        this.projectsBtn.addEventListener("click", () => this.projectDialog.open());
         this.logoutBtn.addEventListener("click", () => this.logout());
         this.reloadDataBtn.addEventListener("click", () => this.reloadData());
 
@@ -163,6 +465,7 @@ class App {
             this.setAuthStatus("Local mode");
             setVisible(this.logoutBtn, false);
             setVisible(this.reloadDataBtn, true);
+            setVisible(this.projectsBtn, true);
             setVisible(this.loginSection, false);
             setVisible(this.appSection, true);
             setVisible(this.viewTabsEl, true);
@@ -176,6 +479,7 @@ class App {
         setVisible(this.appSection, false);
         setVisible(this.logoutBtn, false);
         setVisible(this.reloadDataBtn, false);
+        setVisible(this.projectsBtn, false);
         setVisible(this.viewTabsEl, false);
         setVisible(this.weekControlsEl, false);
         this.setAppMode(false);
@@ -191,6 +495,8 @@ class App {
     }
 
     /**
+     * Handles global keyboard shortcuts and delegates to WeekView.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {KeyboardEvent} ev
      * @returns {void}
      */
@@ -234,6 +540,8 @@ class App {
     }
 
     /**
+     * Debounces resize handling for the week view.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
      */
     handleResize() {
@@ -245,6 +553,8 @@ class App {
     }
 
     /**
+     * Validates login input and starts the GitHub connection flow.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {Event} ev
      * @returns {void}
      */
@@ -277,6 +587,8 @@ class App {
     }
 
     /**
+     * Clears persisted config/token values and resets local state.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
      */
     handleClearSaved() {
@@ -293,6 +605,8 @@ class App {
     }
 
     /**
+     * Updates the authentication status display.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {string} text
      * @returns {void}
      */
@@ -301,6 +615,8 @@ class App {
     }
 
     /**
+     * Writes an error message into the provided element.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {HTMLElement} el
      * @param {string} message
      * @returns {void}
@@ -316,6 +632,8 @@ class App {
     }
 
     /**
+     * Shows a temporary toast-style error message.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {string} message
      * @param {number} timeoutMs
      * @returns {void}
@@ -330,12 +648,15 @@ class App {
     }
 
     /**
+     * Enables or disables UI controls during network work.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {boolean} isBusy
      * @returns {void}
      */
     setBusy(isBusy) {
         this.logoutBtn.disabled = isBusy;
         this.reloadDataBtn.disabled = isBusy;
+        this.projectsBtn.disabled = isBusy;
         this.tabWeekBtn.disabled = isBusy;
         this.tabSearchBtn.disabled = isBusy;
         this.prevWeekBtn.disabled = isBusy;
@@ -348,9 +669,15 @@ class App {
         this.toDateInput.disabled = isBusy;
         this.maxRowsInput.disabled = isBusy;
         this.sortSelect.disabled = isBusy;
+        this.projectsCloseBtn.disabled = isBusy;
+        this.projectsCancelBtn.disabled = isBusy;
+        this.projectsOkBtn.disabled = isBusy;
+        this.addProjectBtn.disabled = isBusy;
     }
 
     /**
+     * Updates the progress bar and label for load operations.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {number} loaded
      * @param {number} total
      * @param {string} label
@@ -364,6 +691,8 @@ class App {
     }
 
     /**
+     * Switches between Week and Search tabs.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {"week" | "search"} tab
      * @returns {void}
      */
@@ -378,6 +707,8 @@ class App {
     }
 
     /**
+     * Toggles app-mode layout behavior on the document.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {boolean} isEnabled
      * @returns {void}
      */
@@ -388,6 +719,8 @@ class App {
     }
 
     /**
+     * Marks search data dirty and refreshes when visible.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
      */
     markSearchDirty() {
@@ -398,6 +731,19 @@ class App {
     }
 
     /**
+     * Applies a newly saved project list to the UI.
+     * Keeps the main UI flow and data loading coordinated.
+     * @param {ProjectList} projectList
+     * @returns {void}
+     */
+    handleProjectsSaved(projectList) {
+        this.weekView.setProjects(projectList);
+        this.markSearchDirty();
+    }
+
+    /**
+     * Updates the footer badge with repository and manifest info.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
      */
     refreshRepoLabel() {
@@ -422,6 +768,8 @@ class App {
     }
 
     /**
+     * Loads the entries manifest from the data source.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {Promise<void>}
      */
     async fetchManifest() {
@@ -433,6 +781,29 @@ class App {
     }
 
     /**
+     * Loads projects.json and updates the project list.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {Promise<void>}
+     */
+    async fetchProjects() {
+        this.setProgress(0, 1, this.isLocalMode ? "Loading projects (local)…" : "Loading projects…");
+        try {
+            const raw = await this.dataSource.fetchProjects();
+            const projectList = ProjectList.fromRaw(raw || {});
+            this.store.setProjectList(projectList);
+            this.weekView.setProjects(projectList);
+        } catch (err) {
+            const emptyList = ProjectList.fromRaw({ projects: [], generated_at: "" });
+            this.store.setProjectList(emptyList);
+            this.weekView.setProjects(emptyList);
+            this.toast(`Projects not loaded: ${safeText(err)}`, 5000);
+        }
+        this.markSearchDirty();
+    }
+
+    /**
+     * Loads all week chunks and rebuilds store indexes.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {Promise<void>}
      */
     async loadAllChunks() {
@@ -457,7 +828,7 @@ class App {
 
         this.setProgress(0, chunkFiles.length, `Loading 0/${chunkFiles.length}…`);
 
-        this.store.clear();
+        this.store.clear({ keepProjects: true });
         this.store.setManifest(manifest);
 
         let cacheHits = 0;
@@ -504,6 +875,11 @@ class App {
         this.setProgress(chunkFiles.length, chunkFiles.length, `Loaded ${chunkFiles.length}/${chunkFiles.length} week files${cacheSummary}`);
 
         this.store.recomputeNextEntryId();
+        const seedResult = this.store.mergeProjectsFromEntries();
+        if (seedResult.added > 0) {
+            this.toast(`Seeded ${seedResult.added} project(s) from entries. Open Projects to review and save.`, 5000);
+        }
+
         const latest = this.store.getLatestWeekStart();
         this.state.setLatestWeekStart(latest);
         if (!this.state.weekStart && latest) {
@@ -519,6 +895,8 @@ class App {
     }
 
     /**
+     * Reloads manifest, projects, and all chunk data.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {Promise<void>}
      */
     async reloadData() {
@@ -529,6 +907,7 @@ class App {
         this.weekView.reset();
         try {
             await this.fetchManifest();
+            await this.fetchProjects();
             await this.loadAllChunks();
         } catch (err) {
             this.setError(this.dataErrorEl, safeText(err));
@@ -538,6 +917,8 @@ class App {
     }
 
     /**
+     * Connects to GitHub using the provided token and loads data.
+     * Keeps the main UI flow and data loading coordinated.
      * @param {string} token
      * @returns {Promise<void>}
      */
@@ -546,6 +927,7 @@ class App {
         this.state.setToken(token);
         this.dataSource = new GitHubDataSource(this.config, token);
         this.weekView.setDataSource(this.dataSource);
+        this.projectDialog.setDataSource(this.dataSource);
         this.setAuthStatus("Connecting…");
         this.setBusy(true);
         try {
@@ -555,6 +937,7 @@ class App {
             this.setAuthStatus(userInfo?.login ? `Logged in as ${userInfo.login}` : `Connected to ${repoLabel}`);
             setVisible(this.logoutBtn, true);
             setVisible(this.reloadDataBtn, true);
+            setVisible(this.projectsBtn, true);
             setVisible(this.loginSection, false);
             setVisible(this.appSection, true);
             setVisible(this.viewTabsEl, true);
@@ -571,6 +954,8 @@ class App {
     }
 
     /**
+     * Clears user session state and resets the UI to login.
+     * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
      */
     logout() {
@@ -586,10 +971,12 @@ class App {
         this.setProgress(0, 1, "");
         this.setAuthStatus("Not logged in");
         this.repoLabelEl.textContent = "";
+        this.projectDialog.close();
         setVisible(this.viewTabsEl, false);
         setVisible(this.weekControlsEl, false);
         setVisible(this.reloadDataBtn, false);
         setVisible(this.logoutBtn, false);
+        setVisible(this.projectsBtn, false);
         setVisible(this.appSection, false);
         setVisible(this.loginSection, true);
         this.setAppMode(false);

@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-MANIFEST_PATH = REPO_ROOT / "data" / "index" / "entries-manifest.json"
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -26,6 +25,16 @@ def _safe_repo_path(path_text: str) -> Path:
     except ValueError as exc:
         raise ValueError("Invalid path") from exc
     return target
+
+
+def _is_allowed_path(path_text: str) -> bool:
+    if path_text == "data/index/entries-manifest.json":
+        return True
+    if path_text == "data/projects.json":
+        return True
+    if path_text.startswith("data/entries/") and path_text.endswith(".json"):
+        return True
+    return False
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -70,34 +79,27 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(req, dict):
             return self._send_json(400, {"ok": False, "error": "Request JSON must be an object"})
 
-        weeks = req.get("weeks")
-        if not isinstance(weeks, list):
-            return self._send_json(400, {"ok": False, "error": "'weeks' must be an array"})
+        files = req.get("files")
+        if not isinstance(files, list):
+            weeks = req.get("weeks")
+            manifest = req.get("manifest")
+            if isinstance(weeks, list) and isinstance(manifest, dict):
+                files = weeks + [manifest]
+            else:
+                return self._send_json(400, {"ok": False, "error": "'files' must be an array"})
 
-        for item in weeks:
+        for item in files:
             if not isinstance(item, dict):
                 continue
             path_text = str(item.get("path") or "")
             content = item.get("content")
-            if not path_text.startswith("data/entries/") or not path_text.endswith(".json"):
-                return self._send_json(400, {"ok": False, "error": f"Invalid week path: {path_text}"})
+            if not _is_allowed_path(path_text):
+                return self._send_json(400, {"ok": False, "error": f"Invalid path: {path_text}"})
             if not isinstance(content, str):
-                return self._send_json(400, {"ok": False, "error": f"Week {path_text}: 'content' must be a string"})
+                return self._send_json(400, {"ok": False, "error": f"{path_text}: 'content' must be a string"})
 
             out_path = _safe_repo_path(path_text)
             _write_text(out_path, content)
-
-        manifest = req.get("manifest")
-        if not isinstance(manifest, dict):
-            return self._send_json(400, {"ok": False, "error": "'manifest' must be an object"})
-        manifest_path = str(manifest.get("path") or "")
-        manifest_content = manifest.get("content")
-        if manifest_path != "data/index/entries-manifest.json":
-            return self._send_json(400, {"ok": False, "error": "Invalid manifest path"})
-        if not isinstance(manifest_content, str):
-            return self._send_json(400, {"ok": False, "error": "'manifest.content' must be a string"})
-
-        _write_text(MANIFEST_PATH, manifest_content)
         return self._send_json(200, {"ok": True})
 
 

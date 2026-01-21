@@ -14,15 +14,17 @@ import { formatDuration, safeText, setVisible } from "./utils.js";
  * @property {HTMLSelectElement} elements.sortSelect
  * @property {HTMLElement} elements.stats
  * @property {HTMLTableSectionElement} elements.entriesTbody
- * @property {HTMLDataListElement} elements.projectDatalist
  * @property {(entry: import("./model.js").Entry) => void} onJumpToEntry
  */
 
 /**
  * Renders the search/browse table.
+ * Provides filtering, sorting, and click-through to the week view.
  */
 export class SearchView {
     /**
+     * Captures references to inputs and callbacks for filtering.
+     * Keeps filtering behavior aligned with current data.
      * @param {SearchViewOptions} options
      */
     constructor(options) {
@@ -38,8 +40,6 @@ export class SearchView {
         this.sortSelect = options.elements.sortSelect;
         this.statsEl = options.elements.stats;
         this.entriesTbody = options.elements.entriesTbody;
-        this.projectDatalistEl = options.elements.projectDatalist;
-
         this.onJumpToEntry = options.onJumpToEntry;
 
         this.allEntries = [];
@@ -49,6 +49,8 @@ export class SearchView {
     }
 
     /**
+     * Registers input listeners for live filtering.
+     * Keeps filtering behavior aligned with current data.
      * @returns {void}
      */
     bindEvents() {
@@ -60,6 +62,8 @@ export class SearchView {
     }
 
     /**
+     * Shows or hides the view and refreshes results when active.
+     * Keeps filtering behavior aligned with current data.
      * @param {boolean} isActive
      * @returns {void}
      */
@@ -71,6 +75,8 @@ export class SearchView {
     }
 
     /**
+     * Clears UI state after logout or reload.
+     * Keeps filtering behavior aligned with current data.
      * @returns {void}
      */
     reset() {
@@ -78,11 +84,12 @@ export class SearchView {
         this.allEntries = [];
         this.entriesTbody.innerHTML = "";
         this.projectSelect.innerHTML = "";
-        this.projectDatalistEl.innerHTML = "";
         this.statsEl.textContent = "";
     }
 
     /**
+     * Marks cached results as dirty so filters rerun.
+     * Keeps filtering behavior aligned with current data.
      * @returns {void}
      */
     markDirty() {
@@ -90,15 +97,20 @@ export class SearchView {
     }
 
     /**
+     * Rebuilds the project filter options from store data.
+     * Keeps filtering behavior aligned with current data.
      * @param {import("./model.js").Entry[]} entries
      * @returns {void}
      */
     renderProjects(entries) {
-        const projects = new Set();
+        const knownProjects = this.store.getProjects();
+        const knownByName = new Set(knownProjects.map((project) => project.name));
+        const unknown = new Set();
         for (const entry of entries) {
-            if (entry.project) projects.add(entry.project);
+            if (entry.project && !knownByName.has(entry.project)) {
+                unknown.add(entry.project);
+            }
         }
-        const sorted = Array.from(projects).sort((a, b) => a.localeCompare(b));
 
         const current = this.projectSelect.value;
         this.projectSelect.innerHTML = "";
@@ -107,24 +119,51 @@ export class SearchView {
         allOpt.textContent = "All projects";
         this.projectSelect.append(allOpt);
 
-        for (const project of sorted) {
+        const noneOpt = document.createElement("option");
+        noneOpt.value = "__none__";
+        noneOpt.textContent = "No project";
+        this.projectSelect.append(noneOpt);
+
+        const activeGroup = document.createElement("optgroup");
+        activeGroup.label = "Active projects";
+        const archivedGroup = document.createElement("optgroup");
+        archivedGroup.label = "Archived projects";
+        const sortedKnown = knownProjects.slice().sort((a, b) => a.name.localeCompare(b.name));
+        for (const project of sortedKnown) {
             const opt = document.createElement("option");
-            opt.value = project;
-            opt.textContent = project;
-            this.projectSelect.append(opt);
+            opt.value = project.name;
+            opt.textContent = project.archived ? `${project.name} (archived)` : project.name;
+            if (project.archived) {
+                archivedGroup.append(opt);
+            } else {
+                activeGroup.append(opt);
+            }
+        }
+        if (activeGroup.children.length) this.projectSelect.append(activeGroup);
+        if (archivedGroup.children.length) this.projectSelect.append(archivedGroup);
+
+        if (unknown.size) {
+            const unknownGroup = document.createElement("optgroup");
+            unknownGroup.label = "Unlisted";
+            const sortedUnknown = Array.from(unknown).sort((a, b) => a.localeCompare(b));
+            for (const project of sortedUnknown) {
+                const opt = document.createElement("option");
+                opt.value = project;
+                opt.textContent = `${project} (unlisted)`;
+                unknownGroup.append(opt);
+            }
+            this.projectSelect.append(unknownGroup);
         }
 
-        if (current) this.projectSelect.value = current;
-
-        this.projectDatalistEl.innerHTML = "";
-        for (const project of sorted) {
-            const opt = document.createElement("option");
-            opt.value = project;
-            this.projectDatalistEl.append(opt);
+        this.projectSelect.value = current;
+        if (!this.projectSelect.value && current !== "") {
+            this.projectSelect.value = "";
         }
     }
 
     /**
+     * Applies filters, updates stats, and renders the table.
+     * Keeps filtering behavior aligned with current data.
      * @returns {void}
      */
     applyFiltersAndRender() {
@@ -144,7 +183,11 @@ export class SearchView {
         const qTokens = query ? query.split(/\s+/).filter(Boolean) : [];
 
         let entries = this.allEntries;
-        if (project) entries = entries.filter((entry) => entry.project === project);
+        if (project === "__none__") {
+            entries = entries.filter((entry) => !entry.project);
+        } else if (project) {
+            entries = entries.filter((entry) => entry.project === project);
+        }
         if (from) {
             entries = entries.filter((entry) => this.timeContext.formatDate(entry.startDate) >= from);
         }
@@ -189,7 +232,7 @@ export class SearchView {
             tdDur.textContent = formatDuration(entry.durationSeconds);
 
             const tdProject = document.createElement("td");
-            tdProject.textContent = safeText(entry.project);
+            tdProject.textContent = entry.project ? entry.project : "No project";
             const tdDesc = document.createElement("td");
             tdDesc.textContent = safeText(entry.description);
             const tdTags = document.createElement("td");

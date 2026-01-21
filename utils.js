@@ -1,5 +1,6 @@
 /**
  * Safely returns a required element by id.
+ * Throws immediately when the element is missing to avoid silent null usage.
  * @param {string} id
  * @returns {HTMLElement}
  */
@@ -13,6 +14,7 @@ export function getRequiredElement(id) {
 
 /**
  * Toggles element visibility using the hidden attribute.
+ * Keeps layout logic centralized and avoids direct style mutations.
  * @param {HTMLElement} el
  * @param {boolean} isVisible
  * @returns {void}
@@ -23,6 +25,7 @@ export function setVisible(el, isVisible) {
 
 /**
  * Converts a value to a string, preserving empty strings.
+ * Normalizes nullish values to an empty string for text content.
  * @param {unknown} value
  * @returns {string}
  */
@@ -35,6 +38,7 @@ export function safeText(value) {
 
 /**
  * Formats a duration in seconds as H:MM.
+ * Returns an em dash when the input is not a valid non-negative number.
  * @param {number} seconds
  * @returns {string}
  */
@@ -50,7 +54,104 @@ export function formatDuration(seconds) {
 }
 
 /**
+ * Parses a hex color string (#RRGGBB) into RGB components.
+ * Returns null when the input is missing or not a valid hex color.
+ * @param {string} value
+ * @returns {{r: number, g: number, b: number} | null}
+ */
+export function parseHexColor(value) {
+    const text = String(value || "").trim();
+    const match = /^#([0-9a-f]{6})$/i.exec(text);
+    if (!match) return null;
+    const intVal = Number.parseInt(match[1], 16);
+    return {
+        r: (intVal >> 16) & 0xff,
+        g: (intVal >> 8) & 0xff,
+        b: intVal & 0xff,
+    };
+}
+
+/**
+ * Generates a deterministic hex color for a given key.
+ * Used to seed project colors from existing entry names.
+ * @param {string} value
+ * @returns {string}
+ */
+export function hashColorHex(value) {
+    const text = String(value || "").trim();
+    if (!text) return "#7c5cff";
+
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    const hue = Math.abs(hash) % 360;
+    const rgb = hslToRgb(hue, 0.82, 0.55);
+    return `#${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`;
+}
+
+/**
+ * Converts an HSL color to RGB components.
+ * Expects hue in degrees and saturation/lightness in 0..1.
+ * @param {number} h
+ * @param {number} s
+ * @param {number} l
+ * @returns {{r: number, g: number, b: number}}
+ */
+function hslToRgb(h, s, l) {
+    const hue = ((Number(h) % 360) + 360) % 360;
+    const sat = Math.max(0, Math.min(1, Number(s)));
+    const lig = Math.max(0, Math.min(1, Number(l)));
+    const c = (1 - Math.abs(2 * lig - 1)) * sat;
+    const hh = hue / 60;
+    const x = c * (1 - Math.abs((hh % 2) - 1));
+
+    let r1 = 0;
+    let g1 = 0;
+    let b1 = 0;
+    if (hh >= 0 && hh < 1) {
+        r1 = c;
+        g1 = x;
+    } else if (hh >= 1 && hh < 2) {
+        r1 = x;
+        g1 = c;
+    } else if (hh >= 2 && hh < 3) {
+        g1 = c;
+        b1 = x;
+    } else if (hh >= 3 && hh < 4) {
+        g1 = x;
+        b1 = c;
+    } else if (hh >= 4 && hh < 5) {
+        r1 = x;
+        b1 = c;
+    } else {
+        r1 = c;
+        b1 = x;
+    }
+
+    const m = lig - c / 2;
+    return {
+        r: Math.round((r1 + m) * 255),
+        g: Math.round((g1 + m) * 255),
+        b: Math.round((b1 + m) * 255),
+    };
+}
+
+/**
+ * Formats an 8-bit value as a two-character hex string.
+ * Keeps output stable for color serialization.
+ * @param {number} value
+ * @returns {string}
+ */
+function toHex(value) {
+    const clamped = Math.max(0, Math.min(255, Number(value) || 0));
+    return clamped.toString(16).padStart(2, "0");
+}
+
+/**
  * Returns true when the target is a form control or editable element.
+ * Used to avoid hijacking keyboard shortcuts while typing in inputs.
  * @param {EventTarget | null} target
  * @returns {boolean}
  */
@@ -63,6 +164,7 @@ export function isEditableTarget(target) {
 
 /**
  * Deep clones a JSON-compatible value.
+ * Falls back to JSON stringify/parse when structuredClone is unavailable.
  * @param {unknown} value
  * @returns {any}
  */
@@ -75,6 +177,7 @@ export function cloneJson(value) {
 
 /**
  * Returns an ISO timestamp (UTC) without milliseconds.
+ * Used for deterministic metadata in generated JSON files.
  * @returns {string}
  */
 export function utcNowIso() {
@@ -83,6 +186,7 @@ export function utcNowIso() {
 
 /**
  * Sorts object keys recursively for deterministic JSON output.
+ * Leaves arrays in place while ensuring object key ordering is stable.
  * @param {unknown} value
  * @returns {unknown}
  */
@@ -103,6 +207,7 @@ export function sortJsonValue(value) {
 
 /**
  * Returns stable, pretty JSON output.
+ * Normalizes key order and adds a trailing newline for diffs.
  * @param {unknown} value
  * @returns {string}
  */
@@ -112,6 +217,7 @@ export function jsonStringifySorted(value) {
 
 /**
  * Returns the UTF-8 byte length of a string.
+ * Used to compute payload sizes for manifests.
  * @param {string} text
  * @returns {number}
  */
@@ -121,6 +227,7 @@ export function utf8ByteLength(text) {
 
 /**
  * Builds a week key string.
+ * The key format matches the manifest chunk identifier (YYYY-Www).
  * @param {number} year
  * @param {number} week
  * @returns {string}
@@ -131,6 +238,7 @@ export function chunkKey(year, week) {
 
 /**
  * Parses an ISO date (YYYY-MM-DD) into parts.
+ * Throws an error when the input does not match the expected format.
  * @param {string} dateStr
  * @returns {{year: number, month: number, day: number}}
  */
@@ -144,6 +252,7 @@ export function parseIsoDate(dateStr) {
 
 /**
  * Formats a date from parts as ISO YYYY-MM-DD.
+ * Pads components so string sorting remains chronological.
  * @param {number} year
  * @param {number} month
  * @param {number} day
@@ -155,6 +264,7 @@ export function formatIsoDate(year, month, day) {
 
 /**
  * Adds days to an ISO date string.
+ * Uses UTC math to avoid local timezone shifts.
  * @param {string} dateStr
  * @param {number} deltaDays
  * @returns {string}
@@ -168,6 +278,7 @@ export function addIsoDays(dateStr, deltaDays) {
 
 /**
  * Returns ISO weekday index (Mon=0..Sun=6).
+ * This index matches the week column layout in the UI.
  * @param {string} dateStr
  * @returns {number}
  */
@@ -179,6 +290,7 @@ export function isoWeekdayIndex(dateStr) {
 
 /**
  * Returns the ISO week start (Monday) for a date.
+ * The returned string is a YYYY-MM-DD date in the configured timezone.
  * @param {string} dateStr
  * @returns {string}
  */
@@ -188,6 +300,7 @@ export function isoWeekStart(dateStr) {
 
 /**
  * Returns ISO year/week for a week start string.
+ * Uses the ISO week algorithm based on the Thursday of the week.
  * @param {string} weekStartStr
  * @returns {{isoYear: number, week: number}}
  */
@@ -210,6 +323,7 @@ export function isoWeekInfo(weekStartStr) {
 
 /**
  * Returns the Monday date string for an ISO year/week.
+ * This is used to map manifest chunks back to week start dates.
  * @param {number} isoYear
  * @param {number} week
  * @returns {string}
@@ -226,6 +340,7 @@ export function isoWeekStartFromYearWeek(isoYear, week) {
 
 /**
  * Parses HH:MM into minutes since midnight.
+ * Returns null when parsing fails or values are out of range.
  * @param {string} text
  * @returns {number | null}
  */
@@ -244,6 +359,7 @@ export function hhmmToMinutes(text) {
 
 /**
  * Formats minutes since midnight to HH:MM.
+ * Clamps to the 00:00-24:00 range for display purposes.
  * @param {number} minutes
  * @returns {string}
  */
@@ -262,6 +378,7 @@ export function minutesToHHMM(minutes) {
 
 /**
  * Detects the data source mode from URL query parameters.
+ * Defaults to GitHub mode unless "?source=local" is present.
  * @returns {"local" | "github"}
  */
 export function getSourceMode() {
@@ -279,9 +396,12 @@ export function getSourceMode() {
 
 /**
  * Provides timezone-aware formatting utilities.
+ * Encapsulates date math so views can operate in a single locale.
  */
 export class TimeContext {
     /**
+     * Builds formatter instances for the provided timezone.
+     * Shared helper used across modules.
      * @param {string} timeZone
      */
     constructor(timeZone) {
@@ -301,6 +421,8 @@ export class TimeContext {
     }
 
     /**
+     * Formats a Date as a local YYYY-MM-DD string in the configured timezone.
+     * Shared helper used across modules.
      * @param {Date} date
      * @returns {string}
      */
@@ -309,6 +431,8 @@ export class TimeContext {
     }
 
     /**
+     * Formats a Date as a local HH:MM string in the configured timezone.
+     * Shared helper used across modules.
      * @param {Date} date
      * @returns {string}
      */
@@ -317,6 +441,8 @@ export class TimeContext {
     }
 
     /**
+     * Returns date-time parts for the configured timezone.
+     * Shared helper used across modules.
      * @param {Date} date
      * @returns {{year: number, month: number, day: number, hour: number, minute: number, second: number}}
      */
@@ -342,6 +468,8 @@ export class TimeContext {
     }
 
     /**
+     * Computes the timezone offset in minutes at a given instant.
+     * Shared helper used across modules.
      * @param {Date} date
      * @returns {number}
      */
@@ -352,6 +480,8 @@ export class TimeContext {
     }
 
     /**
+     * Converts local timezone parts into a Date, handling DST changes.
+     * Shared helper used across modules.
      * @param {{year: number, month: number, day: number, hour: number, minute: number, second?: number}} parts
      * @returns {Date}
      */
@@ -372,6 +502,8 @@ export class TimeContext {
     }
 
     /**
+     * Creates a Date from an ISO day string and minutes since midnight.
+     * Shared helper used across modules.
      * @param {string} dayStr
      * @param {number} minutes
      * @returns {Date}
@@ -385,6 +517,8 @@ export class TimeContext {
     }
 
     /**
+     * Formats a Date to an ISO string with explicit timezone offset.
+     * Shared helper used across modules.
      * @param {Date} date
      * @returns {string}
      */
@@ -403,6 +537,8 @@ export class TimeContext {
     }
 
     /**
+     * Returns week bounds in milliseconds for a Monday date string.
+     * Shared helper used across modules.
      * @param {string} weekStart
      * @returns {{startMs: number, endMs: number} | null}
      */
@@ -421,6 +557,7 @@ export class TimeContext {
 
 /**
  * Left-rotates a 32-bit number.
+ * Used as a helper for the SHA-1 implementation.
  * @param {number} value
  * @param {number} bits
  * @returns {number}
@@ -431,6 +568,7 @@ function rotl(value, bits) {
 
 /**
  * Computes a SHA-1 digest of bytes as hex.
+ * This implementation is used to verify Git blob SHA-1 values.
  * @param {Uint8Array} bytes
  * @returns {string}
  */
@@ -507,6 +645,7 @@ function sha1Hex(bytes) {
 
 /**
  * Formats a 32-bit number as zero-padded hex.
+ * Ensures the SHA-1 output remains a fixed 8-char chunk.
  * @param {number} num
  * @returns {string}
  */
@@ -516,6 +655,7 @@ function toHex32(num) {
 
 /**
  * Computes a git-compatible blob SHA-1 for text content.
+ * Prepends the "blob <len>\\0" header before hashing.
  * @param {string} content
  * @returns {string}
  */
