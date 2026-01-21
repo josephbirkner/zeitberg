@@ -204,6 +204,13 @@ body.app-mode #searchView > section:last-child .table-wrap {
   white-space: nowrap;
 }
 
+.week-billable {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .btn-icon {
   padding: 8px 10px;
   border-radius: 10px;
@@ -315,7 +322,8 @@ label span {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -326,7 +334,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: rgba(124, 92, 255, 0.7);
   box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
 }
@@ -385,9 +394,14 @@ select:focus {
   padding: 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 77, 109, 0.45);
-  background: rgba(255, 77, 109, 0.1);
+  background: rgba(255, 77, 109, 0.3);
   color: rgba(255, 255, 255, 0.92);
   overflow: auto;
+}
+
+.error.is-success {
+  border-color: rgba(57, 217, 138, 0.45);
+  background: rgba(57, 217, 138, 0.28);
 }
 
 .error-toast {
@@ -398,6 +412,43 @@ select:focus {
   margin: 0;
   width: min(720px, calc(100% - 28px));
   max-height: 46vh;
+}
+
+.editor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.15px;
+  white-space: nowrap;
+}
+
+.editor-badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.editor-badge.is-dirty .dot {
+  background: rgba(255, 77, 109, 0.92);
+}
+
+.editor-badge .mode {
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.editor-badge .save {
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 .data-badge {
@@ -578,6 +629,30 @@ progress {
   box-shadow: inset 0 0 0 2px rgba(124, 92, 255, 0.55);
 }
 
+.now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255, 77, 109, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 77, 109, 0.35);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.now-line::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 77, 109, 0.95);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px rgba(11, 16, 32, 0.7);
+}
+
 .entry-block {
   position: absolute;
   top: 0;
@@ -600,6 +675,26 @@ progress {
   outline-offset: -2px;
 }
 
+.entry-times {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(11, 16, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 2px 5px;
+  border-radius: 6px;
+  display: none;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.entry-block.is-selected .entry-times {
+  display: inline-flex;
+}
+
 .entry-project {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -618,6 +713,185 @@ progress {
   -webkit-line-clamp: 4;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.82);
+}
+
+.cursor-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid rgba(124, 92, 255, 0.9);
+  opacity: 0.95;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cursor-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(124, 92, 255, 0.95);
+  box-shadow: 0 0 0 2px rgba(11, 16, 32, 0.85);
+}
+
+.cursor-line.is-split {
+  border-top-color: rgba(57, 217, 138, 0.95);
+}
+
+.cursor-line.is-split::after {
+  background: rgba(57, 217, 138, 0.95);
+}
+
+.dialog {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  max-width: min(720px, calc(100vw - 24px));
+  width: 100%;
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.dialog-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(11, 16, 32, 0.92);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.dialog-title {
+  font-weight: 900;
+  letter-spacing: 0.2px;
+}
+
+.dialog-meta {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.dialog-grid label textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.entry-suggestions {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.entry-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.entry-suggestion:hover,
+.entry-suggestion:focus {
+  border-color: var(--accent);
+  background: rgba(124, 92, 255, 0.12);
+  outline: none;
+}
+
+.entry-suggestion .suggestion-project {
+  font-weight: 700;
+}
+
+.entry-suggestion .suggestion-desc {
+  color: var(--muted);
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.projects-toolbar {
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.project-row .project-field {
+  margin: 0;
+}
+
+.project-row .project-field span {
+  margin-bottom: 4px;
+}
+
+.project-row .checkbox span {
+  margin: 0;
+}
+
+.project-row input[type="color"] {
+  padding: 2px 6px;
+  height: 40px;
+}
+
+.project-row input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.project-row input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 8px;
 }
 
 .week-card {
