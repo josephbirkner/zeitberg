@@ -24,6 +24,7 @@
           <button id="latestWeekBtn" class="btn btn-secondary" type="button">Latest</button>
 
           <div id="weekLabel" class="week-label" aria-live="polite"></div>
+          <div id="weekBillable" class="week-billable muted" aria-live="polite"></div>
 
           <div id="editorBadge" class="editor-badge" aria-live="polite"></div>
 
@@ -168,6 +169,11 @@
         <div id="entryMeta" class="dialog-meta muted"></div>
 
         <div class="grid dialog-grid">
+          <label class="col-span-2">
+            <span>Description</span>
+            <textarea id="entryDesc" rows="4"></textarea>
+            <div id="entryDescSuggestions" class="entry-suggestions" role="listbox" hidden></div>
+          </label>
           <label>
             <span>Project</span>
             <select id="entryProject"></select>
@@ -175,10 +181,6 @@
           <label>
             <span>Tags (comma separated)</span>
             <input id="entryTags" type="text" spellcheck="false" />
-          </label>
-          <label class="col-span-2">
-            <span>Description</span>
-            <textarea id="entryDesc" rows="4"></textarea>
           </label>
         </div>
 

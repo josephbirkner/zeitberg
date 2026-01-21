@@ -204,6 +204,13 @@ body.app-mode #searchView > section:last-child .table-wrap {
   white-space: nowrap;
 }
 
+.week-billable {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .btn-icon {
   padding: 8px 10px;
   border-radius: 10px;
@@ -734,6 +741,50 @@ progress {
 .dialog-grid label textarea {
   width: 100%;
   resize: vertical;
+}
+
+.entry-suggestions {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.entry-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.entry-suggestion:hover,
+.entry-suggestion:focus {
+  border-color: var(--accent);
+  background: rgba(124, 92, 255, 0.12);
+  outline: none;
+}
+
+.entry-suggestion .suggestion-project {
+  font-weight: 700;
+}
+
+.entry-suggestion .suggestion-desc {
+  color: var(--muted);
 }
 
 .dialog-actions {

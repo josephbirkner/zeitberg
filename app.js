@@ -326,6 +326,7 @@ class App {
 
         this.weekViewSection = getRequiredElement("weekViewSection");
         this.weekLabelEl = getRequiredElement("weekLabel");
+        this.weekBillableEl = getRequiredElement("weekBillable");
         this.weekScrollEl = getRequiredElement("weekScroll");
         this.prevWeekBtn = getRequiredElement("prevWeekBtn");
         this.nextWeekBtn = getRequiredElement("nextWeekBtn");
@@ -341,6 +342,7 @@ class App {
         this.entryProjectSelect = getRequiredElement("entryProject");
         this.entryTagsInput = getRequiredElement("entryTags");
         this.entryDescInput = getRequiredElement("entryDesc");
+        this.entryDescSuggestionsEl = getRequiredElement("entryDescSuggestions");
         this.projectsDialog = getRequiredElement("projectsDialog");
         this.projectsForm = getRequiredElement("projectsForm");
         this.projectsCloseBtn = getRequiredElement("projectsCloseBtn");
@@ -375,6 +377,7 @@ class App {
                 weekViewSection: this.weekViewSection,
                 weekControls: this.weekControlsEl,
                 weekLabel: this.weekLabelEl,
+                weekBillable: this.weekBillableEl,
                 weekScroll: this.weekScrollEl,
                 prevWeekBtn: this.prevWeekBtn,
                 nextWeekBtn: this.nextWeekBtn,
@@ -389,6 +392,7 @@ class App {
                 entryProject: this.entryProjectSelect,
                 entryTags: this.entryTagsInput,
                 entryDesc: this.entryDescInput,
+                entryDescSuggestions: this.entryDescSuggestionsEl,
             },
             onToast: (message, timeout) => this.toast(message, timeout),
             onBusy: (busy) => this.setBusy(busy),

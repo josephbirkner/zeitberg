@@ -19,6 +19,8 @@ const MIN_ENTRY_MINUTES = 15;
 const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
 
 const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DESC_SUGGEST_MIN_CHARS = 2;
+const DESC_SUGGEST_LIMIT = 8;
 
 /**
  * @typedef {Object} WeekViewOptions
@@ -32,6 +34,7 @@ const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
  * @property {HTMLElement} elements.weekViewSection
  * @property {HTMLElement} elements.weekControls
  * @property {HTMLElement} elements.weekLabel
+ * @property {HTMLElement} elements.weekBillable
  * @property {HTMLElement} elements.weekScroll
  * @property {HTMLButtonElement} elements.prevWeekBtn
  * @property {HTMLButtonElement} elements.nextWeekBtn
@@ -46,6 +49,7 @@ const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
  * @property {HTMLSelectElement} elements.entryProject
  * @property {HTMLInputElement} elements.entryTags
  * @property {HTMLTextAreaElement} elements.entryDesc
+ * @property {HTMLElement} elements.entryDescSuggestions
  * @property {(message: string, timeout?: number) => void} onToast
  * @property {(isBusy: boolean) => void} onBusy
  * @property {() => void} onSearchDirty
@@ -72,6 +76,7 @@ export class WeekView {
         this.weekViewSection = options.elements.weekViewSection;
         this.weekControlsEl = options.elements.weekControls;
         this.weekLabelEl = options.elements.weekLabel;
+        this.weekBillableEl = options.elements.weekBillable;
         this.weekScrollEl = options.elements.weekScroll;
         this.prevWeekBtn = options.elements.prevWeekBtn;
         this.nextWeekBtn = options.elements.nextWeekBtn;
@@ -87,6 +92,7 @@ export class WeekView {
         this.entryProjectSelect = options.elements.entryProject;
         this.entryTagsInput = options.elements.entryTags;
         this.entryDescInput = options.elements.entryDesc;
+        this.entryDescSuggestionsEl = options.elements.entryDescSuggestions;
 
         this.onToast = options.onToast;
         this.onBusy = options.onBusy;
@@ -105,6 +111,7 @@ export class WeekView {
         this.cursorEl = null;
         this.dialogEntryId = null;
         this.dialogAllowUnlistedProject = false;
+        this.descSuggestions = [];
 
         this.dirtyWeekStarts = new Set();
         this.lastEditAt = 0;
@@ -175,6 +182,9 @@ export class WeekView {
             this.closeEntryDialog();
         });
         this.entryForm.addEventListener("submit", (ev) => this.handleEntryFormSubmit(ev));
+        this.entryDescInput.addEventListener("input", () => this.handleDescriptionInput());
+        this.entryDescSuggestionsEl.addEventListener("mousedown", (ev) => this.handleSuggestionPointerDown(ev));
+        this.entryDescSuggestionsEl.addEventListener("click", (ev) => this.handleSuggestionClick(ev));
     }
 
     /**
@@ -205,6 +215,9 @@ export class WeekView {
     reset() {
         this.weekScrollEl.innerHTML = "";
         this.weekLabelEl.textContent = "";
+        if (this.weekBillableEl) {
+            this.weekBillableEl.textContent = "";
+        }
         this.weekDom = null;
         this.segmentsIndex = new Map();
         this.projectColorCache.clear();
@@ -222,6 +235,7 @@ export class WeekView {
         this.redoStack.length = 0;
         this.setEditMode("normal");
         this.updateEditorBadge();
+        this.clearDescriptionSuggestions();
     }
 
     /**
@@ -538,8 +552,12 @@ export class WeekView {
         this.weekDom = null;
 
         const weekStart = this.appState.weekStart;
+        const hasProjectList = Boolean(this.store.getProjectList());
         if (!weekStart) {
             this.weekLabelEl.textContent = "";
+            if (this.weekBillableEl) {
+                this.weekBillableEl.textContent = "";
+            }
             return;
         }
 
@@ -549,6 +567,7 @@ export class WeekView {
         const weekEnd = days[6];
         const { isoYear, week } = isoWeekInfo(weekStart);
         this.weekLabelEl.textContent = `${isoYear}-W${String(week).padStart(2, "0")} • ${weekStart} → ${weekEnd}`;
+        this.updateWeekBillableTotal(weekStart);
 
         const gridEl = document.createElement("div");
         gridEl.className = "week-grid";
@@ -1687,6 +1706,208 @@ export class WeekView {
     }
 
     /**
+     * Updates the billable total label for the active week.
+     * Keeps the top bar stats aligned with edits and week navigation.
+     * @param {string | null} weekStart
+     * @returns {void}
+     */
+    updateWeekBillableTotal(weekStart) {
+        if (!this.weekBillableEl) return;
+        if (!weekStart) {
+            this.weekBillableEl.textContent = "";
+            return;
+        }
+        const bounds = this.timeContext.weekBoundsMs(weekStart);
+        if (!bounds) {
+            this.weekBillableEl.textContent = "";
+            return;
+        }
+
+        const { entries } = this.store.collectEntriesForWeekWindow(weekStart, bounds);
+        let totalSeconds = 0;
+        for (const entry of entries) {
+            if (entry.billable !== true) continue;
+            if (!(entry.startDate instanceof Date)) continue;
+            const startMs = entry.startDate.getTime();
+            const endMs =
+                entry.endDate instanceof Date && Number.isFinite(entry.endDate.getTime())
+                    ? entry.endDate.getTime()
+                    : entry.raw?.is_running
+                      ? Date.now()
+                      : null;
+            if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+            const clippedStart = Math.max(bounds.startMs, startMs);
+            const clippedEnd = Math.min(bounds.endMs, endMs);
+            if (clippedEnd > clippedStart) {
+                totalSeconds += Math.round((clippedEnd - clippedStart) / 1000);
+            }
+        }
+
+        this.weekBillableEl.textContent = `Billable ${formatDuration(totalSeconds)}`;
+    }
+
+    /**
+     * Builds and shows description suggestions as the user types.
+     * Uses recent entries to recommend matching descriptions + projects.
+     * @returns {void}
+     */
+    handleDescriptionInput() {
+        if (!this.entryDialog.open) return;
+        const suggestions = this.buildDescriptionSuggestions(this.entryDescInput.value);
+        this.renderDescriptionSuggestions(suggestions);
+    }
+
+    /**
+     * Prevents the textarea from losing focus while clicking suggestions.
+     * Keeps the dialog editing flow stable for keyboard users.
+     * @param {MouseEvent} ev
+     * @returns {void}
+     */
+    handleSuggestionPointerDown(ev) {
+        const target = ev.target instanceof HTMLElement ? ev.target : null;
+        if (target && target.closest(".entry-suggestion")) {
+            ev.preventDefault();
+        }
+    }
+
+    /**
+     * Applies a description suggestion when a suggestion is clicked.
+     * Keeps the project and description fields in sync.
+     * @param {MouseEvent} ev
+     * @returns {void}
+     */
+    handleSuggestionClick(ev) {
+        const target = ev.target instanceof HTMLElement ? ev.target : null;
+        if (!target) return;
+        const button = target.closest(".entry-suggestion");
+        if (!button) return;
+        const index = Number(button.dataset.index);
+        if (!Number.isFinite(index)) return;
+        const suggestion = this.descSuggestions[index];
+        if (!suggestion) return;
+        this.applyDescriptionSuggestion(suggestion);
+    }
+
+    /**
+     * Gathers description suggestions from recent week entries.
+     * Filters on the query text and de-duplicates similar pairs.
+     * @param {string} query
+     * @returns {{project: string, description: string}[]}
+     */
+    buildDescriptionSuggestions(query) {
+        const trimmed = String(query || "").trim();
+        if (trimmed.length < DESC_SUGGEST_MIN_CHARS) {
+            return [];
+        }
+        if (!this.appState.weekStart) {
+            return [];
+        }
+
+        const q = trimmed.toLowerCase();
+        const seen = new Set();
+        const suggestions = [];
+        const weekStart = this.appState.weekStart;
+        const hasProjectList = Boolean(this.store.getProjectList());
+
+        for (let offset = 0; offset < 4; offset += 1) {
+            const ws = addIsoDays(weekStart, -7 * offset);
+            const week = this.store.getWeek(ws);
+            if (!week) continue;
+            for (const entry of week.entries) {
+                const desc = safeText(entry.description).trim();
+                if (!desc) continue;
+                if (!desc.toLowerCase().includes(q)) continue;
+                const project = safeText(entry.project).trim();
+                if (project && hasProjectList && !this.store.getProjectByName(project)) continue;
+                const key = `${project.toLowerCase()}|${desc.toLowerCase()}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                suggestions.push({ project, description: desc });
+                if (suggestions.length >= DESC_SUGGEST_LIMIT) {
+                    return suggestions;
+                }
+            }
+        }
+
+        return suggestions;
+    }
+
+    /**
+     * Renders description suggestions into the dialog list container.
+     * Hides the container when there are no matching entries.
+     * @param {{project: string, description: string}[]} suggestions
+     * @returns {void}
+     */
+    renderDescriptionSuggestions(suggestions) {
+        this.descSuggestions = suggestions.slice();
+        this.entryDescSuggestionsEl.innerHTML = "";
+        if (!suggestions.length) {
+            this.entryDescSuggestionsEl.hidden = true;
+            return;
+        }
+
+        suggestions.forEach((suggestion, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "entry-suggestion";
+            button.dataset.index = String(index);
+
+            const projectEl = document.createElement("span");
+            projectEl.className = "suggestion-project";
+            projectEl.textContent = suggestion.project ? suggestion.project : "No project";
+
+            const descEl = document.createElement("span");
+            descEl.className = "suggestion-desc";
+            descEl.textContent = suggestion.description;
+
+            button.append(projectEl, descEl);
+            this.entryDescSuggestionsEl.append(button);
+        });
+
+        this.entryDescSuggestionsEl.hidden = false;
+    }
+
+    /**
+     * Clears and hides the suggestion list.
+     * Resets the suggestion cache for the next edit session.
+     * @returns {void}
+     */
+    clearDescriptionSuggestions() {
+        this.descSuggestions = [];
+        if (this.entryDescSuggestionsEl) {
+            this.entryDescSuggestionsEl.innerHTML = "";
+            this.entryDescSuggestionsEl.hidden = true;
+        }
+    }
+
+    /**
+     * Applies a selected suggestion to the dialog fields.
+     * Keeps focus in the description field for continued typing.
+     * @param {{project: string, description: string}} suggestion
+     * @returns {void}
+     */
+    applyDescriptionSuggestion(suggestion) {
+        if (!suggestion) return;
+        this.entryDescInput.value = suggestion.description || "";
+        const projectValue = suggestion.project || "";
+        if (projectValue && this.store.getProjectByName(projectValue)) {
+            this.entryProjectSelect.value = projectValue;
+        } else {
+            this.entryProjectSelect.value = "";
+        }
+        this.clearDescriptionSuggestions();
+        queueMicrotask(() => {
+            try {
+                const len = this.entryDescInput.value.length;
+                this.entryDescInput.focus();
+                this.entryDescInput.setSelectionRange(len, len);
+            } catch {
+                // ignore
+            }
+        });
+    }
+
+    /**
      * Validates and saves dialog edits back into the entry.
      * Part of the week view interaction flow.
      * @param {Event} ev
@@ -1833,6 +2054,7 @@ export class WeekView {
     closeEntryDialog() {
         this.dialogEntryId = null;
         this.dialogAllowUnlistedProject = false;
+        this.clearDescriptionSuggestions();
         if (this.entryDialog.open) this.entryDialog.close();
         queueMicrotask(() => {
             try {
@@ -1876,10 +2098,13 @@ export class WeekView {
         const dur = formatDuration(entry.durationSeconds);
         this.entryMetaEl.textContent = `${day} ${start}–${end} • ${dur} • id ${id}`;
 
+        this.clearDescriptionSuggestions();
         if (!this.entryDialog.open) this.entryDialog.showModal();
         queueMicrotask(() => {
             try {
-                this.entryProjectSelect.focus();
+                const len = this.entryDescInput.value.length;
+                this.entryDescInput.focus();
+                this.entryDescInput.setSelectionRange(len, len);
             } catch {
                 // ignore
             }
