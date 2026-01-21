@@ -114,10 +114,11 @@ export class WeekView {
         this.descSuggestions = [];
 
         this.dirtyWeekStarts = new Set();
-        this.lastEditAt = 0;
-        this.autosaveTimer = 0;
         this.saveInFlight = false;
         this.toastTimer = 0;
+        this.nowTimer = 0;
+        this.nowLineEl = null;
+        this.nowLineDayIdx = -1;
 
         this.undoStack = [];
         this.redoStack = [];
@@ -183,8 +184,10 @@ export class WeekView {
         });
         this.entryForm.addEventListener("submit", (ev) => this.handleEntryFormSubmit(ev));
         this.entryDescInput.addEventListener("input", () => this.handleDescriptionInput());
+        this.entryDescInput.addEventListener("keydown", (ev) => this.handleDescriptionKeydown(ev));
         this.entryDescSuggestionsEl.addEventListener("mousedown", (ev) => this.handleSuggestionPointerDown(ev));
         this.entryDescSuggestionsEl.addEventListener("click", (ev) => this.handleSuggestionClick(ev));
+        this.entryDescSuggestionsEl.addEventListener("keydown", (ev) => this.handleSuggestionKeydown(ev));
     }
 
     /**
@@ -204,6 +207,9 @@ export class WeekView {
                 }
                 this.updateWeekScaleAndReposition();
             });
+            this.startNowTimer();
+        } else {
+            this.stopNowTimer();
         }
     }
 
@@ -228,14 +234,14 @@ export class WeekView {
         this.dialogEntryId = null;
         this.dialogAllowUnlistedProject = false;
         this.saveInFlight = false;
-        window.clearTimeout(this.autosaveTimer);
-        this.autosaveTimer = 0;
         this.dirtyWeekStarts.clear();
         this.undoStack.length = 0;
         this.redoStack.length = 0;
         this.setEditMode("normal");
         this.updateEditorBadge();
         this.clearDescriptionSuggestions();
+        this.stopNowTimer();
+        this.clearNowMarker();
     }
 
     /**
@@ -406,6 +412,78 @@ export class WeekView {
     }
 
     /**
+     * Starts a timer to keep the current-time marker updated.
+     * Ensures the marker remains accurate while viewing the week.
+     * @returns {void}
+     */
+    startNowTimer() {
+        if (this.nowTimer) return;
+        this.updateNowMarker();
+        this.nowTimer = window.setInterval(() => {
+            this.updateNowMarker();
+        }, 60_000);
+    }
+
+    /**
+     * Stops the current-time marker timer.
+     * Avoids unnecessary updates when the week view is hidden.
+     * @returns {void}
+     */
+    stopNowTimer() {
+        if (!this.nowTimer) return;
+        window.clearInterval(this.nowTimer);
+        this.nowTimer = 0;
+    }
+
+    /**
+     * Removes the current-time marker from the DOM.
+     * Clears cached references after week rebuilds.
+     * @returns {void}
+     */
+    clearNowMarker() {
+        if (this.nowLineEl) {
+            this.nowLineEl.remove();
+        }
+        this.nowLineEl = null;
+        this.nowLineDayIdx = -1;
+    }
+
+    /**
+     * Positions the current-time marker inside the active week.
+     * Hides the marker when the current day is outside the week.
+     * @returns {void}
+     */
+    updateNowMarker() {
+        if (!this.weekDom || !this.weekDom.metrics || !this.appState.weekStart) {
+            this.clearNowMarker();
+            return;
+        }
+        const now = new Date();
+        const dayStr = this.timeContext.formatDate(now);
+        const dayIdx = this.weekDom.days.indexOf(dayStr);
+        if (dayIdx < 0) {
+            this.clearNowMarker();
+            return;
+        }
+        const minutes = hhmmToMinutes(this.timeContext.formatTime(now));
+        if (minutes === null) {
+            this.clearNowMarker();
+            return;
+        }
+
+        const topPx = Math.max(0, Math.min(this.weekDom.metrics.timelineHeight, minutes * this.weekDom.metrics.pxPerMinute));
+        if (!this.nowLineEl) {
+            this.nowLineEl = document.createElement("div");
+            this.nowLineEl.className = "now-line";
+        }
+        if (this.nowLineDayIdx !== dayIdx || !this.nowLineEl.parentElement) {
+            this.nowLineDayIdx = dayIdx;
+            this.weekDom.dayColEls[dayIdx].append(this.nowLineEl);
+        }
+        this.nowLineEl.style.top = `${topPx}px`;
+    }
+
+    /**
      * Switches between normal, add, and split edit modes.
      * Part of the week view interaction flow.
      * @param {"normal" | "add" | "split"} nextMode
@@ -539,6 +617,7 @@ export class WeekView {
         }
 
         this.updateCursorLine();
+        this.updateNowMarker();
         this.scrollWeekFocusIntoView();
     }
 
@@ -550,6 +629,7 @@ export class WeekView {
     rebuildWeekView() {
         this.weekScrollEl.innerHTML = "";
         this.weekDom = null;
+        this.clearNowMarker();
 
         const weekStart = this.appState.weekStart;
         const hasProjectList = Boolean(this.store.getProjectList());
@@ -702,7 +782,10 @@ export class WeekView {
                 const descEl = document.createElement("div");
                 descEl.className = "entry-desc";
                 descEl.textContent = description;
-                el.append(projectEl, descEl);
+                const timeEl = document.createElement("div");
+                timeEl.className = "entry-times";
+                timeEl.textContent = `${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)}`;
+                el.append(projectEl, descEl, timeEl);
 
                 el.title = `${dateStr} ${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)} • ${projectLabel}${
                     description ? ` • ${description}` : ""
@@ -727,6 +810,7 @@ export class WeekView {
         this.updateCursorLine();
         this.scrollWeekFocusIntoView();
         this.updateEditorBadge();
+        this.updateNowMarker();
 
         this.latestWeekBtn.disabled = Boolean(this.appState.latestWeekStart && this.appState.latestWeekStart === weekStart);
     }
@@ -855,7 +939,7 @@ export class WeekView {
             }
             if (keyLower === "s") {
                 ev.preventDefault();
-                this.saveDirtyWeeksNow("manual");
+                this.saveDirtyWeeksNow();
                 return;
             }
         }
@@ -954,7 +1038,7 @@ export class WeekView {
 
         if (ev.shiftKey && !ev.ctrlKey && !ev.altKey && (key === "ArrowUp" || key === "ArrowDown")) {
             ev.preventDefault();
-            if (key === "ArrowUp") this.extendSelectedEntry(-MIN_ENTRY_MS, 0);
+            if (key === "ArrowUp") this.extendSelectedEntry(0, -MIN_ENTRY_MS);
             else this.extendSelectedEntry(0, MIN_ENTRY_MS);
             this.weekScrollEl.focus();
             return;
@@ -1473,8 +1557,12 @@ export class WeekView {
      */
     applyEditorActionSnapshot(weekStart, rawEntries, focusEntryId) {
         if (!weekStart) return;
-        if (this.appState.weekStart !== weekStart) this.setWeekStart(weekStart);
         this.store.applyWeekSnapshot(weekStart, rawEntries);
+        if (this.appState.weekStart !== weekStart) {
+            this.setWeekStart(weekStart);
+        } else {
+            this.rebuildWeekView();
+        }
         this.setLatestWeekStart(this.store.getLatestWeekStart());
         this.setEditMode("normal");
         if (focusEntryId) {
@@ -1513,7 +1601,7 @@ export class WeekView {
     }
 
     /**
-     * Marks a week as dirty and schedules autosave.
+     * Marks a week as dirty and refreshes the save badge.
      * Part of the week view interaction flow.
      * @param {string} weekStart
      * @returns {void}
@@ -1521,48 +1609,21 @@ export class WeekView {
     markDirty(weekStart) {
         if (!weekStart) return;
         this.dirtyWeekStarts.add(weekStart);
-        this.lastEditAt = Date.now();
         this.updateEditorBadge();
-        this.scheduleAutosave();
-    }
-
-    /**
-     * Schedules an autosave based on last edit time.
-     * Part of the week view interaction flow.
-     * @returns {void}
-     */
-    scheduleAutosave() {
-        window.clearTimeout(this.autosaveTimer);
-        this.autosaveTimer = 0;
-        if (!this.dirtyWeekStarts.size) return;
-
-        const sinceLastEdit = Date.now() - this.lastEditAt;
-        const dueIn = Math.max(500, 30_000 - (Number.isFinite(sinceLastEdit) ? sinceLastEdit : 0));
-        this.autosaveTimer = window.setTimeout(() => {
-            this.autosaveTimer = 0;
-            if (!this.dirtyWeekStarts.size) return;
-            if (this.saveInFlight) return this.scheduleAutosave();
-            if (Date.now() - this.lastEditAt < 30_000) return this.scheduleAutosave();
-            this.saveDirtyWeeksNow("autosave");
-        }, dueIn);
     }
 
     /**
      * Saves all dirty weeks immediately if possible.
      * Part of the week view interaction flow.
-     * @param {"manual" | "autosave"} reason
      * @returns {Promise<void>}
      */
-    async saveDirtyWeeksNow(reason) {
+    async saveDirtyWeeksNow() {
         if (this.saveInFlight) return;
         const weekStarts = Array.from(this.dirtyWeekStarts).filter(Boolean);
         if (!weekStarts.length) {
-            if (reason === "manual") this.onToast("Nothing to save.");
+            this.onToast("Nothing to save.");
             return;
         }
-
-        window.clearTimeout(this.autosaveTimer);
-        this.autosaveTimer = 0;
 
         this.saveInFlight = true;
         this.onBusy(true);
@@ -1570,9 +1631,9 @@ export class WeekView {
 
         const sortedWeeks = weekStarts.slice().sort((a, b) => a.localeCompare(b));
         try {
-            await this.saveWeeks(sortedWeeks, reason);
+            await this.saveWeeks(sortedWeeks);
             for (const ws of sortedWeeks) this.dirtyWeekStarts.delete(ws);
-            if (reason === "manual") this.onToast("Saved.");
+            this.onToast("Saved.");
         } catch (err) {
             this.onToast(String(err), 5000);
         } finally {
@@ -1586,10 +1647,9 @@ export class WeekView {
      * Serializes week files, writes them, and refreshes caches.
      * Part of the week view interaction flow.
      * @param {string[]} weekStarts
-     * @param {"manual" | "autosave"} reason
      * @returns {Promise<void>}
      */
-    async saveWeeks(weekStarts, reason) {
+    async saveWeeks(weekStarts) {
         const nowIso = utcNowIso();
         const weekFiles = this.store.serializeWeeks(weekStarts, nowIso);
         const oldManifest = this.store.getManifest();
@@ -1598,7 +1658,7 @@ export class WeekView {
         const files = weekFiles.map((file) => ({ path: file.path, content: file.content }));
         files.push({ path: "data/index/entries-manifest.json", content: manifestContent });
 
-        const message = this.buildWeekSaveMessage(reason, weekFiles);
+        const message = this.buildWeekSaveMessage(weekFiles);
         const result = await this.dataSource.saveFiles(files, message);
         const savedFiles = Array.isArray(result?.files) ? result.files : files;
         const shaByPath = new Map();
@@ -1622,18 +1682,14 @@ export class WeekView {
     /**
      * Builds a commit message for week save operations.
      * Part of the week view interaction flow.
-     * @param {"manual" | "autosave"} reason
      * @param {Array<import("./store.js").WeekFile>} weekFiles
      * @returns {string}
      */
-    buildWeekSaveMessage(reason, weekFiles) {
+    buildWeekSaveMessage(weekFiles) {
         const labels = weekFiles
             .map((file) => `${file.year}-W${String(file.week).padStart(2, "0")}`)
             .sort((a, b) => a.localeCompare(b))
             .join(", ");
-        if (reason === "autosave") {
-            return labels ? `Autosave time entries (${labels})` : "Autosave time entries";
-        }
         return labels ? `Edit time entries (${labels})` : "Edit time entries";
     }
 
@@ -1758,6 +1814,19 @@ export class WeekView {
     }
 
     /**
+     * Moves focus into the suggestion list when the user presses ArrowDown.
+     * Keeps text editing uninterrupted if no suggestions are shown.
+     * @param {KeyboardEvent} ev
+     * @returns {void}
+     */
+    handleDescriptionKeydown(ev) {
+        if (ev.key !== "ArrowDown") return;
+        if (this.entryDescSuggestionsEl.hidden || !this.descSuggestions.length) return;
+        ev.preventDefault();
+        this.focusSuggestionIndex(0);
+    }
+
+    /**
      * Prevents the textarea from losing focus while clicking suggestions.
      * Keeps the dialog editing flow stable for keyboard users.
      * @param {MouseEvent} ev
@@ -1786,6 +1855,62 @@ export class WeekView {
         const suggestion = this.descSuggestions[index];
         if (!suggestion) return;
         this.applyDescriptionSuggestion(suggestion);
+    }
+
+    /**
+     * Supports ArrowUp/ArrowDown navigation within suggestion buttons.
+     * Returns focus to the description field when moving above the first item.
+     * @param {KeyboardEvent} ev
+     * @returns {void}
+     */
+    handleSuggestionKeydown(ev) {
+        const key = String(ev.key || "");
+        if (key !== "ArrowUp" && key !== "ArrowDown") return;
+        const buttons = this.getSuggestionButtons();
+        if (!buttons.length) return;
+        const active = document.activeElement;
+        const currentIndex = buttons.indexOf(active);
+        if (key === "ArrowUp") {
+            ev.preventDefault();
+            if (currentIndex <= 0) {
+                this.entryDescInput.focus();
+                return;
+            }
+            this.focusSuggestionIndex(currentIndex - 1);
+            return;
+        }
+        ev.preventDefault();
+        if (currentIndex < 0) {
+            this.focusSuggestionIndex(0);
+            return;
+        }
+        this.focusSuggestionIndex(Math.min(buttons.length - 1, currentIndex + 1));
+    }
+
+    /**
+     * Returns the current list of suggestion button elements.
+     * Used for focus management and keyboard navigation.
+     * @returns {HTMLButtonElement[]}
+     */
+    getSuggestionButtons() {
+        return Array.from(this.entryDescSuggestionsEl.querySelectorAll(".entry-suggestion"));
+    }
+
+    /**
+     * Moves focus to a suggestion button at the given index.
+     * Clamps indices to the available suggestion range.
+     * @param {number} index
+     * @returns {void}
+     */
+    focusSuggestionIndex(index) {
+        const buttons = this.getSuggestionButtons();
+        if (!buttons.length) return;
+        const clamped = Math.max(0, Math.min(buttons.length - 1, Number(index) || 0));
+        try {
+            buttons[clamped].focus();
+        } catch {
+            // ignore
+        }
     }
 
     /**
