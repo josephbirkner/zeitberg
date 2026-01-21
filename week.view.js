@@ -46,11 +46,12 @@ const DESC_SUGGEST_LIMIT = 8;
  * @property {HTMLButtonElement} elements.entryCloseBtn
  * @property {HTMLButtonElement} elements.entryCancelBtn
  * @property {HTMLElement} elements.entryMeta
- * @property {HTMLSelectElement} elements.entryProject
+ * @property {HTMLInputElement} elements.entryProject
+ * @property {HTMLDataListElement} elements.entryProjectList
  * @property {HTMLInputElement} elements.entryTags
  * @property {HTMLTextAreaElement} elements.entryDesc
  * @property {HTMLElement} elements.entryDescSuggestions
- * @property {(message: string, timeout?: number) => void} onToast
+ * @property {(message: string, timeout?: number, tone?: "error" | "success") => void} onToast
  * @property {(isBusy: boolean) => void} onBusy
  * @property {() => void} onSearchDirty
  * @property {() => void} onManifestUpdated
@@ -89,7 +90,8 @@ export class WeekView {
         this.entryCloseBtn = options.elements.entryCloseBtn;
         this.entryCancelBtn = options.elements.entryCancelBtn;
         this.entryMetaEl = options.elements.entryMeta;
-        this.entryProjectSelect = options.elements.entryProject;
+        this.entryProjectInput = options.elements.entryProject;
+        this.entryProjectListEl = options.elements.entryProjectList;
         this.entryTagsInput = options.elements.entryTags;
         this.entryDescInput = options.elements.entryDesc;
         this.entryDescSuggestionsEl = options.elements.entryDescSuggestions;
@@ -1633,7 +1635,7 @@ export class WeekView {
         try {
             await this.saveWeeks(sortedWeeks);
             for (const ws of sortedWeeks) this.dirtyWeekStarts.delete(ws);
-            this.onToast("Saved.");
+            this.onToast("Saved.", 2400, "success");
         } catch (err) {
             this.onToast(String(err), 5000);
         } finally {
@@ -2016,9 +2018,9 @@ export class WeekView {
         this.entryDescInput.value = suggestion.description || "";
         const projectValue = suggestion.project || "";
         if (projectValue && this.store.getProjectByName(projectValue)) {
-            this.entryProjectSelect.value = projectValue;
+            this.entryProjectInput.value = projectValue;
         } else {
-            this.entryProjectSelect.value = "";
+            this.entryProjectInput.value = "";
         }
         this.clearDescriptionSuggestions();
         queueMicrotask(() => {
@@ -2048,7 +2050,7 @@ export class WeekView {
         if (!entry) return this.closeEntryDialog();
         if (entry.weekStart !== this.appState.weekStart) return this.closeEntryDialog();
 
-        const project = this.entryProjectSelect.value.trim();
+        const project = this.entryProjectInput.value.trim();
         if (project && !this.store.getProjectByName(project) && !this.dialogAllowUnlistedProject) {
             this.onToast("Please select a project from the list (or choose No project).");
             return;
@@ -2087,7 +2089,7 @@ export class WeekView {
     }
 
     /**
-     * Builds the project select options for the entry dialog.
+     * Builds the project completion list for the entry dialog.
      * Part of the week view interaction flow.
      * @param {{selected?: string, allowUnlisted?: boolean}} options
      * @returns {void}
@@ -2102,48 +2104,28 @@ export class WeekView {
             byName.set(project.name, project);
         }
 
-        this.entryProjectSelect.innerHTML = "";
+        this.entryProjectListEl.innerHTML = "";
         this.dialogAllowUnlistedProject = false;
-
-        const noneOpt = document.createElement("option");
-        noneOpt.value = "";
-        noneOpt.textContent = "No project";
-        this.entryProjectSelect.append(noneOpt);
-
-        const activeGroup = document.createElement("optgroup");
-        activeGroup.label = "Active projects";
-        const archivedGroup = document.createElement("optgroup");
-        archivedGroup.label = "Archived projects";
 
         const sorted = projects.slice().sort((a, b) => a.name.localeCompare(b.name));
         for (const project of sorted) {
             const opt = document.createElement("option");
             opt.value = project.name;
-            opt.textContent = project.archived ? `${project.name} (archived)` : project.name;
-            if (project.archived) {
-                archivedGroup.append(opt);
-            } else {
-                activeGroup.append(opt);
-            }
+            opt.label = project.archived ? `${project.name} (archived)` : project.name;
+            this.entryProjectListEl.append(opt);
         }
 
-        if (activeGroup.children.length) this.entryProjectSelect.append(activeGroup);
-        if (archivedGroup.children.length) this.entryProjectSelect.append(archivedGroup);
-
         if (selected && !byName.has(selected) && allowUnlisted) {
-            const unlistedGroup = document.createElement("optgroup");
-            unlistedGroup.label = "Unlisted";
             const opt = document.createElement("option");
             opt.value = selected;
-            opt.textContent = `${selected} (unlisted)`;
-            unlistedGroup.append(opt);
-            this.entryProjectSelect.append(unlistedGroup);
+            opt.label = `${selected} (unlisted)`;
+            this.entryProjectListEl.append(opt);
             this.dialogAllowUnlistedProject = true;
         }
 
-        this.entryProjectSelect.value = selected;
-        if (!this.entryProjectSelect.value) {
-            this.entryProjectSelect.value = "";
+        this.entryProjectInput.value = selected;
+        if (!this.entryProjectInput.value) {
+            this.entryProjectInput.value = "";
         }
     }
 

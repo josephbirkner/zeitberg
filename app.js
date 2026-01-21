@@ -28,7 +28,7 @@ import { Manifest, ProjectList } from "./model.js";
  * @property {HTMLButtonElement} elements.cancelBtn
  * @property {HTMLButtonElement} elements.addBtn
  * @property {HTMLElement} elements.list
- * @property {(message: string, timeout?: number) => void} onToast
+ * @property {(message: string, timeout?: number, tone?: "error" | "success") => void} onToast
  * @property {(isBusy: boolean) => void} onBusy
  * @property {(projectList: import("./model.js").ProjectList) => void} onProjectsSaved
  */
@@ -339,7 +339,8 @@ class App {
         this.entryCloseBtn = getRequiredElement("entryCloseBtn");
         this.entryCancelBtn = getRequiredElement("entryCancelBtn");
         this.entryMetaEl = getRequiredElement("entryMeta");
-        this.entryProjectSelect = getRequiredElement("entryProject");
+        this.entryProjectInput = getRequiredElement("entryProject");
+        this.entryProjectListEl = getRequiredElement("entryProjectList");
         this.entryTagsInput = getRequiredElement("entryTags");
         this.entryDescInput = getRequiredElement("entryDesc");
         this.entryDescSuggestionsEl = getRequiredElement("entryDescSuggestions");
@@ -389,12 +390,13 @@ class App {
                 entryCloseBtn: this.entryCloseBtn,
                 entryCancelBtn: this.entryCancelBtn,
                 entryMeta: this.entryMetaEl,
-                entryProject: this.entryProjectSelect,
+                entryProject: this.entryProjectInput,
+                entryProjectList: this.entryProjectListEl,
                 entryTags: this.entryTagsInput,
                 entryDesc: this.entryDescInput,
                 entryDescSuggestions: this.entryDescSuggestionsEl,
             },
-            onToast: (message, timeout) => this.toast(message, timeout),
+            onToast: (message, timeout, tone) => this.toast(message, timeout, tone),
             onBusy: (busy) => this.setBusy(busy),
             onSearchDirty: () => this.markSearchDirty(),
             onManifestUpdated: () => this.refreshRepoLabel(),
@@ -432,7 +434,7 @@ class App {
                 addBtn: this.addProjectBtn,
                 list: this.projectsList,
             },
-            onToast: (message, timeout) => this.toast(message, timeout),
+            onToast: (message, timeout, tone) => this.toast(message, timeout, tone),
             onBusy: (busy) => this.setBusy(busy),
             onProjectsSaved: (projectList) => this.handleProjectsSaved(projectList),
         });
@@ -636,17 +638,24 @@ class App {
     }
 
     /**
-     * Shows a temporary toast-style error message.
+     * Shows a temporary toast-style message with optional success styling.
      * Keeps the main UI flow and data loading coordinated.
      * @param {string} message
      * @param {number} timeoutMs
+     * @param {"error" | "success"} [tone]
      * @returns {void}
      */
-    toast(message, timeoutMs = 2400) {
+    toast(message, timeoutMs = 2400, tone = "error") {
         window.clearTimeout(this.toastTimer);
-        this.setError(this.dataErrorEl, message ? String(message) : "");
-        if (!message) return;
+        if (!message) {
+            this.dataErrorEl.classList.remove("is-success");
+            this.setError(this.dataErrorEl, "");
+            return;
+        }
+        this.dataErrorEl.classList.toggle("is-success", tone === "success");
+        this.setError(this.dataErrorEl, String(message));
         this.toastTimer = window.setTimeout(() => {
+            this.dataErrorEl.classList.remove("is-success");
             this.setError(this.dataErrorEl, "");
         }, Math.max(400, timeoutMs));
     }
@@ -881,7 +890,7 @@ class App {
         this.store.recomputeNextEntryId();
         const seedResult = this.store.mergeProjectsFromEntries();
         if (seedResult.added > 0) {
-            this.toast(`Seeded ${seedResult.added} project(s) from entries. Open Projects to review and save.`, 5000);
+            this.toast(`Seeded ${seedResult.added} project(s) from entries. Open Projects to review and save.`, 5000, "success");
         }
 
         const latest = this.store.getLatestWeekStart();
