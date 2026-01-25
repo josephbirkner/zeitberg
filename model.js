@@ -42,6 +42,13 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
  */
 
 /**
+ * @typedef {Object} ManifestFileRaw
+ * @property {ManifestChunk[]} [chunks]
+ * @property {string} [timezone]
+ * @property {string} [generated_at]
+ */
+
+/**
  * Represents a time entry with derived metadata.
  * Wraps the raw entry payload with computed fields for fast access.
  */
@@ -426,7 +433,8 @@ export class Manifest {
             throw new Error("entries-manifest.json must be a JSON object");
         }
 
-        const chunksRaw = Array.isArray(raw.chunks) ? raw.chunks : [];
+        const rawObj = /** @type {ManifestFileRaw} */ (raw);
+        const chunksRaw = Array.isArray(rawObj.chunks) ? rawObj.chunks : [];
         const chunks = [];
         for (const c of chunksRaw) {
             if (!c || typeof c !== "object") continue;
@@ -461,8 +469,8 @@ export class Manifest {
             }
         }
 
-        const timezone = typeof raw.timezone === "string" ? raw.timezone : "Europe/Berlin";
-        const generatedAt = typeof raw.generated_at === "string" ? raw.generated_at : "";
+        const timezone = typeof rawObj.timezone === "string" ? rawObj.timezone : "Europe/Berlin";
+        const generatedAt = typeof rawObj.generated_at === "string" ? rawObj.generated_at : "";
         return new Manifest(chunks, timezone, generatedAt, totalEntries);
     }
 

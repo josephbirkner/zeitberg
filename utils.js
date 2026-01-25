@@ -1,15 +1,21 @@
 /**
  * Safely returns a required element by id.
  * Throws immediately when the element is missing to avoid silent null usage.
+ * @template {HTMLElement} T
  * @param {string} id
- * @returns {HTMLElement}
+ * @param {new (...args: any[]) => T} [ctor]
+ * @returns {T}
  */
-export function getRequiredElement(id) {
+export function getRequiredElement(id, ctor) {
     const el = document.getElementById(id);
     if (!el) {
         throw new Error(`Missing element #${id}`);
     }
-    return el;
+    if (ctor && !(el instanceof ctor)) {
+        const expected = /** @type {Function} */ (ctor).name || "expected type";
+        throw new Error(`Element #${id} is not ${expected}`);
+    }
+    return /** @type {T} */ (el);
 }
 
 /**

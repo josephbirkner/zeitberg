@@ -627,7 +627,7 @@ export class WeekView {
      */
     computeWeekMetrics() {
         if (!this.weekDom) return null;
-        const headerEl = this.weekDom.gridEl.querySelector(".wg-header");
+        const headerEl = /** @type {HTMLElement | null} */ (this.weekDom.gridEl.querySelector(".wg-header"));
         const headerHeight = headerEl ? headerEl.offsetHeight : 48;
         const baseHeight = Math.max(240, this.weekScrollEl.clientHeight - headerHeight);
         const timelineHeight = Math.max(240, Math.round(baseHeight * this.zoom));
@@ -2051,7 +2051,7 @@ export class WeekView {
     handleSuggestionClick(ev) {
         const target = ev.target instanceof HTMLElement ? ev.target : null;
         if (!target) return;
-        const button = target.closest(".entry-suggestion");
+        const button = /** @type {HTMLButtonElement | null} */ (target.closest(".entry-suggestion"));
         if (!button) return;
         const index = Number(button.dataset.index);
         if (!Number.isFinite(index)) return;
@@ -2071,8 +2071,8 @@ export class WeekView {
         if (key !== "ArrowUp" && key !== "ArrowDown") return;
         const buttons = this.getSuggestionButtons();
         if (!buttons.length) return;
-        const active = document.activeElement;
-        const currentIndex = buttons.indexOf(active);
+        const active = document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
+        const currentIndex = active ? buttons.indexOf(active) : -1;
         if (key === "ArrowUp") {
             ev.preventDefault();
             if (currentIndex <= 0) {
@@ -2096,7 +2096,9 @@ export class WeekView {
      * @returns {HTMLButtonElement[]}
      */
     getSuggestionButtons() {
-        return Array.from(this.entryDescSuggestionsEl.querySelectorAll(".entry-suggestion"));
+        return Array.from(this.entryDescSuggestionsEl.querySelectorAll(".entry-suggestion")).filter(
+            (el) => el instanceof HTMLButtonElement,
+        );
     }
 
     /**

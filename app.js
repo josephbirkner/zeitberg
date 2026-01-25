@@ -304,69 +304,69 @@ class App {
 
         this.dataSource = this.isLocalMode ? new LocalDataSource() : new GitHubDataSource(this.config, this.token);
 
-        this.authStatusEl = getRequiredElement("authStatus");
-        this.logoutBtn = getRequiredElement("logoutBtn");
-        this.loginSection = getRequiredElement("loginSection");
-        this.loginForm = getRequiredElement("loginForm");
-        this.loginErrorEl = getRequiredElement("loginError");
-        this.clearSavedBtn = getRequiredElement("clearSavedBtn");
+        this.authStatusEl = getRequiredElement("authStatus", HTMLElement);
+        this.logoutBtn = getRequiredElement("logoutBtn", HTMLButtonElement);
+        this.loginSection = getRequiredElement("loginSection", HTMLElement);
+        this.loginForm = getRequiredElement("loginForm", HTMLFormElement);
+        this.loginErrorEl = getRequiredElement("loginError", HTMLElement);
+        this.clearSavedBtn = getRequiredElement("clearSavedBtn", HTMLButtonElement);
 
-        this.viewTabsEl = getRequiredElement("viewTabs");
-        this.tabWeekBtn = getRequiredElement("tabWeek");
-        this.tabSearchBtn = getRequiredElement("tabSearch");
-        this.weekControlsEl = getRequiredElement("weekControls");
-        this.projectsBtn = getRequiredElement("projectsBtn");
+        this.viewTabsEl = getRequiredElement("viewTabs", HTMLElement);
+        this.tabWeekBtn = getRequiredElement("tabWeek", HTMLButtonElement);
+        this.tabSearchBtn = getRequiredElement("tabSearch", HTMLButtonElement);
+        this.weekControlsEl = getRequiredElement("weekControls", HTMLElement);
+        this.projectsBtn = getRequiredElement("projectsBtn", HTMLButtonElement);
 
-        this.appSection = getRequiredElement("appSection");
-        this.repoLabelEl = getRequiredElement("repoLabel");
-        this.reloadDataBtn = getRequiredElement("reloadDataBtn");
-        this.loadProgressEl = getRequiredElement("loadProgress");
-        this.loadProgressLabelEl = getRequiredElement("loadProgressLabel");
-        this.dataErrorEl = getRequiredElement("dataError");
+        this.appSection = getRequiredElement("appSection", HTMLElement);
+        this.repoLabelEl = getRequiredElement("repoLabel", HTMLElement);
+        this.reloadDataBtn = getRequiredElement("reloadDataBtn", HTMLButtonElement);
+        this.loadProgressEl = getRequiredElement("loadProgress", HTMLProgressElement);
+        this.loadProgressLabelEl = getRequiredElement("loadProgressLabel", HTMLElement);
+        this.dataErrorEl = getRequiredElement("dataError", HTMLElement);
 
-        this.weekViewSection = getRequiredElement("weekViewSection");
-        this.weekLabelEl = getRequiredElement("weekLabel");
-        this.weekBillableEl = getRequiredElement("weekBillable");
-        this.weekScrollEl = getRequiredElement("weekScroll");
-        this.prevWeekBtn = getRequiredElement("prevWeekBtn");
-        this.nextWeekBtn = getRequiredElement("nextWeekBtn");
-        this.latestWeekBtn = getRequiredElement("latestWeekBtn");
-        this.zoomInput = getRequiredElement("zoomInput");
-        this.editorBadgeEl = getRequiredElement("editorBadge");
+        this.weekViewSection = getRequiredElement("weekViewSection", HTMLElement);
+        this.weekLabelEl = getRequiredElement("weekLabel", HTMLElement);
+        this.weekBillableEl = getRequiredElement("weekBillable", HTMLElement);
+        this.weekScrollEl = getRequiredElement("weekScroll", HTMLElement);
+        this.prevWeekBtn = getRequiredElement("prevWeekBtn", HTMLButtonElement);
+        this.nextWeekBtn = getRequiredElement("nextWeekBtn", HTMLButtonElement);
+        this.latestWeekBtn = getRequiredElement("latestWeekBtn", HTMLButtonElement);
+        this.zoomInput = getRequiredElement("zoomInput", HTMLInputElement);
+        this.editorBadgeEl = getRequiredElement("editorBadge", HTMLElement);
 
-        this.entryDialog = getRequiredElement("entryDialog");
-        this.entryForm = getRequiredElement("entryForm");
-        this.entryCloseBtn = getRequiredElement("entryCloseBtn");
-        this.entryCancelBtn = getRequiredElement("entryCancelBtn");
-        this.entryMetaEl = getRequiredElement("entryMeta");
-        this.entryProjectInput = getRequiredElement("entryProject");
-        this.entryProjectListEl = getRequiredElement("entryProjectList");
-        this.entryTagsInput = getRequiredElement("entryTags");
-        this.entryDescInput = getRequiredElement("entryDesc");
-        this.entryDescSuggestionsEl = getRequiredElement("entryDescSuggestions");
-        this.projectsDialog = getRequiredElement("projectsDialog");
-        this.projectsForm = getRequiredElement("projectsForm");
-        this.projectsCloseBtn = getRequiredElement("projectsCloseBtn");
-        this.projectsCancelBtn = getRequiredElement("projectsCancelBtn");
-        this.projectsOkBtn = getRequiredElement("projectsOkBtn");
-        this.addProjectBtn = getRequiredElement("addProjectBtn");
-        this.projectsList = getRequiredElement("projectsList");
+        this.entryDialog = getRequiredElement("entryDialog", HTMLDialogElement);
+        this.entryForm = getRequiredElement("entryForm", HTMLFormElement);
+        this.entryCloseBtn = getRequiredElement("entryCloseBtn", HTMLButtonElement);
+        this.entryCancelBtn = getRequiredElement("entryCancelBtn", HTMLButtonElement);
+        this.entryMetaEl = getRequiredElement("entryMeta", HTMLElement);
+        this.entryProjectInput = getRequiredElement("entryProject", HTMLInputElement);
+        this.entryProjectListEl = getRequiredElement("entryProjectList", HTMLDataListElement);
+        this.entryTagsInput = getRequiredElement("entryTags", HTMLInputElement);
+        this.entryDescInput = getRequiredElement("entryDesc", HTMLTextAreaElement);
+        this.entryDescSuggestionsEl = getRequiredElement("entryDescSuggestions", HTMLElement);
+        this.projectsDialog = getRequiredElement("projectsDialog", HTMLDialogElement);
+        this.projectsForm = getRequiredElement("projectsForm", HTMLFormElement);
+        this.projectsCloseBtn = getRequiredElement("projectsCloseBtn", HTMLButtonElement);
+        this.projectsCancelBtn = getRequiredElement("projectsCancelBtn", HTMLButtonElement);
+        this.projectsOkBtn = getRequiredElement("projectsOkBtn", HTMLButtonElement);
+        this.addProjectBtn = getRequiredElement("addProjectBtn", HTMLButtonElement);
+        this.projectsList = getRequiredElement("projectsList", HTMLElement);
 
-        this.searchViewEl = getRequiredElement("searchView");
-        this.searchInput = getRequiredElement("searchInput");
-        this.projectSelect = getRequiredElement("projectSelect");
-        this.fromDateInput = getRequiredElement("fromDate");
-        this.toDateInput = getRequiredElement("toDate");
-        this.maxRowsInput = getRequiredElement("maxRows");
-        this.sortSelect = getRequiredElement("sortSelect");
-        this.statsEl = getRequiredElement("stats");
-        this.entriesTbody = getRequiredElement("entriesTbody");
+        this.searchViewEl = getRequiredElement("searchView", HTMLElement);
+        this.searchInput = getRequiredElement("searchInput", HTMLInputElement);
+        this.projectSelect = getRequiredElement("projectSelect", HTMLSelectElement);
+        this.fromDateInput = getRequiredElement("fromDate", HTMLInputElement);
+        this.toDateInput = getRequiredElement("toDate", HTMLInputElement);
+        this.maxRowsInput = getRequiredElement("maxRows", HTMLInputElement);
+        this.sortSelect = getRequiredElement("sortSelect", HTMLSelectElement);
+        this.statsEl = getRequiredElement("stats", HTMLElement);
+        this.entriesTbody = getRequiredElement("entriesTbody", HTMLTableSectionElement);
 
-        this.ownerInput = getRequiredElement("ownerInput");
-        this.repoInput = getRequiredElement("repoInput");
-        this.refInput = getRequiredElement("refInput");
-        this.tokenInput = getRequiredElement("tokenInput");
-        this.rememberInput = getRequiredElement("rememberInput");
+        this.ownerInput = getRequiredElement("ownerInput", HTMLInputElement);
+        this.repoInput = getRequiredElement("repoInput", HTMLInputElement);
+        this.refInput = getRequiredElement("refInput", HTMLInputElement);
+        this.tokenInput = getRequiredElement("tokenInput", HTMLInputElement);
+        this.rememberInput = getRequiredElement("rememberInput", HTMLInputElement);
 
         this.weekView = new WeekView({
             store: this.store,
@@ -562,7 +562,7 @@ class App {
      * Validates login input and starts the GitHub connection flow.
      * Keeps the main UI flow and data loading coordinated.
      * @param {Event} ev
-     * @returns {void}
+     * @returns {Promise<void>}
      */
     async handleLoginSubmit(ev) {
         ev.preventDefault();

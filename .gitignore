@@ -162,3 +162,4 @@ cython_debug/
 
 .toggl-credentials.bash
 .idea/
+node_modules/

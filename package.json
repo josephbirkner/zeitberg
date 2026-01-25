@@ -1,0 +1,11 @@
+{
+  "name": "timetracking",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "npx tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

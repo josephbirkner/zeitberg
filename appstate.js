@@ -12,6 +12,7 @@ export class AppState {
     constructor(config, isLocalMode) {
         this.config = { ...config };
         this.isLocalMode = isLocalMode;
+        /** @type {"week" | "search"} */
         this.activeTab = "week";
         this.weekStart = null;
         this.latestWeekStart = null;

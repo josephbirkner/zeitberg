@@ -57,7 +57,8 @@ export class ChunkCache {
      * @returns {boolean}
      */
     isQuotaError(err) {
-        const name = err && typeof err === "object" ? String(err.name || "") : "";
+        const errObj = err && typeof err === "object" ? /** @type {{name?: string}} */ (err) : null;
+        const name = errObj ? String(errObj.name || "") : "";
         if (name === "QuotaExceededError") return true;
         if (name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
         return false;
