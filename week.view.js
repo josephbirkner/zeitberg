@@ -111,6 +111,8 @@ export class WeekView {
         this.editMode = "normal";
         this.cursor = null;
         this.cursorEl = null;
+        this.addDraft = null;
+        this.addDraftEl = null;
         this.dialogEntryId = null;
         this.dialogAllowUnlistedProject = false;
         this.descSuggestions = [];
@@ -159,7 +161,6 @@ export class WeekView {
                     selected: safeText(entry.project),
                     allowUnlisted: !this.store.getProjectByName(entry.project || ""),
                 });
-                this.applyProjectSelectionRules();
             }
         }
         if (this.appState.weekStart) {
@@ -242,6 +243,7 @@ export class WeekView {
         this.setEditMode("normal");
         this.updateEditorBadge();
         this.clearDescriptionSuggestions();
+        this.clearAddDraft();
         this.stopNowTimer();
         this.clearNowMarker();
     }
@@ -414,6 +416,61 @@ export class WeekView {
     }
 
     /**
+     * Clears the in-progress add-mode draft entry.
+     * Removes any preview element from the week grid.
+     * @returns {void}
+     */
+    clearAddDraft() {
+        this.addDraft = null;
+        if (this.addDraftEl) {
+            this.addDraftEl.remove();
+        }
+        this.addDraftEl = null;
+    }
+
+    /**
+     * Updates the add-mode draft preview block in the week grid.
+     * Keeps the draft entry aligned with zoom and scrolling changes.
+     * @returns {void}
+     */
+    updateAddDraftPreview() {
+        if (!this.weekDom || !this.weekDom.metrics || !this.addDraft) {
+            if (this.addDraftEl) {
+                this.addDraftEl.remove();
+                this.addDraftEl = null;
+            }
+            return;
+        }
+        const dayIdx = this.weekDom.days.indexOf(this.addDraft.dayStr);
+        if (dayIdx < 0) {
+            if (this.addDraftEl) {
+                this.addDraftEl.remove();
+                this.addDraftEl = null;
+            }
+            return;
+        }
+
+        if (!this.addDraftEl) {
+            this.addDraftEl = document.createElement("div");
+            this.addDraftEl.className = "entry-block entry-draft";
+        }
+
+        const pxPerMinute = this.weekDom.metrics.pxPerMinute;
+        const startMinutes = this.addDraft.startMinutes;
+        const endMinutes = this.addDraft.endMinutes;
+        const topPx = startMinutes * pxPerMinute;
+        const heightPx = Math.max(1, (endMinutes - startMinutes) * pxPerMinute);
+
+        this.addDraftEl.style.top = `${topPx}px`;
+        this.addDraftEl.style.height = `${heightPx}px`;
+        this.addDraftEl.style.left = "0";
+        this.addDraftEl.style.width = "100%";
+
+        const parent = this.weekDom.dayColEls[dayIdx];
+        if (this.addDraftEl.parentElement !== parent) parent.append(this.addDraftEl);
+    }
+
+    /**
      * Starts a timer to keep the current-time marker updated.
      * Ensures the marker remains accurate while viewing the week.
      * @returns {void}
@@ -493,8 +550,12 @@ export class WeekView {
      */
     setEditMode(nextMode) {
         const next = nextMode === "add" ? "add" : nextMode === "split" ? "split" : "normal";
+        const wasAdd = this.editMode === "add";
         this.editMode = next;
         if (next === "normal") this.clearCursor();
+        if (wasAdd && next !== "add") {
+            this.clearAddDraft();
+        }
         this.updateCursorLine();
         this.updateEditorBadge();
     }
@@ -619,6 +680,7 @@ export class WeekView {
         }
 
         this.updateCursorLine();
+        this.updateAddDraftPreview();
         this.updateNowMarker();
         this.scrollWeekFocusIntoView();
     }
@@ -632,6 +694,7 @@ export class WeekView {
         this.weekScrollEl.innerHTML = "";
         this.weekDom = null;
         this.clearNowMarker();
+        this.addDraftEl = null;
 
         const weekStart = this.appState.weekStart;
         const hasProjectList = Boolean(this.store.getProjectList());
@@ -810,6 +873,7 @@ export class WeekView {
 
         this.applyWeekFocusAndSelection();
         this.updateCursorLine();
+        this.updateAddDraftPreview();
         this.scrollWeekFocusIntoView();
         this.updateEditorBadge();
         this.updateNowMarker();
@@ -981,15 +1045,23 @@ export class WeekView {
                 this.weekScrollEl.focus();
                 return;
             }
-            if (key === "ArrowUp") {
+            if (key === "ArrowUp" || key === "ArrowDown") {
+                const direction = key === "ArrowUp" ? -1 : 1;
+                const ctrlOnly = ev.ctrlKey && !ev.altKey && !ev.metaKey;
+                if (ev.shiftKey) {
+                    ev.preventDefault();
+                    this.extendAddDraft(direction, ctrlOnly);
+                    this.weekScrollEl.focus();
+                    return;
+                }
+                if (ctrlOnly) {
+                    ev.preventDefault();
+                    this.jumpAddCursorGap(direction);
+                    this.weekScrollEl.focus();
+                    return;
+                }
                 ev.preventDefault();
-                this.nudgeAddCursor(-1);
-                this.weekScrollEl.focus();
-                return;
-            }
-            if (key === "ArrowDown") {
-                ev.preventDefault();
-                this.nudgeAddCursor(1);
+                this.nudgeAddCursor(direction);
                 this.weekScrollEl.focus();
                 return;
             }
@@ -1181,6 +1253,132 @@ export class WeekView {
     }
 
     /**
+     * Returns the day string and minutes for the add-mode cursor.
+     * Normalizes invalid dates into a null return value.
+     * @returns {{dayStr: string, minutes: number} | null}
+     */
+    getAddCursorDayInfo() {
+        if (!this.cursor || this.cursor.kind !== "add") return null;
+        const dt = new Date(this.cursor.ms);
+        if (Number.isNaN(dt.getTime())) return null;
+        const dayStr = this.timeContext.formatDate(dt);
+        const minutes = hhmmToMinutes(this.timeContext.formatTime(dt));
+        if (!dayStr || minutes === null) return null;
+        return { dayStr, minutes };
+    }
+
+    /**
+     * Returns a sorted list of segments for a given day.
+     * Keeps add-mode gap calculations deterministic.
+     * @param {string} dayStr
+     * @returns {Array<import("./store.js").Segment>}
+     */
+    getDaySegmentsSorted(dayStr) {
+        const segs = (this.segmentsIndex.get(dayStr) || []).slice();
+        segs.sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes || (a.entry?.id || 0) - (b.entry?.id || 0));
+        return segs;
+    }
+
+    /**
+     * Finds the free gap boundaries that contain the provided minute offset.
+     * Used for add-mode cursor jumps and draft sizing.
+     * @param {string} dayStr
+     * @param {number} minutes
+     * @returns {{gapStart: number, gapEnd: number}}
+     */
+    getDayGapBounds(dayStr, minutes) {
+        const segs = this.getDaySegmentsSorted(dayStr);
+        let gapStart = 0;
+        for (const seg of segs) {
+            if (minutes < seg.startMinutes) {
+                return { gapStart, gapEnd: seg.startMinutes };
+            }
+            if (minutes >= seg.startMinutes && minutes < seg.endMinutes) {
+                return { gapStart: seg.endMinutes, gapEnd: seg.endMinutes };
+            }
+            gapStart = Math.max(gapStart, seg.endMinutes);
+        }
+        return { gapStart, gapEnd: 1440 };
+    }
+
+    /**
+     * Jumps the add-mode cursor to the nearest gap boundary.
+     * Skips empty space above or below without creating a draft entry.
+     * @param {number} direction
+     * @returns {void}
+     */
+    jumpAddCursorGap(direction) {
+        if (!this.cursor || this.cursor.kind !== "add") return;
+        const info = this.getAddCursorDayInfo();
+        if (!info) return;
+        const { dayStr, minutes } = info;
+        const { gapStart, gapEnd } = this.getDayGapBounds(dayStr, minutes);
+        const targetMinutes = direction < 0 ? gapStart : gapEnd;
+        if (!Number.isFinite(targetMinutes)) return;
+        if (targetMinutes === minutes) return;
+
+        this.clearAddDraft();
+        const nextMs = this.timeContext.dateFromLocalDayMinutes(dayStr, targetMinutes).getTime();
+        this.cursor.ms = nextMs;
+        const dayIdx = this.weekDom?.days?.indexOf(dayStr) ?? -1;
+        if (dayIdx >= 0) this.focusedDayIndex = dayIdx;
+        this.updateCursorLine();
+        this.applyWeekFocusAndSelection();
+        this.scrollWeekFocusIntoView();
+    }
+
+    /**
+     * Extends or creates an add-mode draft entry from the cursor.
+     * Keeps the draft within the current free gap.
+     * @param {number} direction
+     * @param {boolean} jumpToBoundary
+     * @returns {void}
+     */
+    extendAddDraft(direction, jumpToBoundary) {
+        if (!this.cursor || this.cursor.kind !== "add") return;
+        const info = this.getAddCursorDayInfo();
+        if (!info) return;
+        const { dayStr, minutes } = info;
+
+        let draft = this.addDraft;
+        if (!draft || draft.dayStr !== dayStr) {
+            const { gapStart, gapEnd } = this.getDayGapBounds(dayStr, minutes);
+            draft = {
+                dayStr,
+                anchorMinutes: minutes,
+                startMinutes: minutes,
+                endMinutes: minutes,
+                gapStart,
+                gapEnd,
+            };
+        }
+
+        const delta = direction < 0 ? -MIN_ENTRY_MINUTES : MIN_ENTRY_MINUTES;
+        let nextMinutes = jumpToBoundary ? (direction < 0 ? draft.gapStart : draft.gapEnd) : minutes + delta;
+        nextMinutes = Math.max(draft.gapStart, Math.min(draft.gapEnd, nextMinutes));
+
+        const startMinutes = Math.min(draft.anchorMinutes, nextMinutes);
+        const endMinutes = Math.max(draft.anchorMinutes, nextMinutes);
+        if (endMinutes - startMinutes < MIN_ENTRY_MINUTES) {
+            this.onToast("Entry shorter than 15 minutes.");
+            return;
+        }
+
+        draft.startMinutes = startMinutes;
+        draft.endMinutes = endMinutes;
+        this.addDraft = draft;
+
+        const nextMs = this.timeContext.dateFromLocalDayMinutes(dayStr, nextMinutes).getTime();
+        this.cursor.ms = nextMs;
+        const dayIdx = this.weekDom?.days?.indexOf(dayStr) ?? -1;
+        if (dayIdx >= 0) this.focusedDayIndex = dayIdx;
+        this.updateCursorLine();
+        this.updateAddDraftPreview();
+        this.applyWeekFocusAndSelection();
+        this.scrollWeekFocusIntoView();
+    }
+
+    /**
      * Enters add mode and positions the cursor at a sensible time.
      * Part of the week view interaction flow.
      * @returns {void}
@@ -1190,6 +1388,7 @@ export class WeekView {
         if (!weekStart) return;
         const bounds = this.timeContext.weekBoundsMs(weekStart);
         if (!bounds) return;
+        this.clearAddDraft();
 
         let ms = null;
         if (this.selectedEntryId) {
@@ -1226,6 +1425,7 @@ export class WeekView {
         if (!this.cursor || this.cursor.kind !== "add") return;
         const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
         if (!bounds) return;
+        this.clearAddDraft();
 
         const direction = deltaSteps < 0 ? -1 : 1;
         let nextMs = this.cursor.ms + deltaSteps * MIN_ENTRY_MS;
@@ -1252,6 +1452,7 @@ export class WeekView {
         if (!this.cursor || this.cursor.kind !== "add") return;
         const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
         if (!bounds) return;
+        this.clearAddDraft();
 
         const dt = new Date(this.cursor.ms);
         if (Number.isNaN(dt.getTime())) return;
@@ -2229,10 +2430,17 @@ export class WeekView {
         if (!bounds) return;
 
         const id = this.store.reserveEntryId();
-        const startMs = this.cursor.ms;
-        const endMs = startMs + MIN_ENTRY_MS;
+        let startMs = this.cursor.ms;
+        let endMs = startMs + MIN_ENTRY_MS;
+        if (this.addDraft) {
+            startMs = this.timeContext.dateFromLocalDayMinutes(this.addDraft.dayStr, this.addDraft.startMinutes).getTime();
+            endMs = this.timeContext.dateFromLocalDayMinutes(this.addDraft.dayStr, this.addDraft.endMinutes).getTime();
+        }
         if (startMs < bounds.startMs || endMs > bounds.endMs) {
             return this.onToast("Cannot create entry outside the current week.");
+        }
+        if (endMs - startMs < MIN_ENTRY_MS) {
+            return this.onToast("Entry shorter than 15 minutes.");
         }
 
         this.applyWeekEdit({

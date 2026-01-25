@@ -666,6 +666,14 @@ progress {
   cursor: pointer;
 }
 
+.entry-block.entry-draft {
+  background: rgba(255, 255, 255, 0.04);
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  cursor: default;
+}
+
 .entry-block:hover {
   filter: brightness(1.08);
 }
