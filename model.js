@@ -9,7 +9,6 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
  * @property {number | null} [project_id]
  * @property {string | null} [description]
  * @property {string | null} [client]
- * @property {string[] | null} [tags]
  * @property {boolean | null} [billable]
  * @property {boolean | null} [is_running]
  * @property {number | null} [duration_seconds]
@@ -87,9 +86,8 @@ export class Entry {
         this.durationSeconds = durationSeconds;
         this.project = this.raw.project || "";
         this.description = this.raw.description || "";
-        this.tags = Array.isArray(this.raw.tags) ? this.raw.tags : [];
         this.billable = this.raw.billable === true ? true : this.raw.billable === false ? false : null;
-        this.searchHaystack = [this.project, this.description, this.raw.client || "", this.tags.join(" ")]
+        this.searchHaystack = [this.project, this.description, this.raw.client || ""]
             .filter(Boolean)
             .join(" ")
             .toLowerCase();
@@ -135,13 +133,12 @@ export class Entry {
     /**
      * Applies edited metadata fields and refreshes derived fields.
      * Defines the data shape used by the store.
-     * @param {{project: string, description: string, tags: string[], billable: boolean | null, updatedAt: string}} details
+     * @param {{project: string, description: string, billable: boolean | null, updatedAt: string}} details
      * @returns {void}
      */
     applyDetails(details) {
         this.raw.project = details.project;
         this.raw.description = details.description;
-        this.raw.tags = details.tags;
         this.raw.billable = details.billable;
         this.raw.updated_at = details.updatedAt;
         this.updateDerived();
@@ -162,9 +159,6 @@ export class Entry {
         this.raw.end = timeContext.formatIsoWithOffset(end);
         this.raw.is_running = false;
         this.raw.duration_seconds = Math.max(0, Math.round((endMs - startMs) / 1000));
-        if (!Array.isArray(this.raw.tags)) {
-            this.raw.tags = [];
-        }
         this.raw.updated_at = this.raw.updated_at || timeContext.formatIsoWithOffset(new Date());
         this.weekStart = null;
         this.updateDerived();

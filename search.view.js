@@ -235,12 +235,10 @@ export class SearchView {
             tdProject.textContent = entry.project ? entry.project : "No project";
             const tdDesc = document.createElement("td");
             tdDesc.textContent = safeText(entry.description);
-            const tdTags = document.createElement("td");
-            tdTags.textContent = Array.isArray(entry.tags) ? entry.tags.join(", ") : "";
             const tdBillable = document.createElement("td");
             tdBillable.textContent = entry.billable === true ? "Yes" : entry.billable === false ? "No" : "—";
 
-            tr.append(tdDate, tdStart, tdEnd, tdDur, tdProject, tdDesc, tdTags, tdBillable);
+            tr.append(tdDate, tdStart, tdEnd, tdDur, tdProject, tdDesc, tdBillable);
             frag.append(tr);
         }
         this.entriesTbody.append(frag);

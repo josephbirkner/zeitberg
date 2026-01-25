@@ -341,7 +341,6 @@ class App {
         this.entryMetaEl = getRequiredElement("entryMeta", HTMLElement);
         this.entryProjectInput = getRequiredElement("entryProject", HTMLInputElement);
         this.entryProjectListEl = getRequiredElement("entryProjectList", HTMLDataListElement);
-        this.entryTagsInput = getRequiredElement("entryTags", HTMLInputElement);
         this.entryDescInput = getRequiredElement("entryDesc", HTMLTextAreaElement);
         this.entryDescSuggestionsEl = getRequiredElement("entryDescSuggestions", HTMLElement);
         this.projectsDialog = getRequiredElement("projectsDialog", HTMLDialogElement);
@@ -392,7 +391,6 @@ class App {
                 entryMeta: this.entryMetaEl,
                 entryProject: this.entryProjectInput,
                 entryProjectList: this.entryProjectListEl,
-                entryTags: this.entryTagsInput,
                 entryDesc: this.entryDescInput,
                 entryDescSuggestions: this.entryDescSuggestionsEl,
             },
@@ -895,12 +893,11 @@ class App {
 
         const latest = this.store.getLatestWeekStart();
         this.state.setLatestWeekStart(latest);
-        if (!this.state.weekStart && latest) {
-            this.state.setWeekStart(latest);
-        }
         this.weekView.setLatestWeekStart(this.state.latestWeekStart);
-        if (this.state.weekStart) {
-            this.weekView.setWeekStart(this.state.weekStart);
+        const focusedToday = this.weekView.focusTodayLastEntry(true);
+        if (!focusedToday && latest) {
+            this.state.setWeekStart(latest);
+            this.weekView.setWeekStart(latest);
         }
 
         this.searchView.markDirty();

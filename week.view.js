@@ -48,7 +48,6 @@ const DESC_SUGGEST_LIMIT = 8;
  * @property {HTMLElement} elements.entryMeta
  * @property {HTMLInputElement} elements.entryProject
  * @property {HTMLDataListElement} elements.entryProjectList
- * @property {HTMLInputElement} elements.entryTags
  * @property {HTMLTextAreaElement} elements.entryDesc
  * @property {HTMLElement} elements.entryDescSuggestions
  * @property {(message: string, timeout?: number, tone?: "error" | "success") => void} onToast
@@ -92,7 +91,6 @@ export class WeekView {
         this.entryMetaEl = options.elements.entryMeta;
         this.entryProjectInput = options.elements.entryProject;
         this.entryProjectListEl = options.elements.entryProjectList;
-        this.entryTagsInput = options.elements.entryTags;
         this.entryDescInput = options.elements.entryDesc;
         this.entryDescSuggestionsEl = options.elements.entryDescSuggestions;
 
@@ -877,6 +875,9 @@ export class WeekView {
         this.scrollWeekFocusIntoView();
         this.updateEditorBadge();
         this.updateNowMarker();
+        if (this.appState.activeTab === "week" && !this.weekViewSection.hidden) {
+            this.startNowTimer();
+        }
 
         this.latestWeekBtn.disabled = Boolean(this.appState.latestWeekStart && this.appState.latestWeekStart === weekStart);
     }
@@ -964,6 +965,33 @@ export class WeekView {
                 return;
             }
         }
+    }
+
+    /**
+     * Focuses the current day and selects its last entry segment.
+     * Optionally forces the week view to the current week.
+     * @param {boolean} [forceWeek]
+     * @returns {boolean}
+     */
+    focusTodayLastEntry(forceWeek = false) {
+        const today = this.timeContext.formatDate(new Date());
+        if (!today) return false;
+        const weekStart = isoWeekStart(today);
+        if (!weekStart) return false;
+
+        if (forceWeek || this.appState.weekStart !== weekStart) {
+            this.setWeekStart(weekStart);
+        }
+        if (!this.weekDom) return false;
+
+        const dayIdx = this.weekDom.days.indexOf(today);
+        if (dayIdx < 0) return false;
+        const keys = this.weekDom.dayKeys[dayIdx] || [];
+        this.focusedDayIndex = dayIdx;
+        this.focusedEntryIndexByDay[dayIdx] = keys.length ? keys.length - 1 : 0;
+        this.applyWeekFocusAndSelection();
+        this.scrollWeekFocusIntoView();
+        return true;
     }
 
     /**
@@ -1560,7 +1588,6 @@ export class WeekView {
         raw.end = this.timeContext.formatIsoWithOffset(end);
         raw.is_running = false;
         raw.duration_seconds = Math.max(0, Math.round((endMs - startMs) / 1000));
-        if (!Array.isArray(raw.tags)) raw.tags = [];
         raw.updated_at = raw.updated_at || this.timeContext.formatIsoWithOffset(new Date());
     }
 
@@ -1584,7 +1611,6 @@ export class WeekView {
             project: "",
             project_id: null,
             start: null,
-            tags: [],
             updated_at: null,
             user_id: null,
         };
@@ -2259,7 +2285,6 @@ export class WeekView {
             return;
         }
         const description = this.entryDescInput.value.trim();
-        const tags = this.textToTags(this.entryTagsInput.value);
 
         let billable = null;
         if (project) {
@@ -2281,7 +2306,6 @@ export class WeekView {
                 if (idx < 0) throw new Error("Entry not found in this week");
                 raws[idx].project = project;
                 raws[idx].description = description;
-                raws[idx].tags = tags;
                 raws[idx].billable = billable;
                 raws[idx].updated_at = this.timeContext.formatIsoWithOffset(new Date());
                 return raws;
@@ -2333,30 +2357,6 @@ export class WeekView {
     }
 
     /**
-     * Converts tag arrays into a comma-separated string.
-     * Part of the week view interaction flow.
-     * @param {string[]} tags
-     * @returns {string}
-     */
-    tagsToText(tags) {
-        if (!Array.isArray(tags)) return "";
-        return tags.filter((tag) => typeof tag === "string" && tag.trim()).join(", ");
-    }
-
-    /**
-     * Parses comma-separated tags into a normalized array.
-     * Part of the week view interaction flow.
-     * @param {string} text
-     * @returns {string[]}
-     */
-    textToTags(text) {
-        return String(text || "")
-            .split(",")
-            .map((tag) => tag.trim())
-            .filter(Boolean);
-    }
-
-    /**
      * Closes the entry dialog and restores focus to the timeline.
      * Part of the week view interaction flow.
      * @returns {void}
@@ -2400,7 +2400,6 @@ export class WeekView {
             allowUnlisted: !this.store.getProjectByName(entry.project || ""),
         });
         this.entryDescInput.value = safeText(entry.description);
-        this.entryTagsInput.value = this.tagsToText(entry.tags);
 
         const day = this.timeContext.formatDate(entry.startDate);
         const start = this.timeContext.formatTime(entry.startDate);
