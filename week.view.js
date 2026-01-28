@@ -388,15 +388,20 @@ export class WeekView {
             this.clearCursor();
             return;
         }
-        const dayStr = this.timeContext.formatDate(dt);
-        const dayIdx = this.weekDom.days.indexOf(dayStr);
-        if (dayIdx < 0) {
+        let dayStr = this.timeContext.formatDate(dt);
+        let minutes = hhmmToMinutes(this.timeContext.formatTime(dt));
+        const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
+        if (bounds && this.cursor.kind === "add" && this.cursor.ms === bounds.endMs && this.weekDom.days.length) {
+            dayStr = this.weekDom.days[this.weekDom.days.length - 1];
+            minutes = 1440;
+        }
+        if (!dayStr || minutes === null) {
             this.clearCursor();
             return;
         }
 
-        const minutes = hhmmToMinutes(this.timeContext.formatTime(dt));
-        if (minutes === null) {
+        const dayIdx = this.weekDom.days.indexOf(dayStr);
+        if (dayIdx < 0) {
             this.clearCursor();
             return;
         }
@@ -407,7 +412,8 @@ export class WeekView {
         }
 
         this.cursorEl.classList.toggle("is-split", this.cursor.kind === "split");
-        this.cursorEl.style.top = `${minutes * this.weekDom.metrics.pxPerMinute}px`;
+        const topMinutes = minutes === 1440 ? 1439.9 : minutes;
+        this.cursorEl.style.top = `${topMinutes * this.weekDom.metrics.pxPerMinute}px`;
 
         const parent = this.weekDom.dayColEls[dayIdx];
         if (this.cursorEl.parentElement !== parent) parent.append(this.cursorEl);
@@ -604,17 +610,35 @@ export class WeekView {
     }
 
     /**
+     * Resolves which element should be kept in view (cursor or selected entry).
+     * Part of the week view interaction flow.
+     * @returns {HTMLElement | null}
+     */
+    getWeekScrollTarget() {
+        if (this.cursorEl && this.cursorEl.isConnected) {
+            return this.cursorEl;
+        }
+        if (!this.weekDom) return null;
+        const dayKeys = this.weekDom.dayKeys[this.focusedDayIndex] || [];
+        const selectedKey = dayKeys.length ? dayKeys[this.focusedEntryIndexByDay[this.focusedDayIndex] || 0] : null;
+        if (!selectedKey) return null;
+        return this.weekDom.entryElsByKey.get(selectedKey) || null;
+    }
+
+    /**
      * Scrolls the focused day or entry into view.
      * Part of the week view interaction flow.
      * @returns {void}
      */
     scrollWeekFocusIntoView() {
         if (!this.weekDom) return;
-        const dayKeys = this.weekDom.dayKeys[this.focusedDayIndex] || [];
-        const selectedKey = dayKeys.length ? dayKeys[this.focusedEntryIndexByDay[this.focusedDayIndex] || 0] : null;
-
-        const target = selectedKey ? this.weekDom.entryElsByKey.get(selectedKey) : this.weekDom.dayColEls[this.focusedDayIndex];
+        const target = this.getWeekScrollTarget();
         if (!target) return;
+        const containerRect = this.weekScrollEl.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const inViewVertical = targetRect.top >= containerRect.top && targetRect.bottom <= containerRect.bottom;
+        const inViewHorizontal = targetRect.left >= containerRect.left && targetRect.right <= containerRect.right;
+        if (inViewVertical && inViewHorizontal) return;
         target.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
 
@@ -689,6 +713,8 @@ export class WeekView {
      * @returns {void}
      */
     rebuildWeekView() {
+        const prevScrollTop = this.weekScrollEl.scrollTop;
+        const prevScrollLeft = this.weekScrollEl.scrollLeft;
         this.weekScrollEl.innerHTML = "";
         this.weekDom = null;
         this.clearNowMarker();
@@ -869,6 +895,8 @@ export class WeekView {
             }
         }
 
+        this.weekScrollEl.scrollTop = prevScrollTop;
+        this.weekScrollEl.scrollLeft = prevScrollLeft;
         this.applyWeekFocusAndSelection();
         this.updateCursorLine();
         this.updateAddDraftPreview();
@@ -1287,6 +1315,10 @@ export class WeekView {
      */
     getAddCursorDayInfo() {
         if (!this.cursor || this.cursor.kind !== "add") return null;
+        const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
+        if (bounds && this.cursor.ms === bounds.endMs && this.weekDom?.days?.length) {
+            return { dayStr: this.weekDom.days[this.weekDom.days.length - 1], minutes: 1440 };
+        }
         const dt = new Date(this.cursor.ms);
         if (Number.isNaN(dt.getTime())) return null;
         const dayStr = this.timeContext.formatDate(dt);
