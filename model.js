@@ -31,6 +31,22 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
  */
 
 /**
+ * @typedef {Object} WeekRequirementRaw
+ * @property {string} week_start
+ * @property {number} required_hours
+ * @property {string} [comment]
+ * @property {string} [updated_at]
+ */
+
+/**
+ * @typedef {Object} WeekRequirementsFileRaw
+ * @property {string} [generated_at]
+ * @property {number} [schema_version]
+ * @property {number} [default_required_hours]
+ * @property {WeekRequirementRaw[]} [weeks]
+ */
+
+/**
  * @typedef {Object} ManifestChunk
  * @property {number} year
  * @property {number} week
@@ -46,6 +62,22 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
  * @property {string} [timezone]
  * @property {string} [generated_at]
  */
+
+export const DEFAULT_WEEK_REQUIRED_HOURS = 40;
+
+/**
+ * Normalizes required-hours values to a bounded two-decimal number.
+ * Keeps persisted weekly requirement values deterministic.
+ * @param {unknown} value
+ * @param {number} fallback
+ * @returns {number}
+ */
+function normalizeRequiredHours(value, fallback) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    const clamped = Math.max(0, Math.min(168, parsed));
+    return Math.round(clamped * 100) / 100;
+}
 
 /**
  * Represents a time entry with derived metadata.
@@ -387,6 +419,219 @@ export class ProjectList {
     /**
      * Returns stable JSON output for projects.json.
      * Defines the data shape used by the store.
+     * @returns {string}
+     */
+    toJson() {
+        return jsonStringifySorted(this.toObject());
+    }
+}
+
+/**
+ * Represents a single week-specific required-hours override.
+ * Associates one ISO week start (Monday) with hours and an optional note.
+ */
+export class WeekRequirement {
+    /**
+     * Normalizes a raw week override payload into a strict object.
+     * Ensures week keys are Monday-based and hours are bounded.
+     * @param {WeekRequirementRaw} raw
+     * @param {number} defaultRequiredHours
+     */
+    constructor(raw, defaultRequiredHours) {
+        const weekStartRaw = typeof raw?.week_start === "string" ? raw.week_start.trim() : "";
+        const weekStartNormalized = weekStartRaw && /^\d{4}-\d{2}-\d{2}$/.test(weekStartRaw) ? isoWeekStart(weekStartRaw) : "";
+        this.week_start = weekStartNormalized || "";
+        this.required_hours = normalizeRequiredHours(raw?.required_hours, defaultRequiredHours);
+        this.comment = typeof raw?.comment === "string" ? raw.comment.trim() : "";
+        this.updated_at = typeof raw?.updated_at === "string" ? raw.updated_at : "";
+    }
+
+    /**
+     * Returns true when the requirement has a valid Monday week key.
+     * Used while parsing persisted configuration files.
+     * @returns {boolean}
+     */
+    isValid() {
+        return Boolean(this.week_start);
+    }
+
+    /**
+     * Returns a JSON-ready override payload.
+     * Used while serializing week-requirements.json.
+     * @returns {WeekRequirementRaw}
+     */
+    toRaw() {
+        return {
+            week_start: this.week_start,
+            required_hours: this.required_hours,
+            comment: this.comment,
+            ...(this.updated_at ? { updated_at: this.updated_at } : {}),
+        };
+    }
+}
+
+/**
+ * Represents the week-requirements.json payload.
+ * Stores default hours plus per-week required-hours/comment overrides.
+ */
+export class WeekRequirements {
+    /**
+     * Initializes week requirements with sorted overrides.
+     * Provides lookup and immutable update helpers for the store.
+     * @param {number} defaultRequiredHours
+     * @param {WeekRequirement[]} weeks
+     * @param {string} generatedAt
+     */
+    constructor(defaultRequiredHours, weeks, generatedAt) {
+        this.default_required_hours = normalizeRequiredHours(defaultRequiredHours, DEFAULT_WEEK_REQUIRED_HOURS);
+        this.generated_at = generatedAt;
+        this.schema_version = 1;
+        this.weeks = weeks
+            .filter((week) => week instanceof WeekRequirement && week.isValid())
+            .slice()
+            .sort((a, b) => a.week_start.localeCompare(b.week_start));
+        this.weeksByStart = new Map();
+        for (const week of this.weeks) {
+            this.weeksByStart.set(week.week_start, week);
+        }
+    }
+
+    /**
+     * Creates a default configuration with no overrides.
+     * Used when week-requirements.json does not exist yet.
+     * @param {string} [generatedAt]
+     * @returns {WeekRequirements}
+     */
+    static createDefault(generatedAt = "") {
+        return new WeekRequirements(DEFAULT_WEEK_REQUIRED_HOURS, [], generatedAt);
+    }
+
+    /**
+     * Parses week-requirements.json into a validated model.
+     * Drops invalid rows and keeps only one override per week.
+     * @param {unknown} raw
+     * @returns {WeekRequirements}
+     */
+    static fromRaw(raw) {
+        if (!raw || typeof raw !== "object") {
+            return WeekRequirements.createDefault();
+        }
+
+        const rawObj = /** @type {WeekRequirementsFileRaw} */ (raw);
+        const defaultRequiredHours = normalizeRequiredHours(rawObj.default_required_hours, DEFAULT_WEEK_REQUIRED_HOURS);
+        const weeksRaw = Array.isArray(rawObj.weeks) ? rawObj.weeks : [];
+        const byWeek = new Map();
+        for (const item of weeksRaw) {
+            if (!item || typeof item !== "object") continue;
+            const normalized = new WeekRequirement(item, defaultRequiredHours);
+            if (!normalized.isValid()) continue;
+            byWeek.set(normalized.week_start, normalized);
+        }
+
+        const generatedAt = typeof rawObj.generated_at === "string" ? rawObj.generated_at : "";
+        const weeks = Array.from(byWeek.values()).sort((a, b) => a.week_start.localeCompare(b.week_start));
+        return new WeekRequirements(defaultRequiredHours, weeks, generatedAt);
+    }
+
+    /**
+     * Returns the override object for a week when present.
+     * Used by the week UI to display required-hours metadata.
+     * @param {string} weekStart
+     * @returns {WeekRequirement | null}
+     */
+    getWeek(weekStart) {
+        const key = String(weekStart || "");
+        return this.weeksByStart.get(key) || null;
+    }
+
+    /**
+     * Returns required hours for a week, falling back to default.
+     * Used for week-level under/over-time calculations.
+     * @param {string} weekStart
+     * @returns {number}
+     */
+    getRequiredHours(weekStart) {
+        const week = this.getWeek(weekStart);
+        return week ? week.required_hours : this.default_required_hours;
+    }
+
+    /**
+     * Returns the optional week comment for a week.
+     * Used for labels such as vacation/sick annotations.
+     * @param {string} weekStart
+     * @returns {string}
+     */
+    getComment(weekStart) {
+        const week = this.getWeek(weekStart);
+        return week ? week.comment : "";
+    }
+
+    /**
+     * Applies one week override and returns a new immutable model.
+     * Removes the override when it matches defaults and has no comment.
+     * @param {string} weekStart
+     * @param {number} requiredHours
+     * @param {string} comment
+     * @param {string} updatedAt
+     * @returns {WeekRequirements}
+     */
+    withUpdatedWeek(weekStart, requiredHours, comment, updatedAt) {
+        const key = String(weekStart || "").trim();
+        if (!key) return this;
+
+        const normalizedWeekStart = /^\d{4}-\d{2}-\d{2}$/.test(key) ? isoWeekStart(key) : "";
+        if (!normalizedWeekStart) return this;
+
+        const normalizedHours = normalizeRequiredHours(requiredHours, this.default_required_hours);
+        const normalizedComment = String(comment || "").trim();
+        const byWeek = new Map(this.weeksByStart);
+
+        const shouldRemove = normalizedHours === this.default_required_hours && !normalizedComment;
+        if (shouldRemove) {
+            byWeek.delete(normalizedWeekStart);
+        } else {
+            const next = new WeekRequirement(
+                {
+                    week_start: normalizedWeekStart,
+                    required_hours: normalizedHours,
+                    comment: normalizedComment,
+                    updated_at: String(updatedAt || ""),
+                },
+                this.default_required_hours,
+            );
+            byWeek.set(normalizedWeekStart, next);
+        }
+
+        const weeks = Array.from(byWeek.values()).sort((a, b) => a.week_start.localeCompare(b.week_start));
+        return new WeekRequirements(this.default_required_hours, weeks, String(updatedAt || this.generated_at || ""));
+    }
+
+    /**
+     * Returns sorted week overrides for iteration or rendering.
+     * Used by the store when computing accumulated balances.
+     * @returns {WeekRequirement[]}
+     */
+    listWeeks() {
+        return this.weeks.slice();
+    }
+
+    /**
+     * Returns a JSON-ready object for serialization.
+     * Used to persist week requirements through the save pipeline.
+     * @returns {WeekRequirementsFileRaw}
+     */
+    toObject() {
+        return {
+            generated_at: this.generated_at,
+            schema_version: this.schema_version,
+            default_required_hours: this.default_required_hours,
+            weeks: this.weeks.map((week) => week.toRaw()),
+        };
+    }
+
+    /**
+     * Returns stable JSON output for week-requirements.json.
+     * Used by both GitHub and local save modes.
      * @returns {string}
      */
     toJson() {

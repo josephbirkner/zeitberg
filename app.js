@@ -15,7 +15,7 @@ import {
     TimeContext,
     utcNowIso,
 } from "./utils.js";
-import { Manifest, ProjectList } from "./model.js";
+import { Manifest, ProjectList, WeekRequirements } from "./model.js";
 
 /**
  * @typedef {Object} ProjectDialogOptions
@@ -327,6 +327,7 @@ class App {
         this.weekViewSection = getRequiredElement("weekViewSection", HTMLElement);
         this.weekLabelEl = getRequiredElement("weekLabel", HTMLElement);
         this.weekBillableEl = getRequiredElement("weekBillable", HTMLElement);
+        this.weekReqBtn = getRequiredElement("weekReqBtn", HTMLButtonElement);
         this.weekScrollEl = getRequiredElement("weekScroll", HTMLElement);
         this.prevWeekBtn = getRequiredElement("prevWeekBtn", HTMLButtonElement);
         this.nextWeekBtn = getRequiredElement("nextWeekBtn", HTMLButtonElement);
@@ -350,6 +351,14 @@ class App {
         this.projectsOkBtn = getRequiredElement("projectsOkBtn", HTMLButtonElement);
         this.addProjectBtn = getRequiredElement("addProjectBtn", HTMLButtonElement);
         this.projectsList = getRequiredElement("projectsList", HTMLElement);
+        this.weekReqDialog = getRequiredElement("weekReqDialog", HTMLDialogElement);
+        this.weekReqForm = getRequiredElement("weekReqForm", HTMLFormElement);
+        this.weekReqCloseBtn = getRequiredElement("weekReqCloseBtn", HTMLButtonElement);
+        this.weekReqCancelBtn = getRequiredElement("weekReqCancelBtn", HTMLButtonElement);
+        this.weekReqOkBtn = getRequiredElement("weekReqOkBtn", HTMLButtonElement);
+        this.weekReqMeta = getRequiredElement("weekReqMeta", HTMLElement);
+        this.weekReqHours = getRequiredElement("weekReqHours", HTMLInputElement);
+        this.weekReqComment = getRequiredElement("weekReqComment", HTMLTextAreaElement);
 
         this.searchViewEl = getRequiredElement("searchView", HTMLElement);
         this.searchInput = getRequiredElement("searchInput", HTMLInputElement);
@@ -378,12 +387,21 @@ class App {
                 weekControls: this.weekControlsEl,
                 weekLabel: this.weekLabelEl,
                 weekBillable: this.weekBillableEl,
+                weekReqBtn: this.weekReqBtn,
                 weekScroll: this.weekScrollEl,
                 prevWeekBtn: this.prevWeekBtn,
                 nextWeekBtn: this.nextWeekBtn,
                 latestWeekBtn: this.latestWeekBtn,
                 zoomInput: this.zoomInput,
                 editorBadge: this.editorBadgeEl,
+                weekReqDialog: this.weekReqDialog,
+                weekReqForm: this.weekReqForm,
+                weekReqCloseBtn: this.weekReqCloseBtn,
+                weekReqCancelBtn: this.weekReqCancelBtn,
+                weekReqOkBtn: this.weekReqOkBtn,
+                weekReqMeta: this.weekReqMeta,
+                weekReqHours: this.weekReqHours,
+                weekReqComment: this.weekReqComment,
                 entryDialog: this.entryDialog,
                 entryForm: this.entryForm,
                 entryCloseBtn: this.entryCloseBtn,
@@ -674,6 +692,7 @@ class App {
         this.nextWeekBtn.disabled = isBusy;
         this.latestWeekBtn.disabled = isBusy;
         this.zoomInput.disabled = isBusy;
+        this.weekReqBtn.disabled = isBusy;
         this.searchInput.disabled = isBusy;
         this.projectSelect.disabled = isBusy;
         this.fromDateInput.disabled = isBusy;
@@ -684,6 +703,11 @@ class App {
         this.projectsCancelBtn.disabled = isBusy;
         this.projectsOkBtn.disabled = isBusy;
         this.addProjectBtn.disabled = isBusy;
+        this.weekReqCloseBtn.disabled = isBusy;
+        this.weekReqCancelBtn.disabled = isBusy;
+        this.weekReqOkBtn.disabled = isBusy;
+        this.weekReqHours.disabled = isBusy;
+        this.weekReqComment.disabled = isBusy;
     }
 
     /**
@@ -813,6 +837,26 @@ class App {
     }
 
     /**
+     * Loads week-requirements.json and updates the week requirements model.
+     * Keeps the main UI flow and data loading coordinated.
+     * @returns {Promise<void>}
+     */
+    async fetchWeekRequirements() {
+        this.setProgress(0, 1, this.isLocalMode ? "Loading week requirements (local)…" : "Loading week requirements…");
+        try {
+            const raw = await this.dataSource.fetchWeekRequirements();
+            const requirements = WeekRequirements.fromRaw(raw || {});
+            this.store.setWeekRequirements(requirements);
+            this.weekView.setWeekRequirements(requirements);
+        } catch (err) {
+            const defaults = WeekRequirements.createDefault();
+            this.store.setWeekRequirements(defaults);
+            this.weekView.setWeekRequirements(defaults);
+            this.toast(`Week requirements not loaded: ${safeText(err)}`, 5000);
+        }
+    }
+
+    /**
      * Loads all week chunks and rebuilds store indexes.
      * Keeps the main UI flow and data loading coordinated.
      * @returns {Promise<void>}
@@ -827,7 +871,7 @@ class App {
         }
         const chunkFiles = manifest.chunks;
         if (!chunkFiles.length) {
-            this.store.clear();
+            this.store.clear({ keepProjects: true, keepWeekRequirements: true });
             this.store.setManifest(manifest);
             this.state.setLatestWeekStart(null);
             this.state.setWeekStart(null);
@@ -839,7 +883,7 @@ class App {
 
         this.setProgress(0, chunkFiles.length, `Loading 0/${chunkFiles.length}…`);
 
-        this.store.clear({ keepProjects: true });
+        this.store.clear({ keepProjects: true, keepWeekRequirements: true });
         this.store.setManifest(manifest);
 
         let cacheHits = 0;
@@ -918,6 +962,7 @@ class App {
         try {
             await this.fetchManifest();
             await this.fetchProjects();
+            await this.fetchWeekRequirements();
             await this.loadAllChunks();
         } catch (err) {
             this.setError(this.dataErrorEl, safeText(err));

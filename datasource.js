@@ -75,6 +75,15 @@ export class DataSource {
     }
 
     /**
+     * Loads per-week required-hours settings JSON payload.
+     * Used by the app to read or persist data.
+     * @returns {Promise<Object>}
+     */
+    async fetchWeekRequirements() {
+        throw new Error("Not implemented");
+    }
+
+    /**
      * Writes a set of files with a commit message, returning shas when available.
      * Used by the app to read or persist data.
      * @param {SaveFile[]} files
@@ -229,6 +238,27 @@ export class GitHubDataSource extends DataSource {
             return JSON.parse(raw);
         } catch {
             throw new Error("Failed to parse projects.json");
+        }
+    }
+
+    /**
+     * Loads week-requirements.json from the repository.
+     * Returns a default payload when the file does not exist yet.
+     * @returns {Promise<Object>}
+     */
+    async fetchWeekRequirements() {
+        try {
+            const raw = await this.fetchRaw(this.buildContentsUrl("data/week-requirements.json"));
+            return JSON.parse(raw);
+        } catch (err) {
+            const message = String(err || "");
+            if (message.includes("404")) {
+                return { default_required_hours: 40, generated_at: "", schema_version: 1, weeks: [] };
+            }
+            if (message.includes("Failed to parse")) {
+                throw err;
+            }
+            throw new Error(`Failed to load week-requirements.json: ${message}`);
         }
     }
 
@@ -390,6 +420,28 @@ export class LocalDataSource extends DataSource {
             return JSON.parse(raw);
         } catch {
             throw new Error("Failed to parse projects.json");
+        }
+    }
+
+    /**
+     * Loads local week-requirements.json without caching.
+     * Returns a default payload when the file does not exist yet.
+     * @returns {Promise<Object>}
+     */
+    async fetchWeekRequirements() {
+        const resp = await fetch(this.buildLocalUrl("data/week-requirements.json"), { cache: "no-store" });
+        if (!resp.ok) {
+            if (resp.status === 404) {
+                return { default_required_hours: 40, generated_at: "", schema_version: 1, weeks: [] };
+            }
+            throw new Error(`Local week-requirements.json not found (${resp.status}).`);
+        }
+
+        const raw = await resp.text();
+        try {
+            return JSON.parse(raw);
+        } catch {
+            throw new Error("Failed to parse week-requirements.json");
         }
     }
 

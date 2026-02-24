@@ -1,5 +1,5 @@
 import { addIsoDays, chunkKey, gitBlobSha1, hashColorHex, hhmmToMinutes, isoWeekInfo, isoWeekStart, utcNowIso } from "./utils.js";
-import { Entry, Manifest, ProjectList, Week } from "./model.js";
+import { Entry, Manifest, ProjectList, Week, WeekRequirements } from "./model.js";
 
 /**
  * @typedef {Object} WeekFile
@@ -45,6 +45,7 @@ import { Entry, Manifest, ProjectList, Week } from "./model.js";
  */
 
 const LONG_ENTRY_MS = 7 * 24 * 60 * 60 * 1000;
+const BALANCE_ACCUMULATION_START = "2025-09-01";
 
 /**
  * Stores entries as Week objects and provides fast indexes.
@@ -67,6 +68,7 @@ export class EntryStore {
         this.manifest = null;
         this.projectList = null;
         this.projectsByName = new Map();
+        this.weekRequirements = WeekRequirements.createDefault();
     }
 
     /**
@@ -80,9 +82,9 @@ export class EntryStore {
     }
 
     /**
-     * Clears entry data and caches, optionally preserving projects.
+     * Clears entry data and caches, optionally preserving side-config models.
      * Supports derived data and serialization steps.
-     * @param {{keepProjects?: boolean}} [options]
+     * @param {{keepProjects?: boolean, keepWeekRequirements?: boolean}} [options]
      * @returns {void}
      */
     clear(options = {}) {
@@ -96,6 +98,9 @@ export class EntryStore {
         if (!options.keepProjects) {
             this.projectList = null;
             this.projectsByName.clear();
+        }
+        if (!options.keepWeekRequirements) {
+            this.weekRequirements = WeekRequirements.createDefault();
         }
     }
 
@@ -160,6 +165,60 @@ export class EntryStore {
      */
     getProjectByName(name) {
         return this.projectsByName.get(String(name || "")) || null;
+    }
+
+    /**
+     * Stores week-level required-hours settings.
+     * Supports derived data and serialization steps.
+     * @param {WeekRequirements | null} weekRequirements
+     * @returns {void}
+     */
+    setWeekRequirements(weekRequirements) {
+        this.weekRequirements = weekRequirements instanceof WeekRequirements ? weekRequirements : WeekRequirements.createDefault();
+    }
+
+    /**
+     * Returns week-level required-hours settings.
+     * Supports derived data and serialization steps.
+     * @returns {WeekRequirements}
+     */
+    getWeekRequirements() {
+        return this.weekRequirements;
+    }
+
+    /**
+     * Returns required hours for a given week.
+     * Supports derived data and serialization steps.
+     * @param {string} weekStart
+     * @returns {number}
+     */
+    getWeekRequiredHours(weekStart) {
+        return this.weekRequirements.getRequiredHours(weekStart);
+    }
+
+    /**
+     * Returns the optional week comment for a week.
+     * Supports derived data and serialization steps.
+     * @param {string} weekStart
+     * @returns {string}
+     */
+    getWeekComment(weekStart) {
+        return this.weekRequirements.getComment(weekStart);
+    }
+
+    /**
+     * Applies a week requirement update and stores the new model.
+     * Supports derived data and serialization steps.
+     * @param {string} weekStart
+     * @param {number} requiredHours
+     * @param {string} comment
+     * @param {string} updatedAt
+     * @returns {WeekRequirements}
+     */
+    updateWeekRequirement(weekStart, requiredHours, comment, updatedAt) {
+        const next = this.weekRequirements.withUpdatedWeek(weekStart, requiredHours, comment, updatedAt);
+        this.weekRequirements = next;
+        return next;
     }
 
     /**
@@ -543,6 +602,77 @@ export class EntryStore {
         const index = this.buildSegmentsIndexForWeek(entries, weekStart);
         this.weekSegmentsCache.set(weekStart, index);
         return index;
+    }
+
+    /**
+     * Returns billable seconds for a week from segmented data.
+     * Only billable entries are counted toward week balance.
+     * @param {string} weekStart
+     * @returns {number}
+     */
+    getWeekBillableSeconds(weekStart) {
+        if (!weekStart) return 0;
+        const segments = this.getWeekSegmentsIndex(weekStart);
+        let billableSeconds = 0;
+        for (const list of segments.values()) {
+            for (const seg of list) {
+                if (seg.entry?.billable !== true) continue;
+                const seconds = Math.max(0, Math.round((seg.endMinutes - seg.startMinutes) * 60));
+                billableSeconds += seconds;
+            }
+        }
+        return billableSeconds;
+    }
+
+    /**
+     * Computes week delta (worked minus required) in seconds.
+     * Supports derived data and serialization steps.
+     * @param {string} weekStart
+     * @returns {number}
+     */
+    getWeekBalanceSeconds(weekStart) {
+        if (!weekStart) return 0;
+        const requiredHours = this.getWeekRequiredHours(weekStart);
+        const requiredSeconds = Math.round(requiredHours * 3600);
+        const billableSeconds = this.getWeekBillableSeconds(weekStart);
+        return billableSeconds - requiredSeconds;
+    }
+
+    /**
+     * Returns known week starts from data plus week-requirement overrides.
+     * Supports derived data and serialization steps.
+     * @returns {string[]}
+     */
+    getKnownWeekStarts() {
+        const seen = new Set();
+        for (const weekStart of this.weeks.keys()) {
+            seen.add(weekStart);
+        }
+        for (const row of this.weekRequirements.listWeeks()) {
+            if (row?.week_start) {
+                seen.add(row.week_start);
+            }
+        }
+        return Array.from(seen).sort((a, b) => a.localeCompare(b));
+    }
+
+    /**
+     * Computes accumulated week balance up to and including a week.
+     * Supports derived data and serialization steps.
+     * @param {string} weekStart
+     * @returns {number}
+     */
+    getAccumulatedBalanceSeconds(weekStart) {
+        if (!weekStart) return 0;
+        const startWeek = isoWeekStart(BALANCE_ACCUMULATION_START);
+        if (weekStart < startWeek) return 0;
+        let total = 0;
+        let cursor = startWeek;
+        for (let i = 0; i < 2000 && cursor <= weekStart; i += 1) {
+            total += this.getWeekBalanceSeconds(cursor);
+            cursor = addIsoDays(cursor, 7);
+        }
+        return total;
     }
 
     /**

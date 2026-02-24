@@ -35,12 +35,21 @@ const DESC_SUGGEST_LIMIT = 8;
  * @property {HTMLElement} elements.weekControls
  * @property {HTMLElement} elements.weekLabel
  * @property {HTMLElement} elements.weekBillable
+ * @property {HTMLButtonElement} elements.weekReqBtn
  * @property {HTMLElement} elements.weekScroll
  * @property {HTMLButtonElement} elements.prevWeekBtn
  * @property {HTMLButtonElement} elements.nextWeekBtn
  * @property {HTMLButtonElement} elements.latestWeekBtn
  * @property {HTMLInputElement} elements.zoomInput
  * @property {HTMLElement} elements.editorBadge
+ * @property {HTMLDialogElement} elements.weekReqDialog
+ * @property {HTMLFormElement} elements.weekReqForm
+ * @property {HTMLButtonElement} elements.weekReqCloseBtn
+ * @property {HTMLButtonElement} elements.weekReqCancelBtn
+ * @property {HTMLButtonElement} elements.weekReqOkBtn
+ * @property {HTMLElement} elements.weekReqMeta
+ * @property {HTMLInputElement} elements.weekReqHours
+ * @property {HTMLTextAreaElement} elements.weekReqComment
  * @property {HTMLDialogElement} elements.entryDialog
  * @property {HTMLFormElement} elements.entryForm
  * @property {HTMLButtonElement} elements.entryCloseBtn
@@ -77,12 +86,22 @@ export class WeekView {
         this.weekControlsEl = options.elements.weekControls;
         this.weekLabelEl = options.elements.weekLabel;
         this.weekBillableEl = options.elements.weekBillable;
+        this.weekReqBtn = options.elements.weekReqBtn;
         this.weekScrollEl = options.elements.weekScroll;
         this.prevWeekBtn = options.elements.prevWeekBtn;
         this.nextWeekBtn = options.elements.nextWeekBtn;
         this.latestWeekBtn = options.elements.latestWeekBtn;
         this.zoomInput = options.elements.zoomInput;
         this.editorBadgeEl = options.elements.editorBadge;
+
+        this.weekReqDialog = options.elements.weekReqDialog;
+        this.weekReqForm = options.elements.weekReqForm;
+        this.weekReqCloseBtn = options.elements.weekReqCloseBtn;
+        this.weekReqCancelBtn = options.elements.weekReqCancelBtn;
+        this.weekReqOkBtn = options.elements.weekReqOkBtn;
+        this.weekReqMetaEl = options.elements.weekReqMeta;
+        this.weekReqHoursInput = options.elements.weekReqHours;
+        this.weekReqCommentInput = options.elements.weekReqComment;
 
         this.entryDialog = options.elements.entryDialog;
         this.entryForm = options.elements.entryForm;
@@ -167,6 +186,19 @@ export class WeekView {
     }
 
     /**
+     * Applies new week requirement settings and refreshes summary labels.
+     * Part of the week view interaction flow.
+     * @param {import("./model.js").WeekRequirements | null} weekRequirements
+     * @returns {void}
+     */
+    setWeekRequirements(weekRequirements) {
+        this.store.setWeekRequirements(weekRequirements);
+        if (this.appState.weekStart) {
+            this.updateWeekSummary(this.appState.weekStart);
+        }
+    }
+
+    /**
      * Registers UI events for navigation and dialog actions.
      * Part of the week view interaction flow.
      * @returns {void}
@@ -176,6 +208,15 @@ export class WeekView {
         this.nextWeekBtn.addEventListener("click", () => this.handleNextWeek());
         this.latestWeekBtn.addEventListener("click", () => this.handleLatestWeek());
         this.zoomInput.addEventListener("input", () => this.handleZoomInput());
+        this.weekReqBtn.addEventListener("click", () => this.openWeekRequirementsDialog());
+
+        this.weekReqCloseBtn.addEventListener("click", () => this.closeWeekRequirementsDialog());
+        this.weekReqCancelBtn.addEventListener("click", () => this.closeWeekRequirementsDialog());
+        this.weekReqDialog.addEventListener("cancel", (ev) => {
+            ev.preventDefault();
+            this.closeWeekRequirementsDialog();
+        });
+        this.weekReqForm.addEventListener("submit", (ev) => this.handleWeekRequirementsSubmit(ev));
 
         this.entryCloseBtn.addEventListener("click", () => this.closeEntryDialog());
         this.entryCancelBtn.addEventListener("click", () => this.closeEntryDialog());
@@ -244,6 +285,7 @@ export class WeekView {
         this.clearAddDraft();
         this.stopNowTimer();
         this.clearNowMarker();
+        this.closeWeekRequirementsDialog();
     }
 
     /**
@@ -736,7 +778,7 @@ export class WeekView {
         const weekEnd = days[6];
         const { isoYear, week } = isoWeekInfo(weekStart);
         this.weekLabelEl.textContent = `${isoYear}-W${String(week).padStart(2, "0")} • ${weekStart} → ${weekEnd}`;
-        this.updateWeekBillableTotal(weekStart);
+        this.updateWeekSummary(weekStart);
 
         const gridEl = document.createElement("div");
         gridEl.className = "week-grid";
@@ -2023,44 +2065,157 @@ export class WeekView {
     }
 
     /**
-     * Updates the billable total label for the active week.
-     * Keeps the top bar stats aligned with edits and week navigation.
+     * Formats a signed duration string for week delta labels.
+     * Keeps under/over-time output compact and consistent.
+     * @param {number} seconds
+     * @returns {string}
+     */
+    formatSignedDuration(seconds) {
+        const num = Number(seconds);
+        if (!Number.isFinite(num)) {
+            return "—";
+        }
+        const sign = num < 0 ? "-" : "+";
+        return `${sign}${formatDuration(Math.abs(num))}`;
+    }
+
+    /**
+     * Formats required-hours values with trimmed decimal precision.
+     * Keeps top-bar labels concise for fractional-hour targets.
+     * @param {number} hours
+     * @returns {string}
+     */
+    formatRequiredHours(hours) {
+        const num = Number(hours);
+        if (!Number.isFinite(num) || num < 0) return "0";
+        const rounded = Math.round(num * 100) / 100;
+        return String(rounded).replace(/\.0+$/, "").replace(/(\.\d*?[1-9])0+$/, "$1");
+    }
+
+    /**
+     * Updates the week summary label with billable/required/balance totals.
+     * Keeps week-level accounting visible while navigating and editing.
      * @param {string | null} weekStart
      * @returns {void}
      */
-    updateWeekBillableTotal(weekStart) {
+    updateWeekSummary(weekStart) {
         if (!this.weekBillableEl) return;
         if (!weekStart) {
             this.weekBillableEl.textContent = "";
             return;
         }
-        const bounds = this.timeContext.weekBoundsMs(weekStart);
-        if (!bounds) {
-            this.weekBillableEl.textContent = "";
+
+        const billableSeconds = this.store.getWeekBillableSeconds(weekStart);
+        const requiredHours = this.store.getWeekRequiredHours(weekStart);
+        const requiredSeconds = Math.round(requiredHours * 3600);
+        const weekDeltaSeconds = billableSeconds - requiredSeconds;
+        const accumulatedSeconds = this.store.getAccumulatedBalanceSeconds(weekStart);
+        const comment = this.store.getWeekComment(weekStart);
+
+        const parts = [
+            `Req ${this.formatRequiredHours(requiredHours)}h`,
+            `Week ${this.formatSignedDuration(weekDeltaSeconds)}`,
+            `Total ${this.formatSignedDuration(accumulatedSeconds)}`,
+            `Billable ${formatDuration(billableSeconds)}`,
+        ];
+        if (comment) {
+            parts.push(comment);
+        }
+        this.weekBillableEl.textContent = parts.join(" • ");
+    }
+
+    /**
+     * Opens the week requirements dialog for the active week.
+     * Lets the user set required hours and an optional note.
+     * @returns {void}
+     */
+    openWeekRequirementsDialog() {
+        const weekStart = this.appState.weekStart;
+        if (!weekStart) {
+            this.onToast("No week selected.");
             return;
         }
 
-        const { entries } = this.store.collectEntriesForWeekWindow(weekStart, bounds);
-        let totalSeconds = 0;
-        for (const entry of entries) {
-            if (entry.billable !== true) continue;
-            if (!(entry.startDate instanceof Date)) continue;
-            const startMs = entry.startDate.getTime();
-            const endMs =
-                entry.endDate instanceof Date && Number.isFinite(entry.endDate.getTime())
-                    ? entry.endDate.getTime()
-                    : entry.raw?.is_running
-                      ? Date.now()
-                      : null;
-            if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
-            const clippedStart = Math.max(bounds.startMs, startMs);
-            const clippedEnd = Math.min(bounds.endMs, endMs);
-            if (clippedEnd > clippedStart) {
-                totalSeconds += Math.round((clippedEnd - clippedStart) / 1000);
+        const info = isoWeekInfo(weekStart);
+        this.weekReqMetaEl.textContent = `${info.isoYear}-W${String(info.week).padStart(2, "0")} • ${weekStart}`;
+        this.weekReqHoursInput.value = this.formatRequiredHours(this.store.getWeekRequiredHours(weekStart));
+        this.weekReqCommentInput.value = this.store.getWeekComment(weekStart);
+
+        if (!this.weekReqDialog.open) {
+            this.weekReqDialog.showModal();
+        }
+        queueMicrotask(() => {
+            try {
+                this.weekReqHoursInput.focus();
+                this.weekReqHoursInput.select();
+            } catch {
+                // ignore
             }
+        });
+    }
+
+    /**
+     * Closes the week requirements dialog.
+     * Restores focus to the week timeline.
+     * @returns {void}
+     */
+    closeWeekRequirementsDialog() {
+        if (this.weekReqDialog.open) {
+            this.weekReqDialog.close();
+        }
+        queueMicrotask(() => {
+            try {
+                this.weekScrollEl.focus();
+            } catch {
+                // ignore
+            }
+        });
+    }
+
+    /**
+     * Validates and saves week requirement settings through the save pipeline.
+     * Writes data/week-requirements.json in both local and GitHub modes.
+     * @param {Event} ev
+     * @returns {Promise<void>}
+     */
+    async handleWeekRequirementsSubmit(ev) {
+        ev.preventDefault();
+        if (this.saveInFlight) {
+            this.onToast("Saving in progress…");
+            return;
         }
 
-        this.weekBillableEl.textContent = `Billable ${formatDuration(totalSeconds)}`;
+        const weekStart = this.appState.weekStart;
+        if (!weekStart) {
+            this.closeWeekRequirementsDialog();
+            return;
+        }
+
+        const requiredHours = Number.parseFloat(this.weekReqHoursInput.value || "");
+        if (!Number.isFinite(requiredHours) || requiredHours < 0 || requiredHours > 168) {
+            this.onToast("Required hours must be between 0 and 168.");
+            return;
+        }
+
+        const comment = this.weekReqCommentInput.value.trim();
+        const nowIso = utcNowIso();
+        const nextWeekRequirements = this.store.getWeekRequirements().withUpdatedWeek(weekStart, requiredHours, comment, nowIso);
+        const fileContent = nextWeekRequirements.toJson();
+        const info = isoWeekInfo(weekStart);
+        const message = `Update week requirements (${info.isoYear}-W${String(info.week).padStart(2, "0")})`;
+
+        this.onBusy(true);
+        try {
+            await this.dataSource.saveFiles([{ path: "data/week-requirements.json", content: fileContent }], message);
+            this.store.setWeekRequirements(nextWeekRequirements);
+            this.updateWeekSummary(weekStart);
+            this.closeWeekRequirementsDialog();
+            this.onToast("Week requirements saved.", 2400, "success");
+        } catch (err) {
+            this.onToast(String(err), 5000);
+        } finally {
+            this.onBusy(false);
+        }
     }
 
     /**

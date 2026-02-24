@@ -32,6 +32,8 @@ def _is_allowed_path(path_text: str) -> bool:
         return True
     if path_text == "data/projects.json":
         return True
+    if path_text == "data/week-requirements.json":
+        return True
     if path_text.startswith("data/entries/") and path_text.endswith(".json"):
         return True
     return False

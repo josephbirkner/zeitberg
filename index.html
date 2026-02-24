@@ -25,6 +25,7 @@
 
           <div id="weekLabel" class="week-label" aria-live="polite"></div>
           <div id="weekBillable" class="week-billable muted" aria-live="polite"></div>
+          <button id="weekReqBtn" class="btn btn-secondary" type="button">Required</button>
 
           <div id="editorBadge" class="editor-badge" aria-live="polite"></div>
 
@@ -203,6 +204,32 @@
         <div class="row dialog-actions">
           <button id="projectsOkBtn" class="btn" type="submit">Ok</button>
           <button id="projectsCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="weekReqDialog" class="dialog">
+      <form id="weekReqForm" method="dialog" class="dialog-card">
+        <div class="dialog-head">
+          <div class="dialog-title">Week Requirements</div>
+          <button id="weekReqCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">✕</button>
+        </div>
+
+        <div id="weekReqMeta" class="dialog-meta muted"></div>
+
+        <div class="grid dialog-grid">
+          <label>
+            <span>Required hours</span>
+            <input id="weekReqHours" type="number" min="0" max="168" step="0.25" />
+          </label>
+          <label class="col-span-2">
+            <span>Comment (optional)</span>
+            <textarea id="weekReqComment" rows="3" placeholder="Vacation, sick, holiday…"></textarea>
+          </label>
+        </div>
+
+        <div class="row dialog-actions">
+          <button id="weekReqOkBtn" class="btn" type="submit">Ok</button>
+          <button id="weekReqCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
         </div>
       </form>
     </dialog>
