@@ -1,6 +1,16 @@
 import { gitBlobSha1 } from "./utils.js";
 
 /**
+ * Returns true when a value looks like a Git commit/blob SHA.
+ * Keeps GitHub API response validation readable at call sites.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isGitSha(value) {
+    return /^[0-9a-f]{40}$/i.test(String(value || ""));
+}
+
+/**
  * @typedef {Object} RepoConfig
  * @description Identifies the GitHub repository and ref to read/write.
  * @property {string} owner
@@ -109,6 +119,18 @@ export class GitHubDataSource extends DataSource {
     constructor(config, token) {
         super(config);
         this.token = token;
+        this.lastKnownCommitSha = "";
+    }
+
+    /**
+     * Clears cached branch state after repository configuration changes.
+     * Prevents a remembered commit from one branch/repo being reused elsewhere.
+     * @param {RepoConfig} config
+     * @returns {void}
+     */
+    setConfig(config) {
+        super.setConfig(config);
+        this.lastKnownCommitSha = "";
     }
 
     /**
@@ -130,6 +152,8 @@ export class GitHubDataSource extends DataSource {
     buildHeaders(accept) {
         const headers = {
             Accept: accept || "application/vnd.github+json",
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
             "X-GitHub-Api-Version": "2022-11-28",
         };
         if (this.token) {
@@ -145,7 +169,7 @@ export class GitHubDataSource extends DataSource {
      * @returns {Promise<any>}
      */
     async fetchJson(url) {
-        const resp = await fetch(url, { headers: this.buildHeaders("application/vnd.github+json") });
+        const resp = await fetch(url, { headers: this.buildHeaders("application/vnd.github+json"), cache: "no-store" });
         if (!resp.ok) {
             throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
         }
@@ -162,7 +186,8 @@ export class GitHubDataSource extends DataSource {
     async fetchJsonRequest(url, options) {
         const opts = options || {};
         const headers = this.buildHeaders(opts.accept || "application/vnd.github+json");
-        const init = { method: opts.method || "GET", headers };
+        /** @type {RequestInit} */
+        const init = { method: opts.method || "GET", headers, cache: "no-store" };
         if (opts.body !== undefined && opts.body !== null) {
             init.body = JSON.stringify(opts.body);
             init.headers = { ...headers, "Content-Type": "application/json" };
@@ -181,11 +206,44 @@ export class GitHubDataSource extends DataSource {
      * @returns {Promise<string>}
      */
     async fetchRaw(url) {
-        const resp = await fetch(url, { headers: this.buildHeaders("application/vnd.github.raw") });
+        const resp = await fetch(url, { headers: this.buildHeaders("application/vnd.github.raw"), cache: "no-store" });
         if (!resp.ok) {
             throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
         }
         return await resp.text();
+    }
+
+    /**
+     * Resolves the best base commit for a save operation.
+     * If GitHub/browser caching returns the previous branch head shortly after
+     * a successful save, the remembered head is compared against the returned
+     * ref and used only when it is provably ahead.
+     * @param {string} baseUrl
+     * @param {string} refCommitSha
+     * @returns {Promise<string>}
+     */
+    async resolveSaveBaseCommitSha(baseUrl, refCommitSha) {
+        if (!isGitSha(refCommitSha)) {
+            throw new Error("Failed to resolve branch ref.");
+        }
+        if (!isGitSha(this.lastKnownCommitSha) || this.lastKnownCommitSha === refCommitSha) {
+            return refCommitSha;
+        }
+
+        try {
+            const compare = await this.fetchJsonRequest(
+                `${baseUrl}/compare/${encodeURIComponent(refCommitSha)}...${encodeURIComponent(this.lastKnownCommitSha)}`,
+            );
+            const status = String(compare?.status || "");
+            if (status === "ahead" || status === "identical") {
+                return this.lastKnownCommitSha;
+            }
+        } catch {
+            // Fall back to the freshly fetched ref if comparison is unavailable.
+        }
+
+        this.lastKnownCommitSha = refCommitSha;
+        return refCommitSha;
     }
 
     /**
@@ -284,12 +342,12 @@ export class GitHubDataSource extends DataSource {
         }
 
         const refInfo = await this.fetchJsonRequest(`${baseUrl}/git/ref/heads/${encodeURIComponent(branch)}`);
-        const baseCommitSha = refInfo?.object?.sha;
-        if (!/^[0-9a-f]{40}$/i.test(baseCommitSha || "")) throw new Error("Failed to resolve branch ref.");
+        const refCommitSha = refInfo?.object?.sha;
+        const baseCommitSha = await this.resolveSaveBaseCommitSha(baseUrl, refCommitSha);
 
         const baseCommit = await this.fetchJsonRequest(`${baseUrl}/git/commits/${encodeURIComponent(baseCommitSha)}`);
         const baseTreeSha = baseCommit?.tree?.sha;
-        if (!/^[0-9a-f]{40}$/i.test(baseTreeSha || "")) throw new Error("Failed to resolve base tree.");
+        if (!isGitSha(baseTreeSha)) throw new Error("Failed to resolve base tree.");
 
         const updatedFiles = [];
         for (const file of inputFiles) {
@@ -298,7 +356,7 @@ export class GitHubDataSource extends DataSource {
                 body: { content: file.content, encoding: "utf-8" },
             });
             const sha = blob?.sha;
-            if (!/^[0-9a-f]{40}$/i.test(sha || "")) {
+            if (!isGitSha(sha)) {
                 throw new Error(`Failed to create blob for ${file.path}`);
             }
             if (gitBlobSha1(file.content) !== sha) {
@@ -317,7 +375,7 @@ export class GitHubDataSource extends DataSource {
             body: { base_tree: baseTreeSha, tree },
         });
         const newTreeSha = treeRes?.sha;
-        if (!/^[0-9a-f]{40}$/i.test(newTreeSha || "")) throw new Error("Failed to create tree.");
+        if (!isGitSha(newTreeSha)) throw new Error("Failed to create tree.");
 
         const messageText = String(message || "").trim() || "Update timetracking data";
 
@@ -326,13 +384,14 @@ export class GitHubDataSource extends DataSource {
             body: { message: messageText, tree: newTreeSha, parents: [baseCommitSha] },
         });
         const newCommitSha = commitRes?.sha;
-        if (!/^[0-9a-f]{40}$/i.test(newCommitSha || "")) throw new Error("Failed to create commit.");
+        if (!isGitSha(newCommitSha)) throw new Error("Failed to create commit.");
 
         await this.fetchJsonRequest(`${baseUrl}/git/refs/heads/${encodeURIComponent(branch)}`, {
             method: "PATCH",
             body: { sha: newCommitSha, force: false },
         });
 
+        this.lastKnownCommitSha = newCommitSha;
         return { files: updatedFiles };
     }
 
