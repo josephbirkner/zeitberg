@@ -1,5 +1,5 @@
 import { AppState } from "./appstate.js";
-import { ChunkCache } from "./cache.js";
+import { ChunkCache, DraftJournal } from "./cache.js";
 import { ConfigService, DEFAULT_CONFIG } from "./config.js";
 import { GitHubDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore } from "./store.js";
@@ -301,6 +301,7 @@ class App {
         this.timeContext = new TimeContext(this.config.timezone);
         this.store = new EntryStore(this.timeContext);
         this.chunkCache = new ChunkCache();
+        this.draftJournal = new DraftJournal();
 
         this.dataSource = this.isLocalMode ? new LocalDataSource() : new GitHubDataSource(this.config, this.token);
 
@@ -379,6 +380,8 @@ class App {
         this.weekView = new WeekView({
             store: this.store,
             chunkCache: this.chunkCache,
+            draftJournal: this.draftJournal,
+            draftNamespace: this.buildDraftNamespace(),
             appState: this.state,
             timeContext: this.timeContext,
             dataSource: this.dataSource,
@@ -460,6 +463,19 @@ class App {
     }
 
     /**
+     * Builds the IndexedDB namespace used for unsaved week drafts.
+     * Browser origins already isolate local servers, while GitHub mode additionally separates owner, repository, and branch.
+     * @returns {string}
+     */
+    buildDraftNamespace() {
+        if (this.isLocalMode) return "local";
+        const owner = String(this.config.owner || "").trim();
+        const repo = String(this.config.repo || "").trim();
+        const ref = String(this.config.ref || "").trim();
+        return `github:${owner}/${repo}@${ref}`;
+    }
+
+    /**
      * Boots the application and triggers the initial load flow.
      * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
@@ -523,6 +539,12 @@ class App {
      * @returns {void}
      */
     handleGlobalKeydown(ev) {
+        if (document.querySelector("dialog[open]")) {
+            if ((ev.ctrlKey || ev.metaKey) && String(ev.key || "").toLowerCase() === "s") {
+                ev.preventDefault();
+            }
+            return;
+        }
         if (ev.ctrlKey && !ev.altKey && !this.appSection.hidden && !this.viewTabsEl.hidden) {
             const key = String(ev.key || "");
             const keyLower = key.toLowerCase();
@@ -599,6 +621,7 @@ class App {
         this.state.setConfig(this.config);
         this.configService.saveConfig(this.config);
         this.configService.saveToken(tok, remember);
+        this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.tokenInput.value = "";
 
         try {
@@ -618,6 +641,7 @@ class App {
         this.chunkCache.clearAll();
         this.config = { ...DEFAULT_CONFIG };
         this.state.setConfig(this.config);
+        this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.ownerInput.value = this.config.owner;
         this.repoInput.value = this.config.repo;
         this.refInput.value = this.config.ref;
@@ -878,6 +902,7 @@ class App {
             this.weekView.setLatestWeekStart(null);
             this.weekView.reset();
             this.searchView.reset();
+            await this.finalizeLoadedEntries();
             return;
         }
 
@@ -929,6 +954,16 @@ class App {
         const cacheSummary = ` • cached ${cacheHits} • downloaded ${downloads}`;
         this.setProgress(chunkFiles.length, chunkFiles.length, `Loaded ${chunkFiles.length}/${chunkFiles.length} week files${cacheSummary}`);
 
+        await this.finalizeLoadedEntries();
+    }
+
+    /**
+     * Restores unsaved browser drafts and rebuilds all derived UI state after chunk loading.
+     * Running this once for empty and populated manifests keeps reload behavior identical in both cases.
+     * @returns {Promise<void>}
+     */
+    async finalizeLoadedEntries() {
+        await this.weekView.restoreDrafts();
         this.store.recomputeNextEntryId();
         const seedResult = this.store.mergeProjectsFromEntries();
         if (seedResult.added > 0) {
@@ -938,10 +973,15 @@ class App {
         const latest = this.store.getLatestWeekStart();
         this.state.setLatestWeekStart(latest);
         this.weekView.setLatestWeekStart(this.state.latestWeekStart);
-        const focusedToday = this.weekView.focusTodayLastEntry(true);
-        if (!focusedToday && latest) {
-            this.state.setWeekStart(latest);
-            this.weekView.setWeekStart(latest);
+        if (latest) {
+            const focusedToday = this.weekView.focusTodayLastEntry(true);
+            if (!focusedToday) {
+                this.state.setWeekStart(latest);
+                this.weekView.setWeekStart(latest);
+            }
+        } else {
+            this.state.setWeekStart(null);
+            this.weekView.reset();
         }
 
         this.searchView.markDirty();
@@ -958,6 +998,7 @@ class App {
         this.setError(this.dataErrorEl, "");
         this.entriesTbody.innerHTML = "";
         this.statsEl.textContent = "";
+        await this.weekView.flushDraftWrites();
         this.weekView.reset();
         try {
             await this.fetchManifest();
@@ -982,6 +1023,7 @@ class App {
         this.state.setToken(token);
         this.dataSource = new GitHubDataSource(this.config, token);
         this.weekView.setDataSource(this.dataSource);
+        this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.projectDialog.setDataSource(this.dataSource);
         this.setAuthStatus("Connecting…");
         this.setBusy(true);

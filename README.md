@@ -9,6 +9,7 @@ This is a static HTML5 viewer that stays “public” as code, but loads **priva
 - The manifest lists weekly chunks in `data/entries/<iso-year>/<week>.json` (and their Git blob SHAs), which are then loaded via the Git blob API.
 - Your token is stored in the browser (localStorage if “Remember” is enabled; otherwise sessionStorage).
 - Edits are saved back into the repo as commits (GitHub mode) or written to disk via `server.py` (local mode).
+- Unsaved week edits are journaled in IndexedDB after every editor command, restored on reload, and removed only after a successful manual save.
 
 ## Views
 

@@ -9,6 +9,7 @@ import {
     isoWeekStart,
     isoWeekdayIndex,
     isEditableTarget,
+    jsonStringifySorted,
     minutesToHHMM,
     safeText,
     setVisible,
@@ -23,10 +24,72 @@ const DESC_SUGGEST_MIN_CHARS = 2;
 const DESC_SUGGEST_LIMIT = 8;
 
 /**
+ * Builds an id-indexed map for a raw week snapshot.
+ * Invalid rows are ignored because the EntryStore applies the same validation when loading snapshots.
+ * @param {Array<Object>} rawEntries
+ * @returns {Map<number, Object>}
+ */
+function rawEntriesById(rawEntries) {
+    const byId = new Map();
+    for (const raw of Array.isArray(rawEntries) ? rawEntries : []) {
+        if (!raw || typeof raw !== "object") continue;
+        const id = Number(raw.id);
+        if (!Number.isFinite(id)) continue;
+        byId.set(id, raw);
+    }
+    return byId;
+}
+
+/**
+ * Compares two raw entry values with stable object-key ordering.
+ * Property order in JSON must not make an otherwise identical entry appear dirty.
+ * @param {Object | undefined} left
+ * @param {Object | undefined} right
+ * @returns {boolean}
+ */
+function rawEntriesEqual(left, right) {
+    if (left === undefined || right === undefined) return left === right;
+    return jsonStringifySorted(left) === jsonStringifySorted(right);
+}
+
+/**
+ * Returns every entry id whose value or presence differs between two week snapshots.
+ * The resulting set includes deletions even though deleted entries have no block to stripe.
+ * @param {Array<Object>} baseline
+ * @param {Array<Object>} current
+ * @returns {Set<number>}
+ */
+function changedEntryIds(baseline, current) {
+    const baselineById = rawEntriesById(baseline);
+    const currentById = rawEntriesById(current);
+    const ids = new Set([...baselineById.keys(), ...currentById.keys()]);
+    const changed = new Set();
+    for (const id of ids) {
+        if (!rawEntriesEqual(baselineById.get(id), currentById.get(id))) {
+            changed.add(id);
+        }
+    }
+    return changed;
+}
+
+/**
+ * Determines whether two raw week snapshots contain the same entries.
+ * Entry ordering is intentionally ignored because weekly files are sorted during serialization.
+ * @param {Array<Object>} left
+ * @param {Array<Object>} right
+ * @returns {boolean}
+ */
+function rawWeekSnapshotsEqual(left, right) {
+    return changedEntryIds(left, right).size === 0;
+}
+
+/**
  * @typedef {Object} WeekViewOptions
  * @description Dependency bundle for week view rendering and editing.
  * @property {import("./store.js").EntryStore} store
  * @property {import("./cache.js").ChunkCache} chunkCache
+ * @property {import("./cache.js").DraftJournal} draftJournal
+ * @property {string} draftNamespace
  * @property {import("./appstate.js").AppState} appState
  * @property {import("./utils.js").TimeContext} timeContext
  * @property {import("./datasource.js").DataSource} dataSource
@@ -78,6 +141,8 @@ export class WeekView {
     constructor(options) {
         this.store = options.store;
         this.chunkCache = options.chunkCache;
+        this.draftJournal = options.draftJournal;
+        this.draftNamespace = String(options.draftNamespace || "").trim();
         this.appState = options.appState;
         this.timeContext = options.timeContext;
         this.dataSource = options.dataSource;
@@ -135,6 +200,14 @@ export class WeekView {
         this.descSuggestions = [];
 
         this.dirtyWeekStarts = new Set();
+        /** @type {Map<string, Set<number>>} */
+        this.dirtyEntryIdsByWeek = new Map();
+        /** @type {Map<string, Array<Object>>} */
+        this.cleanWeekSnapshots = new Map();
+        /** @type {Map<string, string>} */
+        this.cleanWeekShas = new Map();
+        this.draftWriteChain = Promise.resolve();
+        this.draftWarningShown = false;
         this.saveInFlight = false;
         this.toastTimer = 0;
         this.nowTimer = 0;
@@ -158,6 +231,17 @@ export class WeekView {
      */
     setDataSource(dataSource) {
         this.dataSource = dataSource;
+    }
+
+    /**
+     * Selects the browser-draft namespace for the active local folder or GitHub repository branch.
+     * Namespaces keep drafts from different repositories from being restored into each other.
+     * @param {string} namespace
+     * @returns {void}
+     */
+    setDraftNamespace(namespace) {
+        this.draftNamespace = String(namespace || "").trim();
+        this.draftWarningShown = false;
     }
 
     /**
@@ -277,6 +361,9 @@ export class WeekView {
         this.dialogAllowUnlistedProject = false;
         this.saveInFlight = false;
         this.dirtyWeekStarts.clear();
+        this.dirtyEntryIdsByWeek.clear();
+        this.cleanWeekSnapshots.clear();
+        this.cleanWeekShas.clear();
         this.undoStack.length = 0;
         this.redoStack.length = 0;
         this.setEditMode("normal");
@@ -889,6 +976,9 @@ export class WeekView {
 
                 const el = document.createElement("div");
                 el.className = "entry-block";
+                if (this.isEntryDirty(entry)) {
+                    el.classList.add("is-dirty");
+                }
                 el.dataset.key = seg.key;
                 el.dataset.dayIdx = String(dayIdx);
                 el.dataset.start = String(seg.startMinutes);
@@ -997,6 +1087,19 @@ export class WeekView {
     }
 
     /**
+     * Reports whether an entry differs from the last loaded or successfully saved week snapshot.
+     * Overflow segments use the entry's owning week, so every visible segment receives the same dirty styling.
+     * @param {import("./model.js").Entry | Object} entry
+     * @returns {boolean}
+     */
+    isEntryDirty(entry) {
+        const weekStart = typeof entry?.weekStart === "string" ? entry.weekStart : "";
+        const entryId = Number(entry?.id);
+        if (!weekStart || !Number.isFinite(entryId)) return false;
+        return this.dirtyEntryIdsByWeek.get(weekStart)?.has(entryId) === true;
+    }
+
+    /**
      * Focuses an entry by id within the current week grid.
      * Part of the week view interaction flow.
      * @param {number} entryId
@@ -1084,7 +1187,7 @@ export class WeekView {
     handleKeydown(ev) {
         if (this.appState.activeTab !== "week") return;
         if (this.weekViewSection.hidden) return;
-        if (this.entryDialog.open) return;
+        if (this.entryDialog.open || this.weekReqDialog.open) return;
         if (isEditableTarget(ev.target)) return;
 
         const key = String(ev.key || "");
@@ -1823,12 +1926,8 @@ export class WeekView {
             return;
         }
 
+        this.rememberCleanWeekBaseline(params.weekStart, before);
         this.store.applyWeekSnapshot(params.weekStart, after);
-        if (this.appState.weekStart === params.weekStart) {
-            this.rebuildWeekView();
-        }
-        this.setLatestWeekStart(this.store.getLatestWeekStart());
-
         this.undoStack.push({
             weekStart: params.weekStart,
             before,
@@ -1839,7 +1938,11 @@ export class WeekView {
         });
         this.redoStack.length = 0;
 
-        this.markDirty(params.weekStart);
+        this.refreshDirtyWeekState(params.weekStart);
+        if (this.appState.weekStart === params.weekStart) {
+            this.rebuildWeekView();
+        }
+        this.setLatestWeekStart(this.store.getLatestWeekStart());
         this.setEditMode("normal");
         if (params.focusAfter) {
             const entry = this.store.getEntryById(params.focusAfter);
@@ -1860,7 +1963,9 @@ export class WeekView {
      */
     applyEditorActionSnapshot(weekStart, rawEntries, focusEntryId) {
         if (!weekStart) return;
+        this.rememberCleanWeekBaseline(weekStart, this.store.snapshotWeekRaw(weekStart));
         this.store.applyWeekSnapshot(weekStart, rawEntries);
+        this.refreshDirtyWeekState(weekStart);
         if (this.appState.weekStart !== weekStart) {
             this.setWeekStart(weekStart);
         } else {
@@ -1887,7 +1992,6 @@ export class WeekView {
         if (!action) return;
         this.applyEditorActionSnapshot(action.weekStart, action.before, action.focusBefore || null);
         this.redoStack.push(action);
-        this.markDirty(action.weekStart);
     }
 
     /**
@@ -1900,19 +2004,220 @@ export class WeekView {
         if (!action) return;
         this.applyEditorActionSnapshot(action.weekStart, action.after, action.focusAfter || null);
         this.undoStack.push(action);
-        this.markDirty(action.weekStart);
     }
 
     /**
-     * Marks a week as dirty and refreshes the save badge.
-     * Part of the week view interaction flow.
+     * Finds the manifest blob sha that represents the currently loaded version of a week.
+     * New weeks intentionally return an empty sha because they have no persisted chunk yet.
+     * @param {string} weekStart
+     * @returns {string}
+     */
+    getManifestShaForWeek(weekStart) {
+        const manifest = this.store.getManifest();
+        if (!manifest || !weekStart) return "";
+        const info = isoWeekInfo(weekStart);
+        const chunk = manifest.chunks.find((item) => item.year === info.isoYear && item.week === info.week);
+        return chunk ? String(chunk.sha || "") : "";
+    }
+
+    /**
+     * Captures the last persisted snapshot before the first unsaved edit to a week.
+     * Later edits keep the original baseline so undo can accurately return the week to a clean state.
+     * @param {string} weekStart
+     * @param {Array<Object>} rawEntries
+     * @param {string} [baseSha]
+     * @returns {void}
+     */
+    rememberCleanWeekBaseline(weekStart, rawEntries, baseSha = this.getManifestShaForWeek(weekStart)) {
+        if (!weekStart || this.cleanWeekSnapshots.has(weekStart)) return;
+        this.cleanWeekSnapshots.set(weekStart, cloneJson(rawEntries));
+        this.cleanWeekShas.set(weekStart, String(baseSha || ""));
+    }
+
+    /**
+     * Queues one draft-journal operation behind earlier edits to preserve write order.
+     * A single warning is shown when browser durability is unavailable, while editing remains enabled.
+     * @param {() => Promise<boolean>} operation
+     * @param {string} failureMessage
+     * @returns {void}
+     */
+    enqueueDraftOperation(operation, failureMessage) {
+        this.draftWriteChain = this.draftWriteChain
+            .catch(() => undefined)
+            .then(async () => {
+                let succeeded = false;
+                try {
+                    succeeded = await operation();
+                } catch {
+                    succeeded = false;
+                }
+                if (!succeeded && !this.draftWarningShown) {
+                    this.draftWarningShown = true;
+                    this.onToast(failureMessage, 5000);
+                }
+            });
+    }
+
+    /**
+     * Stores the current dirty week together with the clean snapshot used for comparison and merging.
+     * Values are cloned when queued so later keyboard edits cannot mutate an in-flight IndexedDB write.
      * @param {string} weekStart
      * @returns {void}
      */
-    markDirty(weekStart) {
-        if (!weekStart) return;
+    queueDraftWrite(weekStart) {
+        const namespace = this.draftNamespace;
+        const baseline = this.cleanWeekSnapshots.get(weekStart);
+        if (!namespace || !baseline) return;
+        const draft = {
+            weekStart,
+            baseSha: this.cleanWeekShas.get(weekStart) || "",
+            baseEntriesRaw: cloneJson(baseline),
+            entriesRaw: cloneJson(this.store.snapshotWeekRaw(weekStart)),
+            updatedAt: Date.now(),
+        };
+        this.enqueueDraftOperation(
+            () => this.draftJournal.putWeekDraft(namespace, draft),
+            "Browser draft storage is unavailable; unsaved edits may not survive a reload.",
+        );
+    }
+
+    /**
+     * Removes a durable week draft after its entries are clean or have been saved successfully.
+     * The namespace is captured immediately so a later login cannot delete another repository's draft.
+     * @param {string} weekStart
+     * @returns {void}
+     */
+    queueDraftDelete(weekStart) {
+        const namespace = this.draftNamespace;
+        if (!namespace || !weekStart) return;
+        this.enqueueDraftOperation(
+            () => this.draftJournal.deleteWeekDraft(namespace, weekStart),
+            "The saved browser draft could not be cleaned up.",
+        );
+    }
+
+    /**
+     * Waits for all draft writes currently queued by synchronous editor commands.
+     * Reload and save flows use this barrier so the latest keystroke is durable before data is replaced.
+     * @returns {Promise<void>}
+     */
+    async flushDraftWrites() {
+        await this.draftWriteChain.catch(() => undefined);
+    }
+
+    /**
+     * Recomputes dirty entries for one week by comparing it with the persisted baseline.
+     * Returning to the baseline clears both visual state and the IndexedDB draft automatically.
+     * @param {string} weekStart
+     * @param {boolean} [persist]
+     * @returns {boolean}
+     */
+    refreshDirtyWeekState(weekStart, persist = true) {
+        const baseline = this.cleanWeekSnapshots.get(weekStart);
+        if (!baseline) return false;
+        const current = this.store.snapshotWeekRaw(weekStart);
+        const changed = changedEntryIds(baseline, current);
+
+        if (changed.size === 0) {
+            this.dirtyWeekStarts.delete(weekStart);
+            this.dirtyEntryIdsByWeek.delete(weekStart);
+            this.cleanWeekSnapshots.delete(weekStart);
+            this.cleanWeekShas.delete(weekStart);
+            if (persist) this.queueDraftDelete(weekStart);
+            this.updateEditorBadge();
+            return false;
+        }
+
         this.dirtyWeekStarts.add(weekStart);
+        this.dirtyEntryIdsByWeek.set(weekStart, changed);
+        if (persist) this.queueDraftWrite(weekStart);
         this.updateEditorBadge();
+        return true;
+    }
+
+    /**
+     * Merges an unsaved browser snapshot onto a newer loaded week using its original baseline.
+     * Remote-only changes are preserved, local changes win conflicts, and colliding new ids are reassigned.
+     * @param {Array<Object>} baseline
+     * @param {Array<Object>} localDraft
+     * @param {Array<Object>} remoteCurrent
+     * @returns {Array<Object>}
+     */
+    mergeDraftEntries(baseline, localDraft, remoteCurrent) {
+        const baselineById = rawEntriesById(baseline);
+        const localById = rawEntriesById(localDraft);
+        const remoteById = rawEntriesById(remoteCurrent);
+        const ids = Array.from(new Set([...baselineById.keys(), ...localById.keys(), ...remoteById.keys()])).sort((a, b) => a - b);
+        const merged = [];
+
+        for (const id of ids) {
+            const baseRaw = baselineById.get(id);
+            const localRaw = localById.get(id);
+            const remoteRaw = remoteById.get(id);
+
+            if (!baseRaw && localRaw && remoteRaw && !rawEntriesEqual(localRaw, remoteRaw)) {
+                merged.push(cloneJson(remoteRaw));
+                const reassigned = cloneJson(localRaw);
+                reassigned.id = this.store.reserveEntryId();
+                merged.push(reassigned);
+                continue;
+            }
+
+            const localChanged = !rawEntriesEqual(baseRaw, localRaw);
+            const selected = localChanged ? localRaw : remoteRaw;
+            if (selected) merged.push(cloneJson(selected));
+        }
+
+        merged.sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")) || Number(a.id || 0) - Number(b.id || 0));
+        return merged;
+    }
+
+    /**
+     * Restores every durable draft for the active data source after fresh repository data has loaded.
+     * Obsolete drafts are deleted; drafts based on older blobs are merged without dropping remote additions.
+     * @returns {Promise<{restored: number, merged: number}>}
+     */
+    async restoreDrafts() {
+        await this.flushDraftWrites();
+        if (!this.draftNamespace) return { restored: 0, merged: 0 };
+        const drafts = await this.draftJournal.getWeekDrafts(this.draftNamespace);
+        let restored = 0;
+        let mergedCount = 0;
+
+        for (const draft of drafts) {
+            const weekStart = String(draft.weekStart || "");
+            if (!this.timeContext.weekBoundsMs(weekStart)) continue;
+            const remoteCurrent = this.store.snapshotWeekRaw(weekStart);
+            const localDraft = Array.isArray(draft.entriesRaw) ? draft.entriesRaw : [];
+
+            if (rawWeekSnapshotsEqual(remoteCurrent, localDraft)) {
+                await this.draftJournal.deleteWeekDraft(this.draftNamespace, weekStart);
+                continue;
+            }
+
+            const currentSha = this.getManifestShaForWeek(weekStart);
+            const baseline = Array.isArray(draft.baseEntriesRaw) ? draft.baseEntriesRaw : [];
+            const baseStillCurrent = currentSha === String(draft.baseSha || "") || rawWeekSnapshotsEqual(remoteCurrent, baseline);
+            const restoredEntries = baseStillCurrent
+                ? cloneJson(localDraft)
+                : this.mergeDraftEntries(baseline, localDraft, remoteCurrent);
+
+            this.rememberCleanWeekBaseline(weekStart, remoteCurrent, currentSha);
+            this.store.applyWeekSnapshot(weekStart, restoredEntries);
+            if (this.refreshDirtyWeekState(weekStart)) {
+                restored += 1;
+                if (!baseStillCurrent) mergedCount += 1;
+            }
+        }
+
+        this.store.recomputeNextEntryId();
+        await this.flushDraftWrites();
+        if (restored > 0) {
+            const mergedLabel = mergedCount > 0 ? `; merged newer data in ${mergedCount}` : "";
+            this.onToast(`Restored unsaved edits for ${restored} week(s)${mergedLabel}.`, 5000, "success");
+            this.onSearchDirty();
+        }
+        return { restored, merged: mergedCount };
     }
 
     /**
@@ -1934,8 +2239,17 @@ export class WeekView {
 
         const sortedWeeks = weekStarts.slice().sort((a, b) => a.localeCompare(b));
         try {
+            await this.flushDraftWrites();
             await this.saveWeeks(sortedWeeks);
-            for (const ws of sortedWeeks) this.dirtyWeekStarts.delete(ws);
+            for (const ws of sortedWeeks) {
+                this.dirtyWeekStarts.delete(ws);
+                this.dirtyEntryIdsByWeek.delete(ws);
+                this.cleanWeekSnapshots.delete(ws);
+                this.cleanWeekShas.delete(ws);
+                this.queueDraftDelete(ws);
+            }
+            await this.flushDraftWrites();
+            if (this.appState.weekStart) this.rebuildWeekView();
             this.onToast("Saved.", 2400, "success");
         } catch (err) {
             this.onToast(String(err), 5000);
