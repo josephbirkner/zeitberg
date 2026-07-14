@@ -145,15 +145,14 @@ export class GitHubDataSource extends DataSource {
 
     /**
      * Builds standard headers for GitHub API requests.
-     * Used by the app to read or persist data.
+     * Cache directives belong in the Fetch API options because GitHub's CORS
+     * policy does not allow Cache-Control or Pragma request headers.
      * @param {string} accept
      * @returns {HeadersInit}
      */
     buildHeaders(accept) {
         const headers = {
             Accept: accept || "application/vnd.github+json",
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
             "X-GitHub-Api-Version": "2022-11-28",
         };
         if (this.token) {
