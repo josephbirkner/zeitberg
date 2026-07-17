@@ -1,4 +1,14 @@
-import { addIsoDays, chunkKey, gitBlobSha1, hashColorHex, hhmmToMinutes, isoWeekInfo, isoWeekStart, utcNowIso } from "./utils.js";
+import {
+    addIsoDays,
+    chunkKey,
+    gitBlobSha1,
+    hashColorHex,
+    hhmmToMinutes,
+    isoWeekInfo,
+    isoWeekStart,
+    isoWeekdayIndex,
+    utcNowIso,
+} from "./utils.js";
 import { Entry, Manifest, ProjectList, Week, WeekRequirements } from "./model.js";
 
 /**
@@ -625,16 +635,77 @@ export class EntryStore {
     }
 
     /**
-     * Computes week delta (worked minus required) in seconds.
-     * Supports derived data and serialization steps.
+     * Returns billable seconds assigned to one displayed calendar day.
+     * The week segment index clips entries at midnight, so overnight entries contribute only their visible portion to each day.
      * @param {string} weekStart
+     * @param {string} day
      * @returns {number}
      */
-    getWeekBalanceSeconds(weekStart) {
-        if (!weekStart) return 0;
+    getDayBillableSeconds(weekStart, day) {
+        if (!weekStart || !day) return 0;
+        const segments = this.getWeekSegmentsIndex(weekStart).get(day) || [];
+        let billableSeconds = 0;
+        for (const seg of segments) {
+            if (seg.entry?.billable !== true) continue;
+            billableSeconds += Math.max(0, Math.round((seg.endMinutes - seg.startMinutes) * 60));
+        }
+        return billableSeconds;
+    }
+
+    /**
+     * Returns billable seconds for a week, limited to the supplied calendar day.
+     * Past weeks use their complete total, the current week includes Monday through the reference day, and future weeks return zero.
+     * @param {string} weekStart
+     * @param {string} throughDate
+     * @returns {number}
+     */
+    getWeekBillableSecondsThroughDate(weekStart, throughDate) {
+        if (!weekStart || !throughDate) return 0;
+        const throughWeekStart = isoWeekStart(throughDate);
+        if (weekStart < throughWeekStart) return this.getWeekBillableSeconds(weekStart);
+        if (weekStart > throughWeekStart) return 0;
+
+        const segments = this.getWeekSegmentsIndex(weekStart);
+        let billableSeconds = 0;
+        for (const [day, list] of segments.entries()) {
+            if (day > throughDate) continue;
+            for (const seg of list) {
+                if (seg.entry?.billable !== true) continue;
+                billableSeconds += Math.max(0, Math.round((seg.endMinutes - seg.startMinutes) * 60));
+            }
+        }
+        return billableSeconds;
+    }
+
+    /**
+     * Returns the portion of a weekly requirement due through a reference day.
+     * Requirements are distributed evenly across Monday through Friday because the model stores one target for the whole week.
+     * @param {string} weekStart
+     * @param {string} throughDate
+     * @returns {number}
+     */
+    getRequiredHoursThroughDate(weekStart, throughDate) {
+        if (!weekStart || !throughDate) return 0;
         const requiredHours = this.getWeekRequiredHours(weekStart);
+        const throughWeekStart = isoWeekStart(throughDate);
+        if (weekStart < throughWeekStart) return requiredHours;
+        if (weekStart > throughWeekStart) return 0;
+        const elapsedWorkdays = Math.min(5, isoWeekdayIndex(throughDate) + 1);
+        return (requiredHours * elapsedWorkdays) / 5;
+    }
+
+    /**
+     * Computes week delta in seconds through a reference day.
+     * Past weeks use their full requirement, while the current week only deducts the evenly distributed target due so far.
+     * @param {string} weekStart
+     * @param {string} [throughDate]
+     * @returns {number}
+     */
+    getWeekBalanceSeconds(weekStart, throughDate = this.timeContext.formatDate(new Date())) {
+        if (!weekStart) return 0;
+        const requiredHours = this.getRequiredHoursThroughDate(weekStart, throughDate);
         const requiredSeconds = Math.round(requiredHours * 3600);
-        const billableSeconds = this.getWeekBillableSeconds(weekStart);
+        const billableSeconds = this.getWeekBillableSecondsThroughDate(weekStart, throughDate);
         return billableSeconds - requiredSeconds;
     }
 
@@ -657,19 +728,20 @@ export class EntryStore {
     }
 
     /**
-     * Computes accumulated week balance up to and including a week.
-     * Supports derived data and serialization steps.
+     * Computes accumulated balance up to a week using one consistent reference day.
+     * This prevents the current week from deducting its complete target before those workdays have elapsed.
      * @param {string} weekStart
+     * @param {string} [throughDate]
      * @returns {number}
      */
-    getAccumulatedBalanceSeconds(weekStart) {
+    getAccumulatedBalanceSeconds(weekStart, throughDate = this.timeContext.formatDate(new Date())) {
         if (!weekStart) return 0;
         const startWeek = isoWeekStart(BALANCE_ACCUMULATION_START);
         if (weekStart < startWeek) return 0;
         let total = 0;
         let cursor = startWeek;
         for (let i = 0; i < 2000 && cursor <= weekStart; i += 1) {
-            total += this.getWeekBalanceSeconds(cursor);
+            total += this.getWeekBalanceSeconds(cursor, throughDate);
             cursor = addIsoDays(cursor, 7);
         }
         return total;

@@ -10,11 +10,13 @@ This is a static HTML5 viewer that stays “public” as code, but loads **priva
 - Your token is stored in the browser (localStorage if “Remember” is enabled; otherwise sessionStorage).
 - Edits are saved back into the repo as commits (GitHub mode) or written to disk via `server.py` (local mode).
 - Unsaved week edits are journaled in IndexedDB after every editor command, restored on reload, and removed only after a successful manual save.
+- Startup and explicit reloads use a dedicated progress screen; the application toolbar appears only after initialization succeeds.
 
 ## Views
 
-- **Week**: graphical week timeline (Mon–Sun) with keyboard navigation (`←/→` day, `↑/↓` entry, `PageUp/PageDown` week) and a zoom slider.
-- **Search**: the query/table UI for filtering and browsing entries.
+- **Week**: graphical week timeline (Mon–Sun) with keyboard navigation (`←/→` day, `↑/↓` entry, `PageUp/PageDown` week), daily billable totals, and a zoom slider.
+- **Search**: the query/table UI for filtering and browsing entries. Switch views from the top-left menu or with `Ctrl+K` / `Ctrl+W`.
+- The current week's balance deducts only the requirement due through today, distributed evenly across Monday–Friday; past weeks use their complete requirement.
 
 ## Local testing
 

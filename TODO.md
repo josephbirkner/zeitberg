@@ -5,7 +5,7 @@ Features
 ========
 
 - [x] Striped background for dirty time entries
-- [ ] Better UI space usage, stats in day header
+- [x] Better UI space usage, stats in day header
 - [x] Cache entries in IndexedDB until persisting succeeds
 - [ ] Mobile Experience. Touch Usage? Day View?
 

@@ -312,13 +312,21 @@ class App {
         this.loginErrorEl = getRequiredElement("loginError", HTMLElement);
         this.clearSavedBtn = getRequiredElement("clearSavedBtn", HTMLButtonElement);
 
-        this.viewTabsEl = getRequiredElement("viewTabs", HTMLElement);
-        this.tabWeekBtn = getRequiredElement("tabWeek", HTMLButtonElement);
-        this.tabSearchBtn = getRequiredElement("tabSearch", HTMLButtonElement);
+        this.topbarEl = getRequiredElement("topbar", HTMLElement);
+        this.appMenuRootEl = getRequiredElement("appMenuRoot", HTMLElement);
+        this.menuBtn = getRequiredElement("menuBtn", HTMLButtonElement);
+        this.appMenuPanelEl = getRequiredElement("appMenuPanel", HTMLElement);
+        this.menuWeekBtn = getRequiredElement("menuWeekBtn", HTMLButtonElement);
+        this.menuSearchBtn = getRequiredElement("menuSearchBtn", HTMLButtonElement);
         this.weekControlsEl = getRequiredElement("weekControls", HTMLElement);
         this.projectsBtn = getRequiredElement("projectsBtn", HTMLButtonElement);
 
         this.appSection = getRequiredElement("appSection", HTMLElement);
+        this.loadingSection = getRequiredElement("loadingSection", HTMLElement);
+        this.loadingErrorEl = getRequiredElement("loadingError", HTMLElement);
+        this.loadingActionsEl = getRequiredElement("loadingActions", HTMLElement);
+        this.loadingRetryBtn = getRequiredElement("loadingRetryBtn", HTMLButtonElement);
+        this.loadingLogoutBtn = getRequiredElement("loadingLogoutBtn", HTMLButtonElement);
         this.repoLabelEl = getRequiredElement("repoLabel", HTMLElement);
         this.reloadDataBtn = getRequiredElement("reloadDataBtn", HTMLButtonElement);
         this.loadProgressEl = getRequiredElement("loadProgress", HTMLProgressElement);
@@ -436,7 +444,7 @@ class App {
                 entriesTbody: this.entriesTbody,
             },
             onJumpToEntry: (entry) => {
-                if (this.viewTabsEl.hidden) return;
+                if (this.appSection.hidden) return;
                 this.setTab("week");
                 this.weekView.jumpToEntry(entry);
             },
@@ -488,48 +496,202 @@ class App {
 
         this.loginForm.addEventListener("submit", (ev) => this.handleLoginSubmit(ev));
         this.clearSavedBtn.addEventListener("click", () => this.handleClearSaved());
-        this.tabWeekBtn.addEventListener("click", () => this.setTab("week"));
-        this.tabSearchBtn.addEventListener("click", () => this.setTab("search"));
-        this.projectsBtn.addEventListener("click", () => this.projectDialog.open());
+        this.menuBtn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            this.setMenuOpen(this.appMenuPanelEl.hidden);
+        });
+        this.appMenuPanelEl.addEventListener("keydown", (ev) => this.handleMenuKeydown(ev));
+        this.appMenuRootEl.addEventListener("focusout", () => {
+            window.setTimeout(() => {
+                if (!this.appMenuRootEl.contains(document.activeElement)) this.closeMenu();
+            }, 0);
+        });
+        this.menuWeekBtn.addEventListener("click", () => {
+            this.setTab("week");
+            this.closeMenu();
+        });
+        this.menuSearchBtn.addEventListener("click", () => {
+            this.setTab("search");
+            this.closeMenu();
+            queueMicrotask(() => this.searchInput.focus());
+        });
+        this.projectsBtn.addEventListener("click", () => {
+            this.closeMenu();
+            this.projectDialog.open();
+        });
         this.logoutBtn.addEventListener("click", () => this.logout());
-        this.reloadDataBtn.addEventListener("click", () => this.reloadData());
+        this.reloadDataBtn.addEventListener("click", () => {
+            this.closeMenu();
+            void this.reloadData();
+        });
+        this.loadingRetryBtn.addEventListener("click", () => void this.reloadData());
+        this.loadingLogoutBtn.addEventListener("click", () => this.logout());
 
         document.addEventListener("keydown", (ev) => this.handleGlobalKeydown(ev));
+        document.addEventListener("click", (ev) => this.handleDocumentClick(ev));
         window.addEventListener("resize", () => this.handleResize());
 
         this.setProgress(0, 1, "");
+        setVisible(this.topbarEl, false);
+        setVisible(this.loadingSection, false);
 
         if (this.isLocalMode) {
             this.setAuthStatus("Local mode");
             setVisible(this.logoutBtn, false);
             setVisible(this.reloadDataBtn, true);
             setVisible(this.projectsBtn, true);
-            setVisible(this.loginSection, false);
-            setVisible(this.appSection, true);
-            setVisible(this.viewTabsEl, true);
-            this.setAppMode(true);
-            this.setTab(this.state.activeTab);
-            this.reloadData();
+            this.showLoadingScreen("Preparing local data…");
+            void this.reloadData();
             return;
         }
 
-        setVisible(this.loginSection, true);
-        setVisible(this.appSection, false);
         setVisible(this.logoutBtn, false);
         setVisible(this.reloadDataBtn, false);
         setVisible(this.projectsBtn, false);
-        setVisible(this.viewTabsEl, false);
-        setVisible(this.weekControlsEl, false);
-        this.setAppMode(false);
-        this.setTab(this.state.activeTab);
 
         if (this.token) {
-            this.connectWithToken(this.token).catch(() => {
-                setVisible(this.loginSection, true);
+            this.showLoadingScreen("Connecting to GitHub…");
+            this.connectWithToken(this.token).catch((err) => {
+                this.showLoginScreen();
+                this.setError(this.loginErrorEl, safeText(err));
             });
         } else {
             this.setAuthStatus("Not logged in");
+            this.showLoginScreen();
         }
+    }
+
+    /**
+     * Opens or closes the application menu and synchronizes accessibility state.
+     * The menu is anchored to the top-left trigger and is unavailable outside the initialized application screen.
+     * @param {boolean} isOpen
+     * @returns {void}
+     */
+    setMenuOpen(isOpen) {
+        const open = Boolean(isOpen) && !this.topbarEl.hidden;
+        setVisible(this.appMenuPanelEl, open);
+        this.menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        this.menuBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+        if (open) {
+            const activeItem = this.state.activeTab === "search" ? this.menuSearchBtn : this.menuWeekBtn;
+            queueMicrotask(() => activeItem.focus());
+        }
+    }
+
+    /**
+     * Closes the application menu without changing the active view.
+     * This is shared by menu actions, outside clicks, Escape handling, and screen transitions.
+     * @returns {void}
+     */
+    closeMenu() {
+        this.setMenuOpen(false);
+    }
+
+    /**
+     * Dismisses the application menu when a pointer action lands outside it.
+     * Keeping this behavior in App avoids global event knowledge inside individual views.
+     * @param {MouseEvent} ev
+     * @returns {void}
+     */
+    handleDocumentClick(ev) {
+        if (this.appMenuPanelEl.hidden) return;
+        const target = ev.target;
+        if (target instanceof Node && this.appMenuRootEl.contains(target)) return;
+        this.closeMenu();
+    }
+
+    /**
+     * Moves keyboard focus through visible menu commands with arrow, Home, and End keys.
+     * Enter and Space retain native button behavior, while Escape is handled by the global shortcut dispatcher.
+     * @param {KeyboardEvent} ev
+     * @returns {void}
+     */
+    handleMenuKeydown(ev) {
+        const supportedKeys = new Set(["ArrowDown", "ArrowUp", "Home", "End"]);
+        if (!supportedKeys.has(ev.key)) return;
+        const items = Array.from(this.appMenuPanelEl.querySelectorAll("button[role='menuitem']")).filter(
+            (item) => item instanceof HTMLButtonElement && !item.hidden && !item.disabled,
+        );
+        if (!items.length) return;
+
+        ev.preventDefault();
+        ev.stopPropagation();
+        const activeIndex = items.indexOf(document.activeElement);
+        let nextIndex = 0;
+        if (ev.key === "End") {
+            nextIndex = items.length - 1;
+        } else if (ev.key === "ArrowDown") {
+            nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % items.length;
+        } else if (ev.key === "ArrowUp") {
+            nextIndex = activeIndex < 0 ? items.length - 1 : (activeIndex - 1 + items.length) % items.length;
+        }
+        const nextItem = items[nextIndex];
+        if (nextItem instanceof HTMLButtonElement) nextItem.focus();
+    }
+
+    /**
+     * Shows the login form and hides both initialized and loading application surfaces.
+     * This is the stable unauthenticated state used at startup, after connection failures, and after logout.
+     * @returns {void}
+     */
+    showLoginScreen() {
+        this.closeMenu();
+        document.body.classList.remove("app-ready");
+        setVisible(this.topbarEl, false);
+        setVisible(this.loadingSection, false);
+        setVisible(this.appSection, false);
+        setVisible(this.loginSection, true);
+        this.setAppMode(false);
+    }
+
+    /**
+     * Shows the dedicated initialization surface while repository data is being loaded.
+     * Progress and recoverable errors remain isolated here so the compact top bar only represents a ready application.
+     * @param {string} label
+     * @returns {void}
+     */
+    showLoadingScreen(label) {
+        this.closeMenu();
+        document.body.classList.remove("app-ready");
+        setVisible(this.topbarEl, false);
+        setVisible(this.loginSection, false);
+        setVisible(this.appSection, false);
+        setVisible(this.loadingSection, true);
+        setVisible(this.loadingActionsEl, false);
+        this.setError(this.loadingErrorEl, "");
+        this.loadingSection.setAttribute("aria-busy", "true");
+        this.setAppMode(true);
+        this.setProgress(0, 1, label);
+    }
+
+    /**
+     * Reveals the initialized application and restores the previously active Week or Search view.
+     * Called only after all required repository chunks and supporting configuration have been loaded.
+     * @returns {void}
+     */
+    showApplicationScreen() {
+        document.body.classList.add("app-ready");
+        setVisible(this.loginSection, false);
+        setVisible(this.loadingSection, false);
+        setVisible(this.topbarEl, true);
+        setVisible(this.appSection, true);
+        this.loadingSection.setAttribute("aria-busy", "false");
+        this.setAppMode(true);
+        this.setTab(this.state.activeTab);
+    }
+
+    /**
+     * Keeps the loading screen visible and presents retry controls after initialization fails.
+     * GitHub mode also offers a route back to login, while local mode can only retry the local server request.
+     * @param {string} message
+     * @returns {void}
+     */
+    showLoadingError(message) {
+        this.loadingSection.setAttribute("aria-busy", "false");
+        this.setError(this.loadingErrorEl, message);
+        setVisible(this.loadingActionsEl, true);
+        setVisible(this.loadingLogoutBtn, !this.isLocalMode);
+        queueMicrotask(() => this.loadingRetryBtn.focus());
     }
 
     /**
@@ -539,13 +701,21 @@ class App {
      * @returns {void}
      */
     handleGlobalKeydown(ev) {
+        if (!this.appMenuPanelEl.hidden) {
+            if (ev.key === "Escape") {
+                ev.preventDefault();
+                this.closeMenu();
+                this.menuBtn.focus();
+            }
+            return;
+        }
         if (document.querySelector("dialog[open]")) {
             if ((ev.ctrlKey || ev.metaKey) && String(ev.key || "").toLowerCase() === "s") {
                 ev.preventDefault();
             }
             return;
         }
-        if (ev.ctrlKey && !ev.altKey && !this.appSection.hidden && !this.viewTabsEl.hidden) {
+        if (ev.ctrlKey && !ev.altKey && !this.appSection.hidden) {
             const key = String(ev.key || "");
             const keyLower = key.toLowerCase();
 
@@ -710,8 +880,9 @@ class App {
         this.logoutBtn.disabled = isBusy;
         this.reloadDataBtn.disabled = isBusy;
         this.projectsBtn.disabled = isBusy;
-        this.tabWeekBtn.disabled = isBusy;
-        this.tabSearchBtn.disabled = isBusy;
+        this.menuBtn.disabled = isBusy;
+        this.menuWeekBtn.disabled = isBusy;
+        this.menuSearchBtn.disabled = isBusy;
         this.prevWeekBtn.disabled = isBusy;
         this.nextWeekBtn.disabled = isBusy;
         this.latestWeekBtn.disabled = isBusy;
@@ -758,11 +929,16 @@ class App {
     setTab(tab) {
         const next = tab === "search" ? "search" : "week";
         this.state.setActiveTab(next);
-        this.tabWeekBtn.setAttribute("aria-selected", next === "week" ? "true" : "false");
-        this.tabSearchBtn.setAttribute("aria-selected", next === "search" ? "true" : "false");
+        if (next === "week") {
+            this.menuWeekBtn.setAttribute("aria-current", "page");
+            this.menuSearchBtn.removeAttribute("aria-current");
+        } else {
+            this.menuSearchBtn.setAttribute("aria-current", "page");
+            this.menuWeekBtn.removeAttribute("aria-current");
+        }
         this.weekView.setActive(next === "week");
         this.searchView.setActive(next === "search");
-        setVisible(this.weekControlsEl, next === "week" && !this.viewTabsEl.hidden);
+        setVisible(this.weekControlsEl, next === "week" && !this.topbarEl.hidden);
     }
 
     /**
@@ -991,9 +1167,10 @@ class App {
     /**
      * Reloads manifest, projects, and all chunk data.
      * Keeps the main UI flow and data loading coordinated.
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>}
      */
     async reloadData() {
+        this.showLoadingScreen(this.isLocalMode ? "Preparing local data…" : "Preparing repository data…");
         this.setBusy(true);
         this.setError(this.dataErrorEl, "");
         this.entriesTbody.innerHTML = "";
@@ -1005,8 +1182,11 @@ class App {
             await this.fetchProjects();
             await this.fetchWeekRequirements();
             await this.loadAllChunks();
+            this.showApplicationScreen();
+            return true;
         } catch (err) {
-            this.setError(this.dataErrorEl, safeText(err));
+            this.showLoadingError(safeText(err));
+            return false;
         } finally {
             this.setBusy(false);
         }
@@ -1026,6 +1206,7 @@ class App {
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.projectDialog.setDataSource(this.dataSource);
         this.setAuthStatus("Connecting…");
+        this.showLoadingScreen("Connecting to GitHub…");
         this.setBusy(true);
         try {
             const { repoInfo, userInfo } = await this.dataSource.checkConnection();
@@ -1035,15 +1216,11 @@ class App {
             setVisible(this.logoutBtn, true);
             setVisible(this.reloadDataBtn, true);
             setVisible(this.projectsBtn, true);
-            setVisible(this.loginSection, false);
-            setVisible(this.appSection, true);
-            setVisible(this.viewTabsEl, true);
-            this.setAppMode(true);
-            this.setTab(this.state.activeTab);
             await this.reloadData();
         } catch (err) {
             this.state.ghUser = null;
             this.setAuthStatus("Not logged in");
+            this.showLoginScreen();
             throw err;
         } finally {
             this.setBusy(false);
@@ -1069,14 +1246,11 @@ class App {
         this.setAuthStatus("Not logged in");
         this.repoLabelEl.textContent = "";
         this.projectDialog.close();
-        setVisible(this.viewTabsEl, false);
         setVisible(this.weekControlsEl, false);
         setVisible(this.reloadDataBtn, false);
         setVisible(this.logoutBtn, false);
         setVisible(this.projectsBtn, false);
-        setVisible(this.appSection, false);
-        setVisible(this.loginSection, true);
-        this.setAppMode(false);
+        this.showLoginScreen();
         this.configService.saveToken("", false);
     }
 }

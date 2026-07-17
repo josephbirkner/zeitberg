@@ -348,8 +348,10 @@ export class WeekView {
         this.weekScrollEl.innerHTML = "";
         this.weekLabelEl.textContent = "";
         if (this.weekBillableEl) {
-            this.weekBillableEl.textContent = "";
+            this.weekBillableEl.replaceChildren();
         }
+        this.weekReqBtn.removeAttribute("aria-label");
+        this.weekReqBtn.title = "Edit required hours";
         this.weekDom = null;
         this.segmentsIndex = new Map();
         this.projectColorCache.clear();
@@ -611,8 +613,14 @@ export class WeekView {
     startNowTimer() {
         if (this.nowTimer) return;
         this.updateNowMarker();
+        if (this.appState.weekStart) {
+            this.updateWeekSummary(this.appState.weekStart);
+        }
         this.nowTimer = window.setInterval(() => {
             this.updateNowMarker();
+            if (this.appState.weekStart) {
+                this.updateWeekSummary(this.appState.weekStart);
+            }
         }, 60_000);
     }
 
@@ -652,6 +660,9 @@ export class WeekView {
         }
         const now = new Date();
         const dayStr = this.timeContext.formatDate(now);
+        for (let i = 0; i < this.weekDom.dayHeaderEls.length; i++) {
+            this.weekDom.dayHeaderEls[i].classList.toggle("is-today", this.weekDom.days[i] === dayStr);
+        }
         const dayIdx = this.weekDom.days.indexOf(dayStr);
         if (dayIdx < 0) {
             this.clearNowMarker();
@@ -721,6 +732,10 @@ export class WeekView {
 
         for (let i = 0; i < this.weekDom.dayColEls.length; i++) {
             this.weekDom.dayColEls[i].classList.toggle("is-focused", i === this.focusedDayIndex);
+            const header = this.weekDom.dayHeaderEls?.[i];
+            if (header) {
+                header.classList.toggle("is-focused", i === this.focusedDayIndex);
+            }
         }
 
         const dayKeys = this.weekDom.dayKeys[this.focusedDayIndex] || [];
@@ -779,7 +794,7 @@ export class WeekView {
     computeWeekMetrics() {
         if (!this.weekDom) return null;
         const headerEl = /** @type {HTMLElement | null} */ (this.weekDom.gridEl.querySelector(".wg-header"));
-        const headerHeight = headerEl ? headerEl.offsetHeight : 48;
+        const headerHeight = headerEl ? headerEl.offsetHeight : 50;
         const baseHeight = Math.max(240, this.weekScrollEl.clientHeight - headerHeight);
         const timelineHeight = Math.max(240, Math.round(baseHeight * this.zoom));
         return { baseHeight, headerHeight, timelineHeight, pxPerMinute: timelineHeight / 1440 };
@@ -863,6 +878,7 @@ export class WeekView {
 
         const days = Array.from({ length: 7 }, (_, i) => addIsoDays(weekStart, i));
         const weekEnd = days[6];
+        const today = this.timeContext.formatDate(new Date());
         const { isoYear, week } = isoWeekInfo(weekStart);
         this.weekLabelEl.textContent = `${isoYear}-W${String(week).padStart(2, "0")} • ${weekStart} → ${weekEnd}`;
         this.updateWeekSummary(weekStart);
@@ -874,25 +890,37 @@ export class WeekView {
         timeHeader.className = "wg-header";
         gridEl.append(timeHeader);
 
+        const dayHeaderEls = [];
         for (let i = 0; i < 7; i++) {
             const header = document.createElement("div");
             header.className = "wg-header";
             header.dataset.dayIdx = String(i);
+            header.classList.toggle("is-today", days[i] === today);
 
             const dowEl = document.createElement("div");
             dowEl.className = "wg-dow";
             dowEl.textContent = DOW_LABELS[i];
+            const totalEl = document.createElement("div");
+            totalEl.className = "wg-day-total";
+            const billableSeconds = this.store.getDayBillableSeconds(weekStart, days[i]);
+            totalEl.classList.toggle("is-empty", billableSeconds === 0);
+            totalEl.textContent = `B ${formatDuration(billableSeconds)}`;
+            totalEl.title = `${formatDuration(billableSeconds)} billable`;
+            const headerTopEl = document.createElement("div");
+            headerTopEl.className = "wg-header-top";
+            headerTopEl.append(dowEl, totalEl);
             const dateEl = document.createElement("div");
             dateEl.className = "wg-date";
             dateEl.textContent = days[i];
 
-            header.append(dowEl, dateEl);
+            header.append(headerTopEl, dateEl);
             header.addEventListener("click", () => {
                 this.focusedDayIndex = i;
                 this.applyWeekFocusAndSelection();
                 this.scrollWeekFocusIntoView();
                 this.weekScrollEl.focus();
             });
+            dayHeaderEls.push(header);
             gridEl.append(header);
         }
 
@@ -920,7 +948,17 @@ export class WeekView {
         }
 
         this.weekScrollEl.append(gridEl);
-        this.weekDom = { days, dayColEls, dayKeys, entryElsByKey, gridEl, keyToIndexByDay, metrics: null, timeAxisEl };
+        this.weekDom = {
+            days,
+            dayColEls,
+            dayHeaderEls,
+            dayKeys,
+            entryElsByKey,
+            gridEl,
+            keyToIndexByDay,
+            metrics: null,
+            timeAxisEl,
+        };
 
         const metrics = this.computeWeekMetrics();
         if (metrics) {
@@ -2415,27 +2453,50 @@ export class WeekView {
     updateWeekSummary(weekStart) {
         if (!this.weekBillableEl) return;
         if (!weekStart) {
-            this.weekBillableEl.textContent = "";
+            this.weekBillableEl.replaceChildren();
+            this.weekReqBtn.removeAttribute("aria-label");
             return;
         }
 
-        const billableSeconds = this.store.getWeekBillableSeconds(weekStart);
-        const requiredHours = this.store.getWeekRequiredHours(weekStart);
-        const requiredSeconds = Math.round(requiredHours * 3600);
-        const weekDeltaSeconds = billableSeconds - requiredSeconds;
-        const accumulatedSeconds = this.store.getAccumulatedBalanceSeconds(weekStart);
+        const today = this.timeContext.formatDate(new Date());
+        const configuredRequiredHours = this.store.getWeekRequiredHours(weekStart);
+        const dueRequiredHours = this.store.getRequiredHoursThroughDate(weekStart, today);
+        const billableSeconds = this.store.getWeekBillableSecondsThroughDate(weekStart, today);
+        const weekDeltaSeconds = this.store.getWeekBalanceSeconds(weekStart, today);
+        const accumulatedSeconds = this.store.getAccumulatedBalanceSeconds(weekStart, today);
         const comment = this.store.getWeekComment(weekStart);
+        const configuredText = this.formatRequiredHours(configuredRequiredHours);
+        const dueText = this.formatRequiredHours(dueRequiredHours);
+        const requirementText = dueRequiredHours < configuredRequiredHours ? `Due ${dueText}/${configuredText}h` : `Req ${configuredText}h`;
 
-        const parts = [
-            `Req ${this.formatRequiredHours(requiredHours)}h`,
-            `Week ${this.formatSignedDuration(weekDeltaSeconds)}`,
-            `Total ${this.formatSignedDuration(accumulatedSeconds)}`,
-            `Billable ${formatDuration(billableSeconds)}`,
+        const stats = [
+            { className: "week-stat-billable", text: `B ${formatDuration(billableSeconds)}` },
+            { className: "week-stat-required", text: requirementText },
+            { className: "week-stat-delta", text: `Week ${this.formatSignedDuration(weekDeltaSeconds)}` },
+            { className: "week-stat-total", text: `Total ${this.formatSignedDuration(accumulatedSeconds)}` },
         ];
         if (comment) {
-            parts.push(comment);
+            stats.push({ className: "week-stat-comment", text: comment });
         }
-        this.weekBillableEl.textContent = parts.join(" • ");
+
+        const elements = stats.map((stat) => {
+            const el = document.createElement("span");
+            el.className = `week-stat ${stat.className}`;
+            el.textContent = stat.text;
+            return el;
+        });
+        this.weekBillableEl.replaceChildren(...elements);
+
+        const fullSummary = [
+            `Billable ${formatDuration(billableSeconds)}`,
+            requirementText,
+            `Week ${this.formatSignedDuration(weekDeltaSeconds)}`,
+            `Total ${this.formatSignedDuration(accumulatedSeconds)}`,
+        ];
+        if (comment) fullSummary.push(comment);
+        const summaryText = fullSummary.join(" • ");
+        this.weekReqBtn.setAttribute("aria-label", `${summaryText}. Edit required hours.`);
+        this.weekReqBtn.title = `${summaryText} • Edit required hours`;
     }
 
     /**

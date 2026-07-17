@@ -7,14 +7,36 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="topbar-left">
-        <nav id="viewTabs" class="tabs" role="tablist" aria-label="Views" hidden>
-          <button id="tabWeek" class="tab" type="button" role="tab" aria-selected="true">Week</button>
-          <button id="tabSearch" class="tab" type="button" role="tab" aria-selected="false">Search</button>
-        </nav>
+    <header id="topbar" class="topbar" hidden>
+      <div id="appMenuRoot" class="app-menu">
+        <button
+          id="menuBtn"
+          class="btn btn-secondary menu-trigger"
+          type="button"
+          aria-label="Open menu"
+          aria-haspopup="menu"
+          aria-expanded="false"
+        >
+          <span class="menu-icon" aria-hidden="true"></span>
+        </button>
+        <div id="appMenuPanel" class="app-menu-panel" role="menu" hidden>
+          <button id="menuWeekBtn" class="app-menu-item" type="button" role="menuitem">
+            <span>Week</span><span class="menu-shortcut">Ctrl+W</span>
+          </button>
+          <button id="menuSearchBtn" class="app-menu-item" type="button" role="menuitem">
+            <span>Search</span><span class="menu-shortcut">Ctrl+K</span>
+          </button>
+          <div class="app-menu-separator" role="separator"></div>
+          <button id="projectsBtn" class="app-menu-item" type="button" role="menuitem" hidden>Projects</button>
+          <button id="reloadDataBtn" class="app-menu-item" type="button" role="menuitem" hidden>Reload data</button>
+          <div class="app-menu-separator" role="separator"></div>
+          <div id="authStatus" class="app-menu-status" aria-live="polite"></div>
+          <button id="logoutBtn" class="app-menu-item app-menu-danger" type="button" role="menuitem" hidden>Logout</button>
+        </div>
+      </div>
 
-        <div id="weekControls" class="week-controls" hidden>
+      <div id="weekControls" class="week-controls" hidden>
+        <div class="week-navigation">
           <button id="prevWeekBtn" class="btn btn-secondary btn-icon" type="button" title="PageUp" aria-label="Previous week">
             ◀
           </button>
@@ -22,32 +44,20 @@
             ▶
           </button>
           <button id="latestWeekBtn" class="btn btn-secondary" type="button">Latest</button>
-
-          <div id="weekLabel" class="week-label" aria-live="polite"></div>
-          <div id="weekBillable" class="week-billable muted" aria-live="polite"></div>
-          <button id="weekReqBtn" class="btn btn-secondary" type="button">Required</button>
-
-          <div id="editorBadge" class="editor-badge" aria-live="polite"></div>
-
-          <label class="zoom zoom-compact">
-            <span>Zoom</span>
-            <input id="zoomInput" type="range" min="1" max="4" step="0.25" value="1" />
-          </label>
-        </div>
-      </div>
-
-      <div class="topbar-right">
-        <div class="loadbar" aria-live="polite">
-          <progress id="loadProgress" max="1" value="0"></progress>
-          <div id="loadProgressLabel" class="muted loadbar-label"></div>
         </div>
 
-        <div class="topbar-actions">
-          <button id="projectsBtn" class="btn btn-secondary" type="button" hidden>Projects</button>
-          <button id="reloadDataBtn" class="btn btn-secondary" type="button" hidden>Reload</button>
-          <div id="authStatus" class="auth-status" aria-live="polite"></div>
-          <button id="logoutBtn" class="btn btn-secondary" type="button" hidden>Logout</button>
-        </div>
+        <div id="weekLabel" class="week-label" aria-live="polite"></div>
+        <button id="weekReqBtn" class="week-summary" type="button" title="Edit required hours">
+          <span id="weekBillable" aria-live="polite"></span>
+        </button>
+
+        <div class="topbar-spacer"></div>
+        <div id="editorBadge" class="editor-badge" aria-live="polite"></div>
+
+        <label class="zoom zoom-compact" title="Timeline zoom">
+          <span>Zoom</span>
+          <input id="zoomInput" type="range" min="1" max="4" step="0.25" value="1" />
+        </label>
       </div>
     </header>
 
@@ -89,6 +99,19 @@
 
           <pre id="loginError" class="error" hidden></pre>
         </form>
+      </section>
+
+      <section id="loadingSection" class="loading-screen" aria-live="polite" aria-busy="true" hidden>
+        <div class="loading-content">
+          <div class="loading-title">Loading diary</div>
+          <progress id="loadProgress" max="1" value="0"></progress>
+          <div id="loadProgressLabel" class="loading-label muted"></div>
+          <pre id="loadingError" class="error" hidden></pre>
+          <div id="loadingActions" class="loading-actions" hidden>
+            <button id="loadingRetryBtn" class="btn" type="button">Retry</button>
+            <button id="loadingLogoutBtn" class="btn btn-secondary" type="button">Back to login</button>
+          </div>
+        </div>
       </section>
 
       <section id="appSection" class="stack" hidden>
