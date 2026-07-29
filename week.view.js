@@ -18,10 +18,116 @@ import {
 
 const MIN_ENTRY_MINUTES = 15;
 const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
+const MAX_GAP_ENTRY_MINUTES = 8 * 60;
+const MIN_DAY_COLUMN_WIDTH = 136;
 
 const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DESC_SUGGEST_MIN_CHARS = 2;
 const DESC_SUGGEST_LIMIT = 8;
+
+/**
+ * Clamps the first visible day of a sliding window to the seven-day week.
+ * This helper is exported so day-window edge behavior can be unit tested without constructing the DOM-heavy view.
+ * @param {number} requestedStart
+ * @param {number} visibleDayCount
+ * @returns {number}
+ */
+export function clampDayWindowStart(requestedStart, visibleDayCount) {
+    const count = Math.max(1, Math.min(7, Math.round(Number(visibleDayCount) || 1)));
+    return Math.max(0, Math.min(7 - count, Math.round(Number(requestedStart) || 0)));
+}
+
+/**
+ * Chooses a responsive day count from the actual timeline width.
+ * The formula reserves the compact time axis, then fits as many readable 136 px day columns as possible without ever leaving the one-to-seven range.
+ * @param {number} viewportWidth
+ * @returns {number}
+ */
+export function calculateVisibleDayCount(viewportWidth) {
+    const width = Math.max(0, Number(viewportWidth) || 0);
+    const timeAxisWidth = width <= 760 ? 48 : 56;
+    const availableDayWidth = Math.max(0, width - timeAxisWidth);
+    return Math.max(1, Math.min(7, Math.floor(availableDayWidth / MIN_DAY_COLUMN_WIDTH)));
+}
+
+/**
+ * Computes free minute ranges for one day from potentially overlapping visual segments.
+ * Adjacent and overlapping ranges are merged first, yielding stable gap buttons even for legacy data that is not perfectly normalized.
+ * @param {Array<{startMinutes: number, endMinutes: number}>} segments
+ * @returns {Array<{startMinutes: number, endMinutes: number}>}
+ */
+export function buildDayGaps(segments) {
+    const occupied = (Array.isArray(segments) ? segments : [])
+        .map((segment) => ({
+            startMinutes: Math.max(0, Math.min(1440, Number(segment?.startMinutes) || 0)),
+            endMinutes: Math.max(0, Math.min(1440, Number(segment?.endMinutes) || 0)),
+        }))
+        .filter((segment) => segment.endMinutes > segment.startMinutes)
+        .sort((left, right) => left.startMinutes - right.startMinutes || left.endMinutes - right.endMinutes);
+
+    const merged = [];
+    for (const segment of occupied) {
+        const previous = merged[merged.length - 1];
+        if (previous && segment.startMinutes <= previous.endMinutes) {
+            previous.endMinutes = Math.max(previous.endMinutes, segment.endMinutes);
+        } else {
+            merged.push({ ...segment });
+        }
+    }
+
+    const gaps = [];
+    let cursor = 0;
+    for (const segment of merged) {
+        if (segment.startMinutes - cursor >= MIN_ENTRY_MINUTES) {
+            gaps.push({ startMinutes: cursor, endMinutes: segment.startMinutes });
+        }
+        cursor = Math.max(cursor, segment.endMinutes);
+    }
+    if (1440 - cursor >= MIN_ENTRY_MINUTES) {
+        gaps.push({ startMinutes: cursor, endMinutes: 1440 });
+    }
+    return gaps;
+}
+
+/**
+ * Calculates snapped start/end timestamps for a pointer resize or move gesture.
+ * Week bounds and the 15-minute minimum are enforced before collision resolution is run by the editor transaction.
+ * @param {"start" | "end" | "move"} kind
+ * @param {number} originalStartMs
+ * @param {number} originalEndMs
+ * @param {number} deltaMs
+ * @param {{startMs: number, endMs: number}} weekBounds
+ * @returns {{startMs: number, endMs: number}}
+ */
+export function calculatePointerEditTimes(kind, originalStartMs, originalEndMs, deltaMs, weekBounds) {
+    const snappedDelta = Math.round(deltaMs / MIN_ENTRY_MS) * MIN_ENTRY_MS;
+    let startMs = originalStartMs;
+    let endMs = originalEndMs;
+    if (kind === "start") {
+        startMs = Math.min(originalStartMs + snappedDelta, endMs - MIN_ENTRY_MS);
+    } else if (kind === "end") {
+        endMs = Math.max(originalEndMs + snappedDelta, startMs + MIN_ENTRY_MS);
+    } else {
+        startMs += snappedDelta;
+        endMs += snappedDelta;
+    }
+
+    if (kind === "move") {
+        const duration = endMs - startMs;
+        if (startMs < weekBounds.startMs) {
+            startMs = weekBounds.startMs;
+            endMs = startMs + duration;
+        }
+        if (endMs > weekBounds.endMs) {
+            endMs = weekBounds.endMs;
+            startMs = endMs - duration;
+        }
+    } else {
+        startMs = Math.max(weekBounds.startMs, startMs);
+        endMs = Math.min(weekBounds.endMs, endMs);
+    }
+    return { startMs, endMs };
+}
 
 /**
  * Builds an id-indexed map for a raw week snapshot.
@@ -103,14 +209,22 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {HTMLButtonElement} elements.prevWeekBtn
  * @property {HTMLButtonElement} elements.nextWeekBtn
  * @property {HTMLButtonElement} elements.latestWeekBtn
+ * @property {HTMLButtonElement} elements.weekNormalBtn
+ * @property {HTMLButtonElement} elements.weekAddBtn
+ * @property {HTMLButtonElement} elements.weekSplitBtn
+ * @property {HTMLButtonElement} elements.weekUndoBtn
+ * @property {HTMLButtonElement} elements.weekRedoBtn
+ * @property {HTMLButtonElement} elements.weekZoomOutBtn
+ * @property {HTMLButtonElement} elements.weekZoomInBtn
  * @property {HTMLInputElement} elements.zoomInput
- * @property {HTMLElement} elements.editorBadge
+ * @property {HTMLButtonElement} elements.editorBadge
  * @property {HTMLDialogElement} elements.weekReqDialog
  * @property {HTMLFormElement} elements.weekReqForm
  * @property {HTMLButtonElement} elements.weekReqCloseBtn
  * @property {HTMLButtonElement} elements.weekReqCancelBtn
  * @property {HTMLButtonElement} elements.weekReqOkBtn
  * @property {HTMLElement} elements.weekReqMeta
+ * @property {HTMLElement} elements.weekReqSummary
  * @property {HTMLInputElement} elements.weekReqHours
  * @property {HTMLTextAreaElement} elements.weekReqComment
  * @property {HTMLDialogElement} elements.entryDialog
@@ -156,6 +270,13 @@ export class WeekView {
         this.prevWeekBtn = options.elements.prevWeekBtn;
         this.nextWeekBtn = options.elements.nextWeekBtn;
         this.latestWeekBtn = options.elements.latestWeekBtn;
+        this.weekNormalBtn = options.elements.weekNormalBtn;
+        this.weekAddBtn = options.elements.weekAddBtn;
+        this.weekSplitBtn = options.elements.weekSplitBtn;
+        this.weekUndoBtn = options.elements.weekUndoBtn;
+        this.weekRedoBtn = options.elements.weekRedoBtn;
+        this.weekZoomOutBtn = options.elements.weekZoomOutBtn;
+        this.weekZoomInBtn = options.elements.weekZoomInBtn;
         this.zoomInput = options.elements.zoomInput;
         this.editorBadgeEl = options.elements.editorBadge;
 
@@ -165,6 +286,7 @@ export class WeekView {
         this.weekReqCancelBtn = options.elements.weekReqCancelBtn;
         this.weekReqOkBtn = options.elements.weekReqOkBtn;
         this.weekReqMetaEl = options.elements.weekReqMeta;
+        this.weekReqSummaryEl = options.elements.weekReqSummary;
         this.weekReqHoursInput = options.elements.weekReqHours;
         this.weekReqCommentInput = options.elements.weekReqComment;
 
@@ -184,6 +306,7 @@ export class WeekView {
         this.onManifestUpdated = options.onManifestUpdated;
 
         this.active = false;
+        this.busy = false;
         this.weekDom = null;
         this.segmentsIndex = new Map();
         this.projectColorCache = new Map();
@@ -214,6 +337,12 @@ export class WeekView {
         this.nowTimer = 0;
         this.nowLineEl = null;
         this.nowLineDayIdx = -1;
+        this.visibleDayCount = calculateVisibleDayCount(window.innerWidth);
+        this.dayWindowStart = clampDayWindowStart(this.focusedDayIndex, this.getVisibleDayCount());
+        this.pointerEdit = null;
+        /** @type {{distance: number, zoom: number} | null} */
+        this.pinchZoom = null;
+        this.suppressEntryClickUntil = 0;
 
         this.undoStack = [];
         this.redoStack = [];
@@ -222,6 +351,7 @@ export class WeekView {
         this.zoom = Number.isFinite(initialZoom) && initialZoom >= 1 ? initialZoom : 1;
 
         this.bindEvents();
+        this.updateTopbarActions();
     }
 
     /**
@@ -232,6 +362,41 @@ export class WeekView {
      */
     setDataSource(dataSource) {
         this.dataSource = dataSource;
+    }
+
+    /**
+     * Applies application-wide busy state to controls owned by the week view.
+     * Selection-sensitive actions are recalculated here so finishing a save restores only actions that are actually available.
+     * @param {boolean} isBusy
+     * @returns {void}
+     */
+    setBusy(isBusy) {
+        this.busy = Boolean(isBusy);
+        this.prevWeekBtn.disabled = this.busy;
+        this.nextWeekBtn.disabled = this.busy;
+        this.latestWeekBtn.disabled =
+            this.busy || Boolean(this.appState.latestWeekStart && this.appState.latestWeekStart === this.appState.weekStart);
+        this.zoomInput.disabled = this.busy;
+        this.weekReqBtn.disabled = this.busy;
+        for (const button of this.weekScrollEl.querySelectorAll(".entry-control, .entry-resize-handle, .entry-gap-add")) {
+            if (button instanceof HTMLButtonElement) button.disabled = this.busy;
+        }
+        this.updateEditorBadge();
+    }
+
+    /**
+     * Restores focus to the timeline without throwing when the view is currently detached or hidden.
+     * Pointer and top-bar commands share this helper to keep subsequent keyboard navigation available.
+     * @returns {void}
+     */
+    focusTimeline() {
+        queueMicrotask(() => {
+            try {
+                this.weekScrollEl.focus({ preventScroll: true });
+            } catch {
+                // Ignore browsers that do not support focus options on this element.
+            }
+        });
     }
 
     /**
@@ -293,7 +458,40 @@ export class WeekView {
         this.nextWeekBtn.addEventListener("click", () => this.handleNextWeek());
         this.latestWeekBtn.addEventListener("click", () => this.handleLatestWeek());
         this.zoomInput.addEventListener("input", () => this.handleZoomInput());
+        this.weekScrollEl.addEventListener("wheel", (ev) => this.handleZoomWheel(ev), { passive: false });
+        this.weekScrollEl.addEventListener("touchstart", (ev) => this.handlePinchStart(ev), { passive: false });
+        this.weekScrollEl.addEventListener("touchmove", (ev) => this.handlePinchMove(ev), { passive: false });
+        this.weekScrollEl.addEventListener("touchend", (ev) => this.handlePinchEnd(ev));
+        this.weekScrollEl.addEventListener("touchcancel", (ev) => this.handlePinchEnd(ev));
         this.weekReqBtn.addEventListener("click", () => this.openWeekRequirementsDialog());
+        this.weekNormalBtn.addEventListener("click", () => {
+            this.setEditMode("normal");
+            this.focusTimeline();
+        });
+        this.weekAddBtn.addEventListener("click", () => {
+            this.enterAddMode();
+            this.focusTimeline();
+        });
+        this.weekSplitBtn.addEventListener("click", () => {
+            this.enterSplitMode();
+            this.focusTimeline();
+        });
+        this.weekUndoBtn.addEventListener("click", () => {
+            this.undo();
+            this.focusTimeline();
+        });
+        this.weekRedoBtn.addEventListener("click", () => {
+            this.redo();
+            this.focusTimeline();
+        });
+        this.weekZoomOutBtn.addEventListener("click", () => {
+            this.nudgeZoom(-1);
+            this.focusTimeline();
+        });
+        this.weekZoomInBtn.addEventListener("click", () => {
+            this.nudgeZoom(1);
+            this.focusTimeline();
+        });
 
         this.weekReqCloseBtn.addEventListener("click", () => this.closeWeekRequirementsDialog());
         this.weekReqCancelBtn.addEventListener("click", () => this.closeWeekRequirementsDialog());
@@ -315,6 +513,10 @@ export class WeekView {
         this.entryDescSuggestionsEl.addEventListener("mousedown", (ev) => this.handleSuggestionPointerDown(ev));
         this.entryDescSuggestionsEl.addEventListener("click", (ev) => this.handleSuggestionClick(ev));
         this.entryDescSuggestionsEl.addEventListener("keydown", (ev) => this.handleSuggestionKeydown(ev));
+
+        window.addEventListener("pointermove", (ev) => this.handleEntryPointerMove(ev));
+        window.addEventListener("pointerup", (ev) => this.finishEntryPointerEdit(ev));
+        window.addEventListener("pointercancel", (ev) => this.cancelEntryPointerEdit(ev));
     }
 
     /**
@@ -327,7 +529,10 @@ export class WeekView {
         this.active = Boolean(isActive);
         setVisible(this.weekViewSection, this.active);
         if (this.active) {
+            this.updateVisibleDayCount();
             this.updateEditorBadge();
+            this.ensureFocusedDayInWindow();
+            this.applyDayWindow();
             queueMicrotask(() => {
                 try {
                     this.weekScrollEl.focus();
@@ -371,8 +576,14 @@ export class WeekView {
         this.cleanWeekShas.clear();
         this.undoStack.length = 0;
         this.redoStack.length = 0;
+        this.dayWindowStart = clampDayWindowStart(0, this.getVisibleDayCount());
+        this.pointerEdit = null;
+        this.pinchZoom = null;
+        document.body.classList.remove("is-entry-dragging");
+        document.body.classList.remove("is-entry-moving");
         this.setEditMode("normal");
         this.updateEditorBadge();
+        this.updateTopbarActions();
         this.clearDescriptionSuggestions();
         this.clearAddDraft();
         this.stopNowTimer();
@@ -391,6 +602,7 @@ export class WeekView {
         if (!weekStart) return;
         this.appState.setWeekStart(weekStart);
         this.focusedDayIndex = Math.max(0, Math.min(6, focusedDayIndex));
+        this.ensureFocusedDayInWindow();
         this.rebuildWeekView();
     }
 
@@ -402,10 +614,113 @@ export class WeekView {
      */
     setLatestWeekStart(latestWeekStart) {
         this.appState.setLatestWeekStart(latestWeekStart);
-        if (latestWeekStart && this.appState.weekStart === latestWeekStart) {
-            this.latestWeekBtn.disabled = true;
+        this.latestWeekBtn.disabled =
+            this.busy || Boolean(latestWeekStart && this.appState.weekStart === latestWeekStart);
+    }
+
+    /**
+     * Returns the number of day columns currently displayed.
+     * The value is derived from the timeline's measured width and remains stable until activation or resize recalculates it.
+     * @returns {number}
+     */
+    getVisibleDayCount() {
+        return this.visibleDayCount;
+    }
+
+    /**
+     * Recalculates how many readable day columns fit in the timeline.
+     * The focused day remains visible when crossing a responsive threshold, and existing DOM nodes are reused rather than rebuilding the week.
+     * @returns {boolean} true when the visible day count changed
+     */
+    updateVisibleDayCount() {
+        const measuredWidth = this.weekScrollEl.clientWidth || window.innerWidth;
+        const nextCount = calculateVisibleDayCount(measuredWidth);
+        if (nextCount === this.visibleDayCount) return false;
+        this.visibleDayCount = nextCount;
+        this.ensureFocusedDayInWindow();
+        this.applyDayWindow();
+        return true;
+    }
+
+    /**
+     * Keeps the focused day inside the sliding narrow-view window.
+     * The window moves only as far as necessary, preserving its position while selection stays within it.
+     * @returns {void}
+     */
+    ensureFocusedDayInWindow() {
+        const count = this.getVisibleDayCount();
+        if (count >= 7) {
+            this.dayWindowStart = 0;
+            return;
+        }
+        if (this.focusedDayIndex < this.dayWindowStart) {
+            this.dayWindowStart = this.focusedDayIndex;
+        } else if (this.focusedDayIndex >= this.dayWindowStart + count) {
+            this.dayWindowStart = this.focusedDayIndex - count + 1;
+        }
+        this.dayWindowStart = clampDayWindowStart(this.dayWindowStart, count);
+    }
+
+    /**
+     * Applies the current day-window visibility to an already-built week grid.
+     * Hidden day nodes remain indexed for keyboard navigation and overflow calculations but no longer consume grid columns.
+     * @returns {void}
+     */
+    applyDayWindow() {
+        if (!this.weekDom) return;
+        const count = this.getVisibleDayCount();
+        this.dayWindowStart = clampDayWindowStart(this.dayWindowStart, count);
+        const end = this.dayWindowStart + count;
+        this.weekDom.gridEl.style.setProperty("--visible-day-count", String(count));
+        this.weekDom.gridEl.classList.toggle("is-narrow-window", count < 7);
+        for (let dayIdx = 0; dayIdx < 7; dayIdx += 1) {
+            const hidden = dayIdx < this.dayWindowStart || dayIdx >= end;
+            this.weekDom.dayHeaderEls[dayIdx]?.classList.toggle("is-window-hidden", hidden);
+            this.weekDom.dayColEls[dayIdx]?.classList.toggle("is-window-hidden", hidden);
+        }
+
+        const sideRailDay = end - 1;
+        for (const el of this.weekDom.entryElsByKey.values()) {
+            const dayIdx = Number.parseInt(el.dataset.dayIdx || "-1", 10);
+            el.classList.toggle("controls-on-left", dayIdx === sideRailDay);
+        }
+    }
+
+    /**
+     * Moves a narrow sliding window by one day, crossing to the adjacent week only at the week boundary.
+     * In the seven-day layout this retains the original previous/next-week behavior.
+     * @param {-1 | 1} direction
+     * @returns {void}
+     */
+    navigateDayWindow(direction) {
+        if (!this.appState.weekStart) return;
+        const count = this.getVisibleDayCount();
+        if (count >= 7) {
+            this.setWeekStart(addIsoDays(this.appState.weekStart, direction * 7));
+            return;
+        }
+
+        const maxStart = 7 - count;
+        const nextStart = this.dayWindowStart + direction;
+        if (nextStart >= 0 && nextStart <= maxStart) {
+            this.dayWindowStart = nextStart;
+            if (this.focusedDayIndex < nextStart) {
+                this.focusedDayIndex = nextStart;
+            } else if (this.focusedDayIndex >= nextStart + count) {
+                this.focusedDayIndex = nextStart + count - 1;
+            }
+            this.applyDayWindow();
+            this.applyWeekFocusAndSelection();
+            this.scrollWeekFocusIntoView();
+            return;
+        }
+
+        if (direction < 0) {
+            this.dayWindowStart = maxStart;
+            this.setWeekStart(addIsoDays(this.appState.weekStart, -7), 6);
         } else {
-            this.latestWeekBtn.disabled = false;
+            this.dayWindowStart = 0;
+            this.setWeekStart(addIsoDays(this.appState.weekStart, 7), 0);
         }
     }
 
@@ -415,8 +730,7 @@ export class WeekView {
      * @returns {void}
      */
     handlePrevWeek() {
-        if (!this.appState.weekStart) return;
-        this.setWeekStart(addIsoDays(this.appState.weekStart, -7));
+        this.navigateDayWindow(-1);
     }
 
     /**
@@ -425,8 +739,7 @@ export class WeekView {
      * @returns {void}
      */
     handleNextWeek() {
-        if (!this.appState.weekStart) return;
-        this.setWeekStart(addIsoDays(this.appState.weekStart, 7));
+        this.navigateDayWindow(1);
     }
 
     /**
@@ -447,9 +760,8 @@ export class WeekView {
     handleZoomInput() {
         const nextZoom = Number.parseFloat(this.zoomInput.value || "1");
         if (!Number.isFinite(nextZoom) || nextZoom < 1) return;
-        this.zoom = nextZoom;
-        this.appState.setZoom(nextZoom);
-        this.updateWeekScaleAndReposition();
+        const rect = this.weekScrollEl.getBoundingClientRect();
+        this.setZoomLevel(nextZoom, rect.top + rect.height / 2);
     }
 
     /**
@@ -476,24 +788,177 @@ export class WeekView {
         next = Number(next.toFixed(Math.min(6, Math.max(0, decimals))));
         if (!Number.isFinite(next) || next < 1) return;
 
-        this.zoom = next;
-        this.appState.setZoom(next);
-        this.zoomInput.value = String(next);
-        this.updateWeekScaleAndReposition();
+        const rect = this.weekScrollEl.getBoundingClientRect();
+        this.setZoomLevel(next, rect.top + rect.height / 2);
     }
 
     /**
-     * Updates the editor badge with mode and save status.
-     * Part of the week view interaction flow.
+     * Applies a clamped zoom factor while keeping the timeline minute beneath an optional screen coordinate stationary.
+     * Preserving that focal point makes wheel, trackpad, slider, and touch zoom feel like scaling the calendar rather than jumping its scroll position.
+     * @param {number} requestedZoom
+     * @param {number | null} [anchorClientY]
+     * @returns {void}
+     */
+    setZoomLevel(requestedZoom, anchorClientY = null) {
+        const min = Number.parseFloat(this.zoomInput.min || "1");
+        const max = Number.parseFloat(this.zoomInput.max || "4");
+        let next = Number(requestedZoom);
+        if (!Number.isFinite(next)) return;
+        if (Number.isFinite(min)) next = Math.max(min, next);
+        if (Number.isFinite(max)) next = Math.min(max, next);
+        next = Number(next.toFixed(3));
+        if (Math.abs(next - this.zoom) < 0.0005) {
+            this.updateTopbarActions();
+            return;
+        }
+
+        const oldMetrics = this.weekDom?.metrics || this.computeWeekMetrics();
+        const containerRect = this.weekScrollEl.getBoundingClientRect();
+        const localAnchorY =
+            Number.isFinite(anchorClientY) && anchorClientY !== null
+                ? Number(anchorClientY) - containerRect.top
+                : containerRect.height / 2;
+        const anchorMinutes = oldMetrics
+            ? Math.max(
+                  0,
+                  Math.min(
+                      1440,
+                      (this.weekScrollEl.scrollTop + localAnchorY - oldMetrics.headerHeight) / oldMetrics.pxPerMinute,
+                  ),
+              )
+            : null;
+
+        this.zoom = next;
+        this.appState.setZoom(next);
+        this.zoomInput.value = String(next);
+        this.updateWeekScaleAndReposition(false);
+
+        const newMetrics = this.weekDom?.metrics;
+        if (newMetrics && anchorMinutes !== null) {
+            const nextScrollTop = newMetrics.headerHeight + anchorMinutes * newMetrics.pxPerMinute - localAnchorY;
+            this.weekScrollEl.scrollTop = Math.max(0, nextScrollTop);
+        }
+        this.updateTopbarActions();
+    }
+
+    /**
+     * Converts Ctrl+wheel events, including desktop trackpad pinch gestures, into timeline zoom.
+     * Preventing the event only while the Week view is active leaves ordinary scrolling untouched and stops browser page zoom in the calendar.
+     * @param {WheelEvent} ev
+     * @returns {void}
+     */
+    handleZoomWheel(ev) {
+        if (!this.active || !ev.ctrlKey) return;
+        ev.preventDefault();
+        if (this.busy || this.saveInFlight) return;
+        const boundedDelta = Math.max(-120, Math.min(120, ev.deltaY));
+        const scale = Math.exp(-boundedDelta * 0.0025);
+        this.setZoomLevel(this.zoom * scale, ev.clientY);
+    }
+
+    /**
+     * Measures the distance between the first two active touches.
+     * @param {TouchList} touches
+     * @returns {number}
+     */
+    getTouchDistance(touches) {
+        const first = touches.item(0);
+        const second = touches.item(1);
+        if (!first || !second) return 0;
+        return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+    }
+
+    /**
+     * Starts a two-finger zoom gesture and cancels any one-finger entry preview that preceded it.
+     * @param {TouchEvent} ev
+     * @returns {void}
+     */
+    handlePinchStart(ev) {
+        if (!this.active || ev.touches.length !== 2 || this.busy || this.saveInFlight) return;
+        const distance = this.getTouchDistance(ev.touches);
+        if (distance <= 0) return;
+        if (ev.cancelable) ev.preventDefault();
+        this.abortEntryPointerEdit();
+        this.pinchZoom = { distance, zoom: this.zoom };
+    }
+
+    /**
+     * Scales the timeline around the midpoint of an active two-finger gesture.
+     * @param {TouchEvent} ev
+     * @returns {void}
+     */
+    handlePinchMove(ev) {
+        if (!this.pinchZoom || ev.touches.length !== 2) return;
+        const distance = this.getTouchDistance(ev.touches);
+        if (distance <= 0) return;
+        if (ev.cancelable) ev.preventDefault();
+        const first = ev.touches.item(0);
+        const second = ev.touches.item(1);
+        if (!first || !second) return;
+        const midpointY = (first.clientY + second.clientY) / 2;
+        this.setZoomLevel(this.pinchZoom.zoom * (distance / this.pinchZoom.distance), midpointY);
+    }
+
+    /**
+     * Ends touch zoom once fewer than two fingers remain.
+     * @param {TouchEvent} ev
+     * @returns {void}
+     */
+    handlePinchEnd(ev) {
+        if (ev.touches.length < 2) {
+            this.pinchZoom = null;
+        }
+    }
+
+    /**
+     * Updates the shared top-bar save control with the current persistence state.
+     * Edit mode is represented exclusively by the pressed mode button, leaving this control focused on its Saved/Changed action.
      * @returns {void}
      */
     updateEditorBadge() {
-        if (!this.active) return;
         const dirty = this.dirtyWeekStarts.size > 0;
-        const mode = String(this.editMode || "normal").toUpperCase();
+        this.updateTopbarActions();
+        if (!this.active) return;
         const save = this.saveInFlight ? "Saving…" : dirty ? "Changed" : "Saved";
         this.editorBadgeEl.classList.toggle("is-dirty", dirty);
-        this.editorBadgeEl.innerHTML = `<span class="dot"></span><span class="mode">${mode}</span><span class="save">${save}</span>`;
+        this.editorBadgeEl.disabled = this.busy || this.saveInFlight;
+        this.editorBadgeEl.title = dirty ? "Save changes (Ctrl+S)" : "No unsaved week changes";
+        this.editorBadgeEl.setAttribute("aria-label", dirty ? "Save changed weeks" : "Week changes saved");
+        this.editorBadgeEl.innerHTML = `<span class="dot"></span><span class="save">${save}</span>`;
+    }
+
+    /**
+     * Synchronizes top-bar mode, undo/redo, and zoom buttons with editor state.
+     * These controls mirror keyboard commands and expose pressed/disabled semantics to assistive technology.
+     * @returns {void}
+     */
+    updateTopbarActions() {
+        const blocked = this.busy || this.saveInFlight;
+        const selectedEntry = this.selectedEntryId ? this.store.getEntryById(this.selectedEntryId) : null;
+        const canSplit =
+            Boolean(selectedEntry) &&
+            selectedEntry?.weekStart === this.appState.weekStart &&
+            selectedEntry?.durationSeconds >= 2 * MIN_ENTRY_MINUTES * 60;
+
+        for (const [button, mode] of [
+            [this.weekNormalBtn, "normal"],
+            [this.weekAddBtn, "add"],
+            [this.weekSplitBtn, "split"],
+        ]) {
+            button.classList.toggle("is-active", this.editMode === mode);
+            button.setAttribute("aria-pressed", this.editMode === mode ? "true" : "false");
+        }
+
+        this.weekNormalBtn.disabled = blocked;
+        this.weekAddBtn.disabled = blocked || !this.appState.weekStart;
+        this.weekSplitBtn.disabled = blocked || !canSplit;
+        this.weekUndoBtn.disabled = blocked || this.undoStack.length === 0;
+        this.weekRedoBtn.disabled = blocked || this.redoStack.length === 0;
+        const zoom = Number.parseFloat(this.zoomInput.value || String(this.zoom));
+        const minZoom = Number.parseFloat(this.zoomInput.min || "1");
+        const maxZoom = Number.parseFloat(this.zoomInput.max || "4");
+        this.weekZoomOutBtn.disabled = blocked || zoom <= minZoom;
+        this.weekZoomInBtn.disabled = blocked || zoom >= maxZoom;
     }
 
     /**
@@ -733,6 +1198,8 @@ export class WeekView {
     applyWeekFocusAndSelection() {
         if (!this.weekDom) return;
         this.clampWeekFocus();
+        this.ensureFocusedDayInWindow();
+        this.applyDayWindow();
 
         for (let i = 0; i < this.weekDom.dayColEls.length; i++) {
             this.weekDom.dayColEls[i].classList.toggle("is-focused", i === this.focusedDayIndex);
@@ -755,6 +1222,7 @@ export class WeekView {
         for (const [key, el] of this.weekDom.entryElsByKey.entries()) {
             el.classList.toggle("is-selected", Boolean(selectedKey && key === selectedKey));
         }
+        this.updateTopbarActions();
     }
 
     /**
@@ -832,7 +1300,7 @@ export class WeekView {
      * Part of the week view interaction flow.
      * @returns {void}
      */
-    updateWeekScaleAndReposition() {
+    updateWeekScaleAndReposition(shouldScrollFocus = true) {
         if (!this.weekDom) return;
         const metrics = this.computeWeekMetrics();
         if (!metrics) return;
@@ -849,10 +1317,15 @@ export class WeekView {
             el.style.height = `${heightPx}px`;
         }
 
+        for (const button of this.weekDom.gapButtonEls || []) {
+            const midpoint = Number.parseFloat(button.dataset.midpoint || "0");
+            button.style.top = `${midpoint * metrics.pxPerMinute}px`;
+        }
+
         this.updateCursorLine();
         this.updateAddDraftPreview();
         this.updateNowMarker();
-        this.scrollWeekFocusIntoView();
+        if (shouldScrollFocus) this.scrollWeekFocusIntoView();
     }
 
     /**
@@ -878,13 +1351,13 @@ export class WeekView {
             return;
         }
 
+        this.updateVisibleDayCount();
         this.segmentsIndex = this.store.getWeekSegmentsIndex(weekStart);
 
         const days = Array.from({ length: 7 }, (_, i) => addIsoDays(weekStart, i));
-        const weekEnd = days[6];
         const today = this.timeContext.formatDate(new Date());
         const { isoYear, week } = isoWeekInfo(weekStart);
-        this.weekLabelEl.textContent = `${isoYear}-W${String(week).padStart(2, "0")} • ${weekStart} → ${weekEnd}`;
+        this.weekLabelEl.textContent = `${isoYear}-W${String(week).padStart(2, "0")}`;
         this.updateWeekSummary(weekStart);
 
         const gridEl = document.createElement("div");
@@ -908,7 +1381,7 @@ export class WeekView {
             totalEl.className = "wg-day-total";
             const billableSeconds = this.store.getDayBillableSeconds(weekStart, days[i]);
             totalEl.classList.toggle("is-empty", billableSeconds === 0);
-            totalEl.textContent = `B ${formatDuration(billableSeconds)}`;
+            totalEl.textContent = `€ ${formatDuration(billableSeconds)}`;
             totalEl.title = `${formatDuration(billableSeconds)} billable`;
             const headerTopEl = document.createElement("div");
             headerTopEl.className = "wg-header-top";
@@ -936,6 +1409,7 @@ export class WeekView {
         const entryElsByKey = new Map();
         const keyToIndexByDay = Array.from({ length: 7 }, () => new Map());
         const dayKeys = Array.from({ length: 7 }, () => []);
+        const gapButtonEls = [];
 
         for (let i = 0; i < 7; i++) {
             const col = document.createElement("div");
@@ -958,11 +1432,13 @@ export class WeekView {
             dayHeaderEls,
             dayKeys,
             entryElsByKey,
+            gapButtonEls,
             gridEl,
             keyToIndexByDay,
             metrics: null,
             timeAxisEl,
         };
+        this.applyDayWindow();
 
         const metrics = this.computeWeekMetrics();
         if (metrics) {
@@ -1022,6 +1498,7 @@ export class WeekView {
                     el.classList.add("is-dirty");
                 }
                 el.dataset.key = seg.key;
+                el.dataset.entryId = String(entry.id || "");
                 el.dataset.dayIdx = String(dayIdx);
                 el.dataset.start = String(seg.startMinutes);
                 el.dataset.end = String(seg.endMinutes);
@@ -1048,7 +1525,17 @@ export class WeekView {
                 const timeEl = document.createElement("div");
                 timeEl.className = "entry-times";
                 timeEl.textContent = `${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)}`;
-                el.append(projectEl, descEl, timeEl);
+                const contentEl = document.createElement("div");
+                contentEl.className = "entry-content";
+                contentEl.append(projectEl, descEl);
+                el.append(contentEl, timeEl);
+                contentEl.addEventListener("pointerdown", (ev) => {
+                    if (this.editMode !== "normal") return;
+                    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+                    this.selectRenderedSegment(dayIdx, seg.key);
+                    this.startEntryPointerEdit(ev, Number(entry.id), "move", el);
+                });
+                this.appendEntryPointerControls(el, seg, dateStr);
 
                 el.title = `${dateStr} ${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)} • ${projectLabel}${
                     description ? ` • ${description}` : ""
@@ -1056,6 +1543,11 @@ export class WeekView {
 
                 el.addEventListener("click", (ev) => {
                     ev.stopPropagation();
+                    if (performance.now() < this.suppressEntryClickUntil) return;
+                    if (this.editMode === "split" && this.selectedEntryId === Number(entry.id)) {
+                        this.splitEntryFromPointer(ev, seg, el);
+                        return;
+                    }
                     this.focusedDayIndex = dayIdx;
                     const idxInDay = keyToIndexByDay[dayIdx].get(seg.key);
                     if (typeof idxInDay === "number") this.focusedEntryIndexByDay[dayIdx] = idxInDay;
@@ -1067,10 +1559,13 @@ export class WeekView {
                 dayColEls[dayIdx].append(el);
                 entryElsByKey.set(seg.key, el);
             }
+
+            this.appendGapButtons(dayIdx, dateStr, segs, gapButtonEls);
         }
 
         this.weekScrollEl.scrollTop = prevScrollTop;
         this.weekScrollEl.scrollLeft = prevScrollLeft;
+        this.applyDayWindow();
         this.applyWeekFocusAndSelection();
         this.updateCursorLine();
         this.updateAddDraftPreview();
@@ -1081,7 +1576,488 @@ export class WeekView {
             this.startNowTimer();
         }
 
-        this.latestWeekBtn.disabled = Boolean(this.appState.latestWeekStart && this.appState.latestWeekStart === weekStart);
+        this.latestWeekBtn.disabled =
+            this.busy || Boolean(this.appState.latestWeekStart && this.appState.latestWeekStart === weekStart);
+    }
+
+    /**
+     * Creates a compact SVG icon used by pointer-edit controls.
+     * Icons are assembled from fixed paths rather than HTML strings, keeping dynamic entry content separate from UI markup.
+     * @param {"edit" | "trash" | "split" | "plus"} name
+     * @returns {SVGSVGElement}
+     */
+    createControlIcon(name) {
+        const namespace = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(namespace, "svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("aria-hidden", "true");
+        svg.setAttribute("focusable", "false");
+
+        /**
+         * Appends one stroked path to the icon.
+         * @param {string} d
+         * @returns {void}
+         */
+        const addPath = (d) => {
+            const path = document.createElementNS(namespace, "path");
+            path.setAttribute("d", d);
+            svg.append(path);
+        };
+        if (name === "edit") {
+            addPath("M4 20h4L19 9l-4-4L4 16v4");
+            addPath("m13.5 6.5 4 4");
+        } else if (name === "trash") {
+            addPath("M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5");
+        } else if (name === "split") {
+            addPath("M7 4v5c0 2 2 3 5 3s5 1 5 3v5M17 4v5c0 2-2 3-5 3s-5 1-5 3v5");
+        } else {
+            addPath("M12 5v14M5 12h14");
+        }
+        return svg;
+    }
+
+    /**
+     * Builds one icon-only entry action with a full accessible label.
+     * @param {"edit" | "trash" | "split" | "plus"} icon
+     * @param {string} label
+     * @param {string} className
+     * @returns {HTMLButtonElement}
+     */
+    createEntryControlButton(icon, label, className) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = className;
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        button.append(this.createControlIcon(icon));
+        return button;
+    }
+
+    /**
+     * Selects one rendered segment and updates the day-level keyboard focus index.
+     * Pointer controls call this before mutation so undo metadata and post-edit focus match ordinary entry clicks.
+     * @param {number} dayIdx
+     * @param {string} segmentKey
+     * @returns {void}
+     */
+    selectRenderedSegment(dayIdx, segmentKey) {
+        if (!this.weekDom) return;
+        this.focusedDayIndex = Math.max(0, Math.min(6, dayIdx));
+        const idxInDay = this.weekDom.keyToIndexByDay[dayIdx]?.get(segmentKey);
+        if (typeof idxInDay === "number") {
+            this.focusedEntryIndexByDay[dayIdx] = idxInDay;
+        }
+        this.applyWeekFocusAndSelection();
+    }
+
+    /**
+     * Adds boundary resize handles and a side action rail to an editable entry segment.
+     * The entry content itself is the move surface; boundary handles are shown only on the segment containing the real start or end of a multi-day entry.
+     * @param {HTMLElement} entryEl
+     * @param {import("./store.js").Segment} segment
+     * @param {string} dayStr
+     * @returns {void}
+     */
+    appendEntryPointerControls(entryEl, segment, dayStr) {
+        const entry = segment.entry;
+        if (!entry || entry.weekStart !== this.appState.weekStart) return;
+        if (!(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return;
+        if (!(entry.endDate instanceof Date) || Number.isNaN(entry.endDate.getTime())) return;
+
+        const dayIdx = Number.parseInt(entryEl.dataset.dayIdx || "-1", 10);
+        const segmentStartMs = this.timeContext.dateFromLocalDayMinutes(dayStr, segment.startMinutes).getTime();
+        const segmentEndMs = this.timeContext.dateFromLocalDayMinutes(dayStr, segment.endMinutes).getTime();
+        const ownsStartBoundary = Math.abs(entry.startDate.getTime() - segmentStartMs) < 60_000;
+        const ownsEndBoundary = Math.abs(entry.endDate.getTime() - segmentEndMs) < 60_000;
+
+        if (ownsStartBoundary) {
+            const startHandle = document.createElement("button");
+            startHandle.type = "button";
+            startHandle.className = "entry-resize-handle entry-resize-start";
+            startHandle.setAttribute("aria-label", "Drag entry start");
+            startHandle.title = "Drag start";
+            startHandle.addEventListener("click", (ev) => ev.stopPropagation());
+            startHandle.addEventListener("pointerdown", (ev) => {
+                this.selectRenderedSegment(dayIdx, segment.key);
+                this.startEntryPointerEdit(ev, Number(entry.id), "start", entryEl);
+            });
+            entryEl.append(startHandle);
+        }
+
+        if (ownsEndBoundary) {
+            const endHandle = document.createElement("button");
+            endHandle.type = "button";
+            endHandle.className = "entry-resize-handle entry-resize-end";
+            endHandle.setAttribute("aria-label", "Drag entry end");
+            endHandle.title = "Drag end";
+            endHandle.addEventListener("click", (ev) => ev.stopPropagation());
+            endHandle.addEventListener("pointerdown", (ev) => {
+                this.selectRenderedSegment(dayIdx, segment.key);
+                this.startEntryPointerEdit(ev, Number(entry.id), "end", entryEl);
+            });
+            entryEl.append(endHandle);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "entry-action-rail";
+        const editButton = this.createEntryControlButton("edit", "Edit entry", "entry-control");
+        editButton.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            this.selectRenderedSegment(dayIdx, segment.key);
+            this.openEntryDialog(Number(entry.id));
+        });
+        const splitButton = this.createEntryControlButton("split", "Split entry", "entry-control");
+        splitButton.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            this.selectRenderedSegment(dayIdx, segment.key);
+            this.enterSplitMode();
+            if (this.editMode === "split") {
+                this.onToast("Tap the desired split point inside the entry.", 3000, "success");
+            }
+        });
+        const deleteButton = this.createEntryControlButton("trash", "Delete entry", "entry-control entry-delete-control");
+        deleteButton.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            this.selectRenderedSegment(dayIdx, segment.key);
+            this.deleteSelectedEntry();
+            this.focusTimeline();
+        });
+        actions.append(editButton, splitButton, deleteButton);
+        entryEl.append(actions);
+    }
+
+    /**
+     * Adds subtle buttons for every free range in a day.
+     * An entirely empty day receives one central control that creates the requested 08:00–16:00 default.
+     * @param {number} dayIdx
+     * @param {string} dayStr
+     * @param {Array<import("./store.js").Segment>} segments
+     * @param {HTMLButtonElement[]} output
+     * @returns {void}
+     */
+    appendGapButtons(dayIdx, dayStr, segments, output) {
+        if (!this.weekDom) return;
+        const gaps = buildDayGaps(segments);
+        const ranges = segments.length === 0 ? [{ startMinutes: 8 * 60, endMinutes: 16 * 60, midpoint: 12 * 60, empty: true }] : gaps.map(
+            (gap) => ({
+                startMinutes: gap.startMinutes,
+                endMinutes: Math.min(gap.endMinutes, gap.startMinutes + MAX_GAP_ENTRY_MINUTES),
+                midpoint: (gap.startMinutes + gap.endMinutes) / 2,
+                empty: false,
+            }),
+        );
+
+        for (const range of ranges) {
+            if (range.endMinutes - range.startMinutes < MIN_ENTRY_MINUTES) continue;
+            const button = this.createEntryControlButton(
+                "plus",
+                range.empty ? `Add 08:00–16:00 entry on ${dayStr}` : `Fill gap on ${dayStr}`,
+                `entry-gap-add${range.empty ? " is-empty-day" : ""}`,
+            );
+            button.dataset.midpoint = String(range.midpoint);
+            button.addEventListener("click", (ev) => {
+                ev.stopPropagation();
+                this.focusedDayIndex = dayIdx;
+                this.addEntryForGap(dayStr, range.startMinutes, range.endMinutes);
+            });
+            const pxPerMinute = this.weekDom.metrics?.pxPerMinute || 1;
+            button.style.top = `${range.midpoint * pxPerMinute}px`;
+            this.weekDom.dayColEls[dayIdx].append(button);
+            output.push(button);
+        }
+    }
+
+    /**
+     * Converts a pointer tap inside the selected segment into a snapped split timestamp.
+     * The existing split transaction performs minimum-duration validation and selects the newly created second half.
+     * @param {MouseEvent} ev
+     * @param {import("./store.js").Segment} segment
+     * @param {HTMLElement} entryEl
+     * @returns {void}
+     */
+    splitEntryFromPointer(ev, segment, entryEl) {
+        if (!this.weekDom?.metrics || !this.selectedEntryId) return;
+        const dayIdx = Number.parseInt(entryEl.dataset.dayIdx || "-1", 10);
+        const dayStr = this.weekDom.days[dayIdx];
+        if (!dayStr) return;
+
+        const colRect = this.weekDom.dayColEls[dayIdx].getBoundingClientRect();
+        const rawMinutes = (ev.clientY - colRect.top) / this.weekDom.metrics.pxPerMinute;
+        const snappedMinutes = Math.max(0, Math.min(1440, Math.round(rawMinutes / MIN_ENTRY_MINUTES) * MIN_ENTRY_MINUTES));
+        const entry = this.store.getEntryById(this.selectedEntryId);
+        if (!entry?.startDate || !entry?.endDate) return;
+        const minMs = entry.startDate.getTime() + MIN_ENTRY_MS;
+        const maxMs = entry.endDate.getTime() - MIN_ENTRY_MS;
+        let splitMs = this.timeContext.dateFromLocalDayMinutes(dayStr, snappedMinutes).getTime();
+        splitMs = Math.max(minMs, Math.min(maxMs, splitMs));
+        this.cursor = { kind: "split", ms: splitMs };
+        this.updateCursorLine();
+        this.splitSelectedEntryAtCursor();
+    }
+
+    /**
+     * Creates a new time entry from a visible free range and opens its details dialog.
+     * The range is already non-overlapping, but it still passes through collision resolution for one consistent mutation path.
+     * @param {string} dayStr
+     * @param {number} startMinutes
+     * @param {number} endMinutes
+     * @returns {void}
+     */
+    addEntryForGap(dayStr, startMinutes, endMinutes) {
+        const startMs = this.timeContext.dateFromLocalDayMinutes(dayStr, startMinutes).getTime();
+        const endMs = this.timeContext.dateFromLocalDayMinutes(dayStr, endMinutes).getTime();
+        const id = this.createEntryAt(startMs, endMs);
+        if (id && this.store.getEntryById(id)) {
+            this.openEntryDialog(id);
+        }
+    }
+
+    /**
+     * Creates one blank entry at an explicit interval and records a normal undoable add action.
+     * @param {number} startMs
+     * @param {number} endMs
+     * @returns {number | null}
+     */
+    createEntryAt(startMs, endMs) {
+        if (this.busy || this.saveInFlight) {
+            this.onToast("Saving in progress…");
+            return null;
+        }
+        const weekStart = this.appState.weekStart;
+        const bounds = this.timeContext.weekBoundsMs(weekStart);
+        if (!weekStart || !bounds) return null;
+        if (startMs < bounds.startMs || endMs > bounds.endMs) {
+            this.onToast("Cannot create entry outside the current week.");
+            return null;
+        }
+        if (endMs - startMs < MIN_ENTRY_MS) {
+            this.onToast("Entry shorter than 15 minutes.");
+            return null;
+        }
+
+        const id = this.store.reserveEntryId();
+        this.applyWeekEdit({
+            weekStart,
+            label: "add",
+            focusAfter: id,
+            getAfterRaw: () => {
+                const week = this.store.buildWeekSchedule(weekStart);
+                const newRaw = this.makeNewRawEntry({ id, startMs, endMs });
+                week.nodes.push({ id, startMs, endMs, editable: true, raw: newRaw });
+                this.resolveNonOverlapping(week.nodes, id, week.bounds);
+                return this.weekRawFromNodes(week.nodes);
+            },
+        });
+        return this.store.getEntryById(id) ? id : null;
+    }
+
+    /**
+     * Begins a pointer gesture for start resize, end resize, or whole-entry movement.
+     * No store mutation occurs until pointerup, keeping a drag to one undo action and avoiding repeated schedule rebuilds.
+     * @param {PointerEvent} ev
+     * @param {number} entryId
+     * @param {"start" | "end" | "move"} kind
+     * @param {HTMLElement} sourceEntryEl
+     * @returns {void}
+     */
+    startEntryPointerEdit(ev, entryId, kind, sourceEntryEl) {
+        if (this.busy || this.saveInFlight || !this.weekDom?.metrics) return;
+        const entry = this.store.getEntryById(entryId);
+        const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
+        if (!entry || !bounds || entry.weekStart !== this.appState.weekStart) return;
+        if (!(entry.startDate instanceof Date) || !(entry.endDate instanceof Date)) return;
+
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (ev.currentTarget instanceof Element && typeof ev.currentTarget.setPointerCapture === "function") {
+            try {
+                ev.currentTarget.setPointerCapture(ev.pointerId);
+            } catch {
+                // Window-level listeners still complete the gesture when capture is unavailable.
+            }
+        }
+        this.pointerEdit = {
+            pointerId: ev.pointerId,
+            kind,
+            entryId,
+            startClientY: ev.clientY,
+            originalStartMs: entry.startDate.getTime(),
+            originalEndMs: entry.endDate.getTime(),
+            candidateStartMs: entry.startDate.getTime(),
+            candidateEndMs: entry.endDate.getTime(),
+            sourceEntryEl,
+            bounds,
+        };
+        document.body.classList.add("is-entry-dragging");
+        document.body.classList.toggle("is-entry-moving", kind === "move");
+    }
+
+    /**
+     * Updates the visual preview for an active pointer gesture using the current timeline scale.
+     * Collision resolution remains deferred until pointerup, so pointermove touches only DOM for the selected entry.
+     * @param {PointerEvent} ev
+     * @returns {void}
+     */
+    handleEntryPointerMove(ev) {
+        const gesture = this.pointerEdit;
+        if (!gesture || ev.pointerId !== gesture.pointerId || !this.weekDom?.metrics) return;
+        ev.preventDefault();
+        const deltaMinutes = (ev.clientY - gesture.startClientY) / this.weekDom.metrics.pxPerMinute;
+        const candidate = calculatePointerEditTimes(
+            gesture.kind,
+            gesture.originalStartMs,
+            gesture.originalEndMs,
+            deltaMinutes * 60_000,
+            gesture.bounds,
+        );
+        gesture.candidateStartMs = candidate.startMs;
+        gesture.candidateEndMs = candidate.endMs;
+        this.previewPointerEdit(gesture.entryId, candidate.startMs, candidate.endMs);
+    }
+
+    /**
+     * Repositions only the dragged entry's visible segments during pointermove.
+     * Other entries remain untouched until the normal collision resolver commits the edit.
+     * @param {number} entryId
+     * @param {number} startMs
+     * @param {number} endMs
+     * @returns {void}
+     */
+    previewPointerEdit(entryId, startMs, endMs) {
+        if (!this.weekDom?.metrics) return;
+        for (const el of this.weekDom.entryElsByKey.values()) {
+            if (Number(el.dataset.entryId) !== entryId) continue;
+            const dayIdx = Number.parseInt(el.dataset.dayIdx || "-1", 10);
+            const dayStr = this.weekDom.days[dayIdx];
+            if (!dayStr) continue;
+            const dayStartMs = this.timeContext.dateFromLocalDayMinutes(dayStr, 0).getTime();
+            const dayEndMs = this.timeContext.dateFromLocalDayMinutes(dayStr, 1440).getTime();
+            const visibleStartMs = Math.max(startMs, dayStartMs);
+            const visibleEndMs = Math.min(endMs, dayEndMs);
+            if (visibleEndMs <= visibleStartMs) {
+                el.style.visibility = "hidden";
+                continue;
+            }
+            el.style.visibility = "";
+            const startMinutes = visibleStartMs <= dayStartMs ? 0 : hhmmToMinutes(this.timeContext.formatTime(new Date(visibleStartMs))) ?? 0;
+            const endMinutes = visibleEndMs >= dayEndMs ? 1440 : hhmmToMinutes(this.timeContext.formatTime(new Date(visibleEndMs))) ?? 1440;
+            el.style.top = `${startMinutes * this.weekDom.metrics.pxPerMinute}px`;
+            el.style.height = `${Math.max(1, (endMinutes - startMinutes) * this.weekDom.metrics.pxPerMinute)}px`;
+            const timesEl = el.querySelector(".entry-times");
+            if (timesEl instanceof HTMLElement) {
+                timesEl.textContent = `${this.timeContext.formatTime(new Date(startMs))}–${this.timeContext.formatTime(new Date(endMs))}`;
+            }
+        }
+    }
+
+    /**
+     * Commits an active pointer gesture as one editor transaction.
+     * Neighbor compression/movement, dirty tracking, durable drafts, and undo history are delegated to the existing edit pipeline.
+     * @param {PointerEvent} ev
+     * @returns {void}
+     */
+    finishEntryPointerEdit(ev) {
+        const gesture = this.pointerEdit;
+        if (!gesture || ev.pointerId !== gesture.pointerId) return;
+        this.pointerEdit = null;
+        document.body.classList.remove("is-entry-dragging");
+        document.body.classList.remove("is-entry-moving");
+        if (
+            gesture.candidateStartMs === gesture.originalStartMs &&
+            gesture.candidateEndMs === gesture.originalEndMs
+        ) {
+            this.restoreEntryPointerPreview(gesture.entryId);
+            this.focusTimeline();
+            return;
+        }
+        this.suppressEntryClickUntil = performance.now() + 500;
+        this.setSelectedEntryTimes(
+            gesture.candidateStartMs,
+            gesture.candidateEndMs,
+            gesture.kind === "move" ? "move" : "resize",
+        );
+        this.focusTimeline();
+    }
+
+    /**
+     * Abandons a pointer gesture and restores the store-backed rendering.
+     * @param {PointerEvent} ev
+     * @returns {void}
+     */
+    cancelEntryPointerEdit(ev) {
+        const gesture = this.pointerEdit;
+        if (!gesture || ev.pointerId !== gesture.pointerId) return;
+        this.abortEntryPointerEdit();
+        this.focusTimeline();
+    }
+
+    /**
+     * Drops an active pointer preview without committing it and restores the store-backed entry geometry.
+     * Touch pinch initialization also uses this helper when its first finger happened to begin on an entry.
+     * @returns {void}
+     */
+    abortEntryPointerEdit() {
+        if (!this.pointerEdit) return;
+        const entryId = this.pointerEdit.entryId;
+        this.pointerEdit = null;
+        document.body.classList.remove("is-entry-dragging");
+        document.body.classList.remove("is-entry-moving");
+        this.restoreEntryPointerPreview(entryId);
+    }
+
+    /**
+     * Restores one entry's rendered segments from their immutable layout data after a canceled or zero-distance drag.
+     * Avoiding a DOM rebuild preserves touch targets for an emerging pinch gesture and leaves the user's scroll position untouched.
+     * @param {number} entryId
+     * @returns {void}
+     */
+    restoreEntryPointerPreview(entryId) {
+        if (!this.weekDom?.metrics) return;
+        for (const el of this.weekDom.entryElsByKey.values()) {
+            if (Number(el.dataset.entryId) !== entryId) continue;
+            const startMinutes = Number.parseFloat(el.dataset.start || "0");
+            const endMinutes = Number.parseFloat(el.dataset.end || "0");
+            el.style.visibility = "";
+            el.style.top = `${startMinutes * this.weekDom.metrics.pxPerMinute}px`;
+            el.style.height = `${Math.max(1, (endMinutes - startMinutes) * this.weekDom.metrics.pxPerMinute)}px`;
+            const timesEl = el.querySelector(".entry-times");
+            if (timesEl instanceof HTMLElement) {
+                timesEl.textContent = `${minutesToHHMM(startMinutes)}–${minutesToHHMM(endMinutes)}`;
+            }
+        }
+    }
+
+    /**
+     * Sets explicit boundaries on the selected entry through the standard collision-aware mutation path.
+     * @param {number} startMs
+     * @param {number} endMs
+     * @param {string} label
+     * @returns {void}
+     */
+    setSelectedEntryTimes(startMs, endMs, label) {
+        const entryId = this.selectedEntryId;
+        const weekStart = this.appState.weekStart;
+        if (!entryId || !weekStart) return;
+        this.applyWeekEdit({
+            weekStart,
+            label,
+            focusAfter: entryId,
+            getAfterRaw: () => {
+                const week = this.store.buildWeekSchedule(weekStart);
+                const node = week.nodes.find((candidate) => candidate.id === entryId);
+                if (!node) throw new Error("Entry not found.");
+                this.ensureEditableNode(node);
+                node.startMs = startMs;
+                node.endMs = endMs;
+                this.ensureEditableNode(node);
+                if (node.endMs - node.startMs < MIN_ENTRY_MS) {
+                    throw new Error("Entry shorter than 15 minutes.");
+                }
+                this.enforceEditableBounds(node, week.bounds);
+                this.resolveNonOverlapping(week.nodes, entryId, week.bounds);
+                return this.weekRawFromNodes(week.nodes);
+            },
+        });
     }
 
     /**
@@ -1216,6 +2192,7 @@ export class WeekView {
      */
     handleResize() {
         if (this.appState.activeTab === "week") {
+            this.updateVisibleDayCount();
             this.updateWeekScaleAndReposition();
         }
     }
@@ -2034,6 +3011,7 @@ export class WeekView {
         if (!action) return;
         this.applyEditorActionSnapshot(action.weekStart, action.before, action.focusBefore || null);
         this.redoStack.push(action);
+        this.updateTopbarActions();
     }
 
     /**
@@ -2046,6 +3024,7 @@ export class WeekView {
         if (!action) return;
         this.applyEditorActionSnapshot(action.weekStart, action.after, action.focusAfter || null);
         this.undoStack.push(action);
+        this.updateTopbarActions();
     }
 
     /**
@@ -2449,19 +3428,20 @@ export class WeekView {
     }
 
     /**
-     * Updates the week summary label with billable/required/balance totals.
-     * Keeps week-level accounting visible while navigating and editing.
-     * @param {string | null} weekStart
-     * @returns {void}
+     * Collects week accounting values using today's date as the cutoff for the current week.
+     * One data shape feeds both the compact top-bar control and the detailed requirements dialog.
+     * @param {string} weekStart
+     * @returns {{
+     *     billableSeconds: number,
+     *     configuredRequiredHours: number,
+     *     dueRequiredHours: number,
+     *     weekDeltaSeconds: number,
+     *     accumulatedSeconds: number,
+     *     comment: string,
+     *     requirementText: string
+     * }}
      */
-    updateWeekSummary(weekStart) {
-        if (!this.weekBillableEl) return;
-        if (!weekStart) {
-            this.weekBillableEl.replaceChildren();
-            this.weekReqBtn.removeAttribute("aria-label");
-            return;
-        }
-
+    getWeekSummaryData(weekStart) {
         const today = this.timeContext.formatDate(new Date());
         const configuredRequiredHours = this.store.getWeekRequiredHours(weekStart);
         const dueRequiredHours = this.store.getRequiredHoursThroughDate(weekStart, today);
@@ -2471,36 +3451,91 @@ export class WeekView {
         const comment = this.store.getWeekComment(weekStart);
         const configuredText = this.formatRequiredHours(configuredRequiredHours);
         const dueText = this.formatRequiredHours(dueRequiredHours);
-        const requirementText = dueRequiredHours < configuredRequiredHours ? `Due ${dueText}/${configuredText}h` : `Req ${configuredText}h`;
+        const requirementText =
+            dueRequiredHours < configuredRequiredHours ? `Due ${dueText}/${configuredText}h` : `Required ${configuredText}h`;
+        return {
+            billableSeconds,
+            configuredRequiredHours,
+            dueRequiredHours,
+            weekDeltaSeconds,
+            accumulatedSeconds,
+            comment,
+            requirementText,
+        };
+    }
 
-        const stats = [
-            { className: "week-stat-billable", text: `B ${formatDuration(billableSeconds)}` },
-            { className: "week-stat-required", text: requirementText },
-            { className: "week-stat-delta", text: `Week ${this.formatSignedDuration(weekDeltaSeconds)}` },
-            { className: "week-stat-total", text: `Total ${this.formatSignedDuration(accumulatedSeconds)}` },
-        ];
-        if (comment) {
-            stats.push({ className: "week-stat-comment", text: comment });
+    /**
+     * Updates the compact overtime button in the top bar.
+     * Detailed billable and requirement values deliberately live in the dialog, leaving only total balance, trend, and this week's delta here.
+     * @param {string | null} weekStart
+     * @returns {void}
+     */
+    updateWeekSummary(weekStart) {
+        if (!this.weekBillableEl) return;
+        if (!weekStart) {
+            this.weekBillableEl.replaceChildren();
+            this.weekReqBtn.removeAttribute("aria-label");
+            this.weekReqSummaryEl.replaceChildren();
+            return;
         }
 
-        const elements = stats.map((stat) => {
-            const el = document.createElement("span");
-            el.className = `week-stat ${stat.className}`;
-            el.textContent = stat.text;
-            return el;
-        });
-        this.weekBillableEl.replaceChildren(...elements);
+        const summary = this.getWeekSummaryData(weekStart);
+        const direction = summary.weekDeltaSeconds > 0 ? "↑" : summary.weekDeltaSeconds < 0 ? "↓" : "→";
+        const tone = summary.weekDeltaSeconds > 0 ? "is-positive" : summary.weekDeltaSeconds < 0 ? "is-negative" : "is-neutral";
+
+        const totalEl = document.createElement("span");
+        totalEl.className = "overtime-total";
+        totalEl.textContent = `€ ${this.formatSignedDuration(summary.accumulatedSeconds)}`;
+        const directionEl = document.createElement("span");
+        directionEl.className = `overtime-direction ${tone}`;
+        directionEl.textContent = direction;
+        directionEl.setAttribute("aria-hidden", "true");
+        const deltaEl = document.createElement("span");
+        deltaEl.className = `overtime-week ${tone}`;
+        deltaEl.textContent = this.formatSignedDuration(summary.weekDeltaSeconds);
+        this.weekBillableEl.replaceChildren(totalEl, directionEl, deltaEl);
 
         const fullSummary = [
-            `Billable ${formatDuration(billableSeconds)}`,
-            requirementText,
-            `Week ${this.formatSignedDuration(weekDeltaSeconds)}`,
-            `Total ${this.formatSignedDuration(accumulatedSeconds)}`,
+            `Billable ${formatDuration(summary.billableSeconds)}`,
+            summary.requirementText,
+            `Week ${this.formatSignedDuration(summary.weekDeltaSeconds)}`,
+            `Total ${this.formatSignedDuration(summary.accumulatedSeconds)}`,
         ];
-        if (comment) fullSummary.push(comment);
+        if (summary.comment) fullSummary.push(summary.comment);
         const summaryText = fullSummary.join(" • ");
         this.weekReqBtn.setAttribute("aria-label", `${summaryText}. Edit required hours.`);
         this.weekReqBtn.title = `${summaryText} • Edit required hours`;
+        this.renderWeekRequirementsSummary(summary);
+    }
+
+    /**
+     * Renders detailed accounting rows inside the week requirements dialog.
+     * @param {{
+     *     billableSeconds: number,
+     *     weekDeltaSeconds: number,
+     *     accumulatedSeconds: number,
+     *     requirementText: string
+     * }} summary
+     * @returns {void}
+     */
+    renderWeekRequirementsSummary(summary) {
+        const rows = [
+            ["Billable through current day", formatDuration(summary.billableSeconds)],
+            ["Requirement", summary.requirementText],
+            ["This week", this.formatSignedDuration(summary.weekDeltaSeconds)],
+            ["Accumulated overtime", this.formatSignedDuration(summary.accumulatedSeconds)],
+        ];
+        const elements = rows.map(([label, value]) => {
+            const row = document.createElement("div");
+            row.className = "week-requirements-row";
+            const labelEl = document.createElement("span");
+            labelEl.textContent = label;
+            const valueEl = document.createElement("strong");
+            valueEl.textContent = value;
+            row.append(labelEl, valueEl);
+            return row;
+        });
+        this.weekReqSummaryEl.replaceChildren(...elements);
     }
 
     /**
@@ -2517,6 +3552,7 @@ export class WeekView {
 
         const info = isoWeekInfo(weekStart);
         this.weekReqMetaEl.textContent = `${info.isoYear}-W${String(info.week).padStart(2, "0")} • ${weekStart}`;
+        this.renderWeekRequirementsSummary(this.getWeekSummaryData(weekStart));
         this.weekReqHoursInput.value = this.formatRequiredHours(this.store.getWeekRequiredHours(weekStart));
         this.weekReqCommentInput.value = this.store.getWeekComment(weekStart);
 
@@ -2993,39 +4029,14 @@ export class WeekView {
      */
     addEntryFromCursor() {
         if (!this.cursor || this.cursor.kind !== "add") return;
-        const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
-        if (!bounds) return;
-
-        const id = this.store.reserveEntryId();
         let startMs = this.cursor.ms;
         let endMs = startMs + MIN_ENTRY_MS;
         if (this.addDraft) {
             startMs = this.timeContext.dateFromLocalDayMinutes(this.addDraft.dayStr, this.addDraft.startMinutes).getTime();
             endMs = this.timeContext.dateFromLocalDayMinutes(this.addDraft.dayStr, this.addDraft.endMinutes).getTime();
         }
-        if (startMs < bounds.startMs || endMs > bounds.endMs) {
-            return this.onToast("Cannot create entry outside the current week.");
-        }
-        if (endMs - startMs < MIN_ENTRY_MS) {
-            return this.onToast("Entry shorter than 15 minutes.");
-        }
-
-        this.applyWeekEdit({
-            weekStart: this.appState.weekStart,
-            label: "add",
-            focusAfter: id,
-            getAfterRaw: () => {
-                const week = this.store.buildWeekSchedule(this.appState.weekStart);
-                const nodes = week.nodes;
-                const newRaw = this.makeNewRawEntry({ id, startMs, endMs });
-                nodes.push({ id, startMs, endMs, editable: true, raw: newRaw });
-                this.resolveNonOverlapping(nodes, id, week.bounds);
-                return this.weekRawFromNodes(nodes);
-            },
-        });
-
-        this.setEditMode("normal");
-        this.openEntryDialog(id);
+        const id = this.createEntryAt(startMs, endMs);
+        if (id) this.openEntryDialog(id);
     }
 
     /**

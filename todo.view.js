@@ -28,7 +28,7 @@ const TODO_DOCUMENT_NAME = "todos";
  * @property {HTMLSelectElement} todoPriority
  * @property {HTMLInputElement} todoLabels
  * @property {HTMLElement} todoDialogMeta
- * @property {HTMLElement} editorBadge
+ * @property {HTMLButtonElement} editorBadge
  */
 
 /**
@@ -1018,8 +1018,10 @@ export class TodoView {
         this.viewEl.classList.toggle("is-dirty", this.dirty);
         if (this.active) {
             this.editorBadgeEl.classList.toggle("is-dirty", this.dirty);
-            this.editorBadgeEl.innerHTML =
-                `<span class="dot"></span><span class="mode">TODO</span><span class="save">${status}</span>`;
+            this.editorBadgeEl.disabled = this.busy || this.saveInFlight;
+            this.editorBadgeEl.title = this.dirty ? "Save changes (Ctrl+S)" : "No unsaved TODO changes";
+            this.editorBadgeEl.setAttribute("aria-label", this.dirty ? "Save changed TODOs" : "TODO changes saved");
+            this.editorBadgeEl.innerHTML = `<span class="dot"></span><span class="save">${status}</span>`;
         }
     }
 

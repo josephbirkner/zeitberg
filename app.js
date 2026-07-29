@@ -344,8 +344,15 @@ class App {
         this.prevWeekBtn = getRequiredElement("prevWeekBtn", HTMLButtonElement);
         this.nextWeekBtn = getRequiredElement("nextWeekBtn", HTMLButtonElement);
         this.latestWeekBtn = getRequiredElement("latestWeekBtn", HTMLButtonElement);
+        this.weekNormalBtn = getRequiredElement("weekNormalBtn", HTMLButtonElement);
+        this.weekAddBtn = getRequiredElement("weekAddBtn", HTMLButtonElement);
+        this.weekSplitBtn = getRequiredElement("weekSplitBtn", HTMLButtonElement);
+        this.weekUndoBtn = getRequiredElement("weekUndoBtn", HTMLButtonElement);
+        this.weekRedoBtn = getRequiredElement("weekRedoBtn", HTMLButtonElement);
+        this.weekZoomOutBtn = getRequiredElement("weekZoomOutBtn", HTMLButtonElement);
+        this.weekZoomInBtn = getRequiredElement("weekZoomInBtn", HTMLButtonElement);
         this.zoomInput = getRequiredElement("zoomInput", HTMLInputElement);
-        this.editorBadgeEl = getRequiredElement("editorBadge", HTMLElement);
+        this.editorBadgeEl = getRequiredElement("editorBadge", HTMLButtonElement);
 
         this.entryDialog = getRequiredElement("entryDialog", HTMLDialogElement);
         this.entryForm = getRequiredElement("entryForm", HTMLFormElement);
@@ -369,6 +376,7 @@ class App {
         this.weekReqCancelBtn = getRequiredElement("weekReqCancelBtn", HTMLButtonElement);
         this.weekReqOkBtn = getRequiredElement("weekReqOkBtn", HTMLButtonElement);
         this.weekReqMeta = getRequiredElement("weekReqMeta", HTMLElement);
+        this.weekReqSummary = getRequiredElement("weekReqSummary", HTMLElement);
         this.weekReqHours = getRequiredElement("weekReqHours", HTMLInputElement);
         this.weekReqComment = getRequiredElement("weekReqComment", HTMLTextAreaElement);
 
@@ -430,6 +438,13 @@ class App {
                 prevWeekBtn: this.prevWeekBtn,
                 nextWeekBtn: this.nextWeekBtn,
                 latestWeekBtn: this.latestWeekBtn,
+                weekNormalBtn: this.weekNormalBtn,
+                weekAddBtn: this.weekAddBtn,
+                weekSplitBtn: this.weekSplitBtn,
+                weekUndoBtn: this.weekUndoBtn,
+                weekRedoBtn: this.weekRedoBtn,
+                weekZoomOutBtn: this.weekZoomOutBtn,
+                weekZoomInBtn: this.weekZoomInBtn,
                 zoomInput: this.zoomInput,
                 editorBadge: this.editorBadgeEl,
                 weekReqDialog: this.weekReqDialog,
@@ -438,6 +453,7 @@ class App {
                 weekReqCancelBtn: this.weekReqCancelBtn,
                 weekReqOkBtn: this.weekReqOkBtn,
                 weekReqMeta: this.weekReqMeta,
+                weekReqSummary: this.weekReqSummary,
                 weekReqHours: this.weekReqHours,
                 weekReqComment: this.weekReqComment,
                 entryDialog: this.entryDialog,
@@ -595,6 +611,7 @@ class App {
         });
         this.loadingRetryBtn.addEventListener("click", () => void this.reloadData());
         this.loadingLogoutBtn.addEventListener("click", () => this.logout());
+        this.editorBadgeEl.addEventListener("click", () => this.saveActiveView());
 
         document.addEventListener("keydown", (ev) => this.handleGlobalKeydown(ev));
         document.addEventListener("click", (ev) => this.handleDocumentClick(ev));
@@ -821,10 +838,12 @@ class App {
 
             const isZoomOut = key === "[" || key === "{" || ev.code === "BracketLeft";
             const isZoomIn = key === "]" || key === "}" || ev.code === "BracketRight";
-            if (isZoomOut || isZoomIn) {
+            const isStandardZoomOut = key === "-" || key === "_" || ev.code === "Minus";
+            const isStandardZoomIn = key === "+" || key === "=" || ev.code === "Equal";
+            if (isZoomOut || isZoomIn || isStandardZoomOut || isStandardZoomIn) {
                 if (this.state.activeTab === "week" && !(this.appSection.hidden || this.weekViewSection.hidden)) {
                     ev.preventDefault();
-                    this.weekView.nudgeZoom(isZoomOut ? -1 : 1);
+                    this.weekView.nudgeZoom(isZoomOut || isStandardZoomOut ? -1 : 1);
                 }
                 return;
             }
@@ -832,6 +851,22 @@ class App {
 
         if (this.state.activeTab === "todos" && this.todoView.handleKeydown(ev)) return;
         this.weekView.handleKeydown(ev);
+    }
+
+    /**
+     * Saves the document owned by the active editable view.
+     * The shared Saved/Changed control uses the same persistence methods as Ctrl+S, so Week and TODO status never diverge.
+     * @returns {void}
+     */
+    saveActiveView() {
+        if (this.state.activeTab === "todos") {
+            void this.todoView.saveNow();
+            return;
+        }
+        if (this.state.activeTab === "week") {
+            void this.weekView.saveDirtyWeeksNow();
+            this.weekView.focusTimeline();
+        }
     }
 
     /**
@@ -987,6 +1022,7 @@ class App {
         this.weekReqOkBtn.disabled = isBusy;
         this.weekReqHours.disabled = isBusy;
         this.weekReqComment.disabled = isBusy;
+        this.weekView.setBusy(isBusy);
         this.todoView.setBusy(isBusy);
     }
 

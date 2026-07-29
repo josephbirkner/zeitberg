@@ -40,10 +40,10 @@
 
       <div id="weekControls" class="week-controls" hidden>
         <div class="week-navigation">
-          <button id="prevWeekBtn" class="btn btn-secondary btn-icon" type="button" title="PageUp" aria-label="Previous week">
+          <button id="prevWeekBtn" class="btn btn-secondary btn-icon" type="button" title="Previous days / week (PageUp)" aria-label="Previous days or week">
             ◀
           </button>
-          <button id="nextWeekBtn" class="btn btn-secondary btn-icon" type="button" title="PageDown" aria-label="Next week">
+          <button id="nextWeekBtn" class="btn btn-secondary btn-icon" type="button" title="Next days / week (PageDown)" aria-label="Next days or week">
             ▶
           </button>
           <button id="latestWeekBtn" class="btn btn-secondary" type="button">Latest</button>
@@ -56,12 +56,46 @@
 
         <div class="topbar-spacer"></div>
 
+        <div class="week-editor-actions" role="group" aria-label="Week editor actions">
+          <button id="weekNormalBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Normal mode (Escape)" aria-label="Normal mode">
+            ↖
+          </button>
+          <button id="weekAddBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Add mode (A)" aria-label="Add mode">
+            ＋
+          </button>
+          <button id="weekSplitBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Split mode (S)" aria-label="Split selected entry">
+            ⑂
+          </button>
+          <span class="week-action-separator week-mode-action" aria-hidden="true"></span>
+          <button id="weekUndoBtn" class="btn btn-secondary btn-icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo">
+            ↶
+          </button>
+          <button id="weekRedoBtn" class="btn btn-secondary btn-icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo">
+            ↷
+          </button>
+          <span class="week-action-separator" aria-hidden="true"></span>
+          <button id="weekZoomOutBtn" class="btn btn-secondary btn-icon zoom-action" type="button" title="Zoom out (Ctrl+[ or Ctrl+-)" aria-label="Zoom out">
+            −
+          </button>
+          <button id="weekZoomInBtn" class="btn btn-secondary btn-icon zoom-action" type="button" title="Zoom in (Ctrl+] or Ctrl++)" aria-label="Zoom in">
+            ＋
+          </button>
+        </div>
+
         <label class="zoom zoom-compact" title="Timeline zoom">
           <span>Zoom</span>
           <input id="zoomInput" type="range" min="1" max="4" step="0.25" value="1" />
         </label>
       </div>
-      <div id="editorBadge" class="editor-badge" aria-live="polite" hidden></div>
+      <button
+        id="editorBadge"
+        class="editor-badge"
+        type="button"
+        title="Save changes (Ctrl+S)"
+        aria-label="Save changes"
+        aria-live="polite"
+        hidden
+      ></button>
     </header>
 
     <main>
@@ -329,6 +363,7 @@
         </div>
 
         <div id="weekReqMeta" class="dialog-meta muted"></div>
+        <div id="weekReqSummary" class="week-requirements-summary" aria-live="polite"></div>
 
         <div class="grid dialog-grid">
           <label>

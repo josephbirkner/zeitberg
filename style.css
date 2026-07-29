@@ -191,7 +191,9 @@ body.app-mode #searchView > section:last-child .table-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: nowrap;
   overflow: visible;
+  white-space: nowrap;
 }
 
 .app-menu {
@@ -317,7 +319,15 @@ body.app-mode #searchView > section:last-child .table-wrap {
   display: flex;
   align-items: center;
   gap: 7px;
-  overflow: hidden;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.week-controls::-webkit-scrollbar {
+  display: none;
 }
 
 .week-navigation {
@@ -384,13 +394,55 @@ body.app-mode #searchView > section:last-child .table-wrap {
   white-space: nowrap;
 }
 
-.week-stat {
+.overtime-total,
+.overtime-direction,
+.overtime-week {
   flex: none;
 }
 
-.week-stat-comment {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.overtime-direction {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.overtime-direction.is-positive,
+.overtime-week.is-positive {
+  color: rgba(93, 226, 159, 0.95);
+}
+
+.overtime-direction.is-negative,
+.overtime-week.is-negative {
+  color: rgba(255, 117, 142, 0.95);
+}
+
+.overtime-direction.is-neutral,
+.overtime-week.is-neutral {
+  color: var(--muted);
+}
+
+.week-editor-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.week-editor-actions .btn {
+  flex: 0 0 34px;
+}
+
+.week-action-separator {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
+.week-editor-actions .btn.is-active {
+  border-color: rgba(124, 92, 255, 0.9);
+  background: rgba(124, 92, 255, 0.28);
+  box-shadow: inset 0 -2px 0 rgba(124, 92, 255, 0.9);
 }
 
 .topbar-spacer {
@@ -517,6 +569,12 @@ textarea:focus {
   border-color: rgba(124, 92, 255, 0.95);
 }
 
+.btn:disabled,
+button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .btn:active {
   transform: translateY(1px);
 }
@@ -563,9 +621,22 @@ textarea:focus {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(0, 0, 0, 0.22);
   color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+  font: inherit;
   font-size: 12px;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.editor-badge:hover,
+.editor-badge:focus-visible {
+  outline: none;
+  border-color: rgba(124, 92, 255, 0.75);
+  background: rgba(124, 92, 255, 0.14);
+}
+
+.editor-badge.is-dirty {
+  border-color: rgba(255, 77, 109, 0.45);
 }
 
 .topbar > .editor-badge {
@@ -581,12 +652,6 @@ textarea:focus {
 
 .editor-badge.is-dirty .dot {
   background: rgba(255, 77, 109, 0.92);
-}
-
-.editor-badge .mode {
-  font-weight: 800;
-  text-transform: uppercase;
-  font-size: 10px;
 }
 
 .editor-badge .save {
@@ -886,6 +951,8 @@ progress {
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.22);
   overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
   height: min(70vh, 720px);
 }
 
@@ -898,10 +965,16 @@ progress {
 .week-grid {
   --timeline-height: 560px;
   --hour-height: calc(var(--timeline-height) / 24);
+  --visible-day-count: 7;
   display: grid;
-  grid-template-columns: 56px repeat(7, minmax(0, 1fr));
+  grid-template-columns: 56px repeat(var(--visible-day-count), minmax(0, 1fr));
   grid-template-rows: 50px var(--timeline-height);
   width: 100%;
+}
+
+.wg-header.is-window-hidden,
+.wg-daycol.is-window-hidden {
+  display: none;
 }
 
 .wg-header {
@@ -1068,6 +1141,25 @@ progress {
 .entry-block.is-selected {
   outline: 2px solid rgba(57, 217, 138, 0.8);
   outline-offset: -2px;
+  overflow: visible;
+  z-index: 5;
+}
+
+.entry-content {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.entry-block.is-selected .entry-content {
+  cursor: grab;
+  touch-action: none;
+}
+
+.entry-block.is-selected .entry-content:active {
+  cursor: grabbing;
 }
 
 .entry-times {
@@ -1090,6 +1182,161 @@ progress {
   display: inline-flex;
 }
 
+.entry-control,
+.entry-resize-handle,
+.entry-gap-add {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.entry-control {
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 5px;
+  background: rgba(11, 16, 32, 0.94);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: none;
+  place-items: center;
+}
+
+.entry-control svg,
+.entry-gap-add svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.entry-block.is-selected .entry-control {
+  display: grid;
+}
+
+.entry-control:hover,
+.entry-control:focus-visible {
+  outline: none;
+  border-color: rgba(124, 92, 255, 0.95);
+  background: rgba(38, 31, 77, 0.98);
+}
+
+.entry-delete-control:hover,
+.entry-delete-control:focus-visible {
+  border-color: rgba(255, 77, 109, 0.85);
+  color: rgba(255, 145, 164, 1);
+}
+
+.entry-action-rail {
+  position: absolute;
+  left: calc(100% + 5px);
+  top: 50%;
+  z-index: 8;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(5, 9, 19, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+  transform: translateY(-50%);
+}
+
+.entry-block.is-selected .entry-action-rail {
+  display: flex;
+}
+
+.entry-block.controls-on-left .entry-action-rail {
+  right: calc(100% + 5px);
+  left: auto;
+}
+
+.entry-resize-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 9;
+  display: none;
+  width: 100%;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.entry-resize-handle::after {
+  position: absolute;
+  left: 50%;
+  width: 38px;
+  height: 3px;
+  border-radius: 3px;
+  content: "";
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(11, 16, 32, 0.8);
+  transform: translateX(-50%);
+}
+
+.entry-resize-start {
+  top: -14px;
+}
+
+.entry-resize-start::after {
+  top: 13px;
+}
+
+.entry-resize-end {
+  bottom: -14px;
+}
+
+.entry-resize-end::after {
+  bottom: 13px;
+}
+
+.entry-block.is-selected .entry-resize-handle {
+  display: block;
+}
+
+.entry-gap-add {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(11, 16, 32, 0.68);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  opacity: 0.42;
+  transform: translate(-50%, -50%);
+}
+
+.entry-gap-add:hover,
+.entry-gap-add:focus-visible {
+  outline: none;
+  border-color: rgba(124, 92, 255, 0.9);
+  background: rgba(32, 25, 67, 0.95);
+  color: var(--text);
+  opacity: 1;
+}
+
+body.is-entry-dragging {
+  cursor: ns-resize;
+  user-select: none;
+}
+
+body.is-entry-moving,
+body.is-entry-moving * {
+  cursor: grabbing !important;
+}
+
 .entry-project {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1103,9 +1350,6 @@ progress {
   white-space: normal;
   overflow-wrap: anywhere;
   line-height: 1.25;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.82);
 }
@@ -1180,6 +1424,31 @@ progress {
   font-family: var(--mono);
   font-size: 12px;
   margin-bottom: 12px;
+}
+
+.week-requirements-summary {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 14px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.week-requirements-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.week-requirements-row strong {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .dialog-grid label textarea {
@@ -1354,6 +1623,114 @@ progress {
 }
 
 @media (max-width: 760px) {
+  .topbar {
+    gap: 5px;
+    padding-right: 5px;
+    padding-left: 5px;
+  }
+
+  .week-controls {
+    height: 100%;
+    flex-wrap: nowrap;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .week-navigation {
+    gap: 3px;
+  }
+
+  #latestWeekBtn,
+  .week-label,
+  .zoom-compact {
+    display: none !important;
+  }
+
+  .week-summary {
+    flex: none;
+    max-width: none;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  #weekBillable {
+    gap: 5px;
+  }
+
+  .topbar-spacer {
+    display: none;
+  }
+
+  .week-editor-actions {
+    min-width: 0;
+  }
+
+  .week-grid {
+    grid-template-columns: 48px repeat(var(--visible-day-count), minmax(0, 1fr));
+  }
+
+  .entry-action-rail,
+  .entry-block.controls-on-left .entry-action-rail {
+    right: 5px;
+    left: auto;
+  }
+
+  .entry-block.is-selected .entry-times {
+    right: 46px;
+  }
+
+  .wg-time-label {
+    left: 6px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  #entryDialog,
+  #weekReqDialog {
+    inset: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+  }
+
+  #entryDialog .dialog-card,
+  #weekReqDialog .dialog-card {
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    padding: 12px;
+    border: 0;
+    border-radius: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #entryDialog .dialog-grid,
+  #weekReqDialog .dialog-grid {
+    flex: 1;
+    align-content: start;
+  }
+
+  #entryDialog .dialog-actions,
+  #weekReqDialog .dialog-actions {
+    position: sticky;
+    bottom: -12px;
+    margin: auto -12px -12px;
+    padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    background: rgba(11, 16, 32, 0.98);
+  }
+
   .grid {
     grid-template-columns: 1fr;
   }
@@ -1362,10 +1739,6 @@ progress {
   }
   .table td:nth-child(6) {
     min-width: 260px;
-  }
-
-  .week-summary {
-    max-width: none;
   }
 
   .todo-toolbar {
@@ -1388,14 +1761,10 @@ progress {
     display: none;
   }
 
-  .editor-badge .mode {
-    display: none;
-  }
 }
 
-@media (max-width: 1080px) {
-  .week-stat-total,
-  .week-stat-comment {
+@media (max-width: 980px) {
+  .week-mode-action {
     display: none;
   }
 }

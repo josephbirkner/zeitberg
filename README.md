@@ -15,7 +15,7 @@ This is a static HTML5 application that stays “public” as code, but loads **
 
 ## Views
 
-- **Week**: graphical week timeline (Mon–Sun) with keyboard navigation (`←/→` day, `↑/↓` entry, `PageUp/PageDown` week), daily billable totals, and a zoom slider.
+- **Week**: graphical timeline with keyboard navigation (`←/→` day, `↑/↓` entry), daily billable totals, and pointer/touch editing. The responsive day window fits as many readable columns as the viewport allows; previous/next slides that window before crossing a week boundary. Zoom is available from the slider, `Ctrl+[ / ]`, `Ctrl+- / +`, `Ctrl+wheel`, or a two-finger pinch over the timeline.
 - **TODOs**: keyboard-first task list (`↑/↓` select, `Enter` edit, `A` add, `Space` complete, `D` delete, `Ctrl+Z/Y` undo/redo, `Ctrl+S` save). The top bar mirrors the week editor with `Changed`, `Saving…`, and `Saved` states.
 - **Search**: the query/table UI for filtering and browsing entries. Switch views from the top-left menu or with `Ctrl+K`, `Ctrl+T`, and `Ctrl+W`.
 - The current week's balance deducts only the requirement due through today, distributed evenly across Monday–Friday; past weeks use their complete requirement.
