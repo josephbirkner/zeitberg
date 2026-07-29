@@ -1,4 +1,4 @@
-import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLength } from "./utils.js";
+import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, jsonStringifySorted, utf8ByteLength } from "./utils.js";
 
 /**
  * @typedef {Object} EntryRaw
@@ -28,6 +28,93 @@ import { cloneJson, isoWeekInfo, isoWeekStart, jsonStringifySorted, utf8ByteLeng
  * @property {string} [generated_at]
  * @property {number} [schema_version]
  * @property {ProjectRaw[]} [projects]
+ */
+
+/**
+ * @typedef {Object} TodoDueRaw
+ * @description The current occurrence date/time for a TODO, separate from its optional recurrence rule.
+ * @property {string} date
+ * @property {string | null} [timezone]
+ * @property {boolean} [is_recurring] Legacy Todoist migration field.
+ * @property {string} [string] Legacy Todoist migration field.
+ * @property {string} [lang] Legacy Todoist migration field.
+ */
+
+/**
+ * @typedef {"daily" | "weekly" | "monthly" | "yearly" | "custom"} RecurrenceFrequency
+ */
+
+/**
+ * @typedef {"scheduled" | "after_completion"} RecurrenceBasis
+ */
+
+/**
+ * @typedef {Object} RecurrenceRaw
+ * @description A provider-neutral recurrence rule inspired by RFC 5545 recurrence parts.
+ * @property {RecurrenceFrequency} frequency
+ * @property {number} interval
+ * @property {RecurrenceBasis} basis
+ * @property {number[]} [weekdays] ISO weekdays (Monday=1 through Sunday=7).
+ * @property {number | null} [month_day]
+ * @property {number | null} [month]
+ * @property {string} [source_text]
+ */
+
+/**
+ * @typedef {Object} TodoCompletionRaw
+ * @description One completed occurrence of a recurring TODO.
+ * @property {string} completed_at
+ * @property {string} scheduled_for
+ */
+
+/**
+ * @typedef {Object} LegacyTodoistDueRaw
+ * @description Legacy Todoist due payload accepted while migrating schema version 1.
+ * @property {string} date
+ * @property {boolean} [is_recurring]
+ * @property {string} [string]
+ * @property {string} [lang]
+ * @property {string | null} [timezone]
+ */
+
+/**
+ * @typedef {Object} TodoSourceRaw
+ * @description Optional provenance retained for tasks imported from another service.
+ * @property {string} provider
+ * @property {string} id
+ * @property {string | null} [project_id]
+ * @property {string | null} [section_id]
+ */
+
+/**
+ * @typedef {Object} TodoRaw
+ * @description The stable JSON representation of one locally managed TODO.
+ * @property {string} id
+ * @property {string} content
+ * @property {string} [description]
+ * @property {string | null} [project]
+ * @property {string | null} [section]
+ * @property {string | null} [parent_id]
+ * @property {string[]} [labels]
+ * @property {number} [priority]
+ * @property {TodoDueRaw | null} [due]
+ * @property {RecurrenceRaw | null} [recurrence]
+ * @property {TodoCompletionRaw[]} [completion_history]
+ * @property {Object | null} [deadline]
+ * @property {string | null} [completed_at]
+ * @property {string} [created_at]
+ * @property {string} [updated_at]
+ * @property {boolean} [archived]
+ * @property {number} [order]
+ * @property {TodoSourceRaw | null} [source]
+ */
+
+/**
+ * @typedef {Object} TodosFileRaw
+ * @description The complete data/todos.json document persisted by the application.
+ * @property {string} [generated_at]
+ * @property {number} [schema_version]
+ * @property {TodoRaw[]} [todos]
  */
 
 /**
@@ -419,6 +506,633 @@ export class ProjectList {
     /**
      * Returns stable JSON output for projects.json.
      * Defines the data shape used by the store.
+     * @returns {string}
+     */
+    toJson() {
+        return jsonStringifySorted(this.toObject());
+    }
+}
+
+const RECURRENCE_FREQUENCIES = new Set(["daily", "weekly", "monthly", "yearly", "custom"]);
+const WEEKDAY_BY_NAME = new Map([
+    ["monday", 1],
+    ["mon", 1],
+    ["tuesday", 2],
+    ["tue", 2],
+    ["tues", 2],
+    ["wednesday", 3],
+    ["wed", 3],
+    ["thursday", 4],
+    ["thu", 4],
+    ["thur", 4],
+    ["thurs", 4],
+    ["friday", 5],
+    ["fri", 5],
+    ["saturday", 6],
+    ["sat", 6],
+    ["sunday", 7],
+    ["sun", 7],
+]);
+const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/**
+ * Parses the date prefix from a date-only or local date-time TODO value.
+ * Calendar arithmetic intentionally uses UTC as a neutral representation so browser timezone and daylight-saving changes cannot shift dates.
+ * @param {string} value
+ * @returns {{year: number, month: number, day: number} | null}
+ */
+function parseTodoCalendarDate(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+        date.getUTCFullYear() !== year ||
+        date.getUTCMonth() + 1 !== month ||
+        date.getUTCDate() !== day
+    ) {
+        return null;
+    }
+    return { year, month, day };
+}
+
+/**
+ * Formats validated calendar parts as YYYY-MM-DD.
+ * @param {number} year
+ * @param {number} month
+ * @param {number} day
+ * @returns {string}
+ */
+function formatTodoCalendarDate(year, month, day) {
+    return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Returns the number of days in a calendar month.
+ * @param {number} year
+ * @param {number} month
+ * @returns {number}
+ */
+function daysInTodoMonth(year, month) {
+    return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * Adds whole months while retaining a preferred day-of-month and clamping only when that day does not exist.
+ * Keeping the preferred day in Recurrence prevents a January-31 series from drifting permanently after February.
+ * @param {string} date
+ * @param {number} deltaMonths
+ * @param {number} preferredDay
+ * @returns {string | null}
+ */
+function addTodoMonths(date, deltaMonths, preferredDay) {
+    const parts = parseTodoCalendarDate(date);
+    if (!parts) return null;
+    const absoluteMonth = parts.year * 12 + (parts.month - 1) + deltaMonths;
+    const year = Math.floor(absoluteMonth / 12);
+    const month = ((absoluteMonth % 12) + 12) % 12 + 1;
+    const day = Math.min(Math.max(1, preferredDay), daysInTodoMonth(year, month));
+    return formatTodoCalendarDate(year, month, day);
+}
+
+/**
+ * Adds whole years while preserving a preferred month and day, clamping leap-day occurrences in non-leap years.
+ * @param {string} date
+ * @param {number} deltaYears
+ * @param {number} preferredMonth
+ * @param {number} preferredDay
+ * @returns {string | null}
+ */
+function addTodoYears(date, deltaYears, preferredMonth, preferredDay) {
+    const parts = parseTodoCalendarDate(date);
+    if (!parts) return null;
+    const year = parts.year + deltaYears;
+    const month = Math.max(1, Math.min(12, preferredMonth));
+    const day = Math.min(Math.max(1, preferredDay), daysInTodoMonth(year, month));
+    return formatTodoCalendarDate(year, month, day);
+}
+
+/**
+ * Replaces only the calendar-date prefix of a due value, preserving its local time and offset suffix.
+ * @param {TodoDueRaw} due
+ * @param {string} date
+ * @returns {TodoDueRaw}
+ */
+function replaceTodoDueDate(due, date) {
+    const suffix = String(due.date || "").slice(10);
+    return {
+        date: `${date}${suffix}`,
+        timezone: typeof due.timezone === "string" && due.timezone ? due.timezone : null,
+    };
+}
+
+/**
+ * Represents a structured recurrence rule independently from the current due occurrence.
+ * Frequencies and interval/weekday/month parts follow the same conceptual model as iCalendar RRULE, with one local extension for completion-relative schedules.
+ */
+export class Recurrence {
+    /**
+     * Normalizes recurrence fields into a bounded, deterministic model.
+     * @param {RecurrenceRaw} raw
+     */
+    constructor(raw) {
+        const frequency = String(raw?.frequency || "").toLowerCase();
+        this.frequency = /** @type {RecurrenceFrequency} */ (
+            RECURRENCE_FREQUENCIES.has(frequency) ? frequency : "custom"
+        );
+        const interval = Number(raw?.interval);
+        this.interval = Number.isInteger(interval) ? Math.max(1, Math.min(999, interval)) : 1;
+        this.basis = raw?.basis === "after_completion" ? "after_completion" : "scheduled";
+        this.weekdays = Array.isArray(raw?.weekdays)
+            ? Array.from(
+                  new Set(
+                      raw.weekdays
+                          .map((weekday) => Number(weekday))
+                          .filter((weekday) => Number.isInteger(weekday) && weekday >= 1 && weekday <= 7),
+                  ),
+              ).sort((left, right) => left - right)
+            : [];
+        const monthDay = Number(raw?.month_day);
+        this.month_day = Number.isInteger(monthDay) && monthDay >= 1 && monthDay <= 31 ? monthDay : null;
+        const month = Number(raw?.month);
+        this.month = Number.isInteger(month) && month >= 1 && month <= 12 ? month : null;
+        this.source_text = typeof raw?.source_text === "string" ? raw.source_text.trim() : "";
+    }
+
+    /**
+     * Parses a persisted structured recurrence object.
+     * @param {unknown} raw
+     * @returns {Recurrence | null}
+     */
+    static fromRaw(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        return new Recurrence(/** @type {RecurrenceRaw} */ (raw));
+    }
+
+    /**
+     * Converts the supported natural-language subset used by the editor and Todoist import into structured fields.
+     * Unsupported phrases return null rather than creating a task that cannot advance safely.
+     * @param {string} text
+     * @param {string} anchorDate
+     * @returns {Recurrence | null}
+     */
+    static fromText(text, anchorDate) {
+        const sourceText = String(text || "").trim();
+        const anchor = parseTodoCalendarDate(anchorDate);
+        if (!sourceText || !anchor) return null;
+
+        let normalized = sourceText.toLowerCase().replace(/\s+/g, " ").trim();
+        let basis = /** @type {RecurrenceBasis} */ ("scheduled");
+        if (normalized.startsWith("every!")) {
+            basis = "after_completion";
+            normalized = normalized.slice("every!".length).trim();
+        } else if (normalized.startsWith("every ")) {
+            normalized = normalized.slice("every ".length).trim();
+        }
+        normalized = normalized.replace(/\s+at\s+.+$/, "").trim();
+
+        const anchorDateText = formatTodoCalendarDate(anchor.year, anchor.month, anchor.day);
+        const anchorWeekday = isoWeekdayIndex(anchorDateText) + 1;
+        const common = { basis, source_text: sourceText };
+
+        if (normalized === "daily" || normalized === "day") {
+            return new Recurrence({ ...common, frequency: "daily", interval: 1 });
+        }
+        if (normalized === "weekly" || normalized === "week") {
+            return new Recurrence({ ...common, frequency: "weekly", interval: 1, weekdays: [anchorWeekday] });
+        }
+        if (normalized === "monthly" || normalized === "month") {
+            return new Recurrence({
+                ...common,
+                frequency: "monthly",
+                interval: 1,
+                month_day: anchor.day,
+            });
+        }
+        if (normalized === "yearly" || normalized === "annually" || normalized === "year") {
+            return new Recurrence({
+                ...common,
+                frequency: "yearly",
+                interval: 1,
+                month: anchor.month,
+                month_day: anchor.day,
+            });
+        }
+
+        const weekday = WEEKDAY_BY_NAME.get(normalized);
+        if (weekday) {
+            return new Recurrence({ ...common, frequency: "weekly", interval: 1, weekdays: [weekday] });
+        }
+
+        const intervalMatch = /^(\d+)\s+(days?|weeks?|months?|years?)$/.exec(normalized);
+        if (!intervalMatch) return null;
+        const interval = Number(intervalMatch[1]);
+        const unit = intervalMatch[2];
+        if (unit.startsWith("day")) {
+            return new Recurrence({ ...common, frequency: "daily", interval });
+        }
+        if (unit.startsWith("week")) {
+            return new Recurrence({ ...common, frequency: "weekly", interval, weekdays: [anchorWeekday] });
+        }
+        if (unit.startsWith("month")) {
+            return new Recurrence({ ...common, frequency: "monthly", interval, month_day: anchor.day });
+        }
+        return new Recurrence({
+            ...common,
+            frequency: "yearly",
+            interval,
+            month: anchor.month,
+            month_day: anchor.day,
+        });
+    }
+
+    /**
+     * Converts a legacy Todoist due object into the provider-neutral recurrence model.
+     * Unknown natural-language rules remain as custom records for lossless migration, but are not advanced automatically.
+     * @param {LegacyTodoistDueRaw | null | undefined} due
+     * @returns {Recurrence | null}
+     */
+    static fromTodoistDue(due) {
+        if (!due?.is_recurring) return null;
+        const sourceText = typeof due.string === "string" ? due.string.trim() : "";
+        const parsed = Recurrence.fromText(sourceText, due.date);
+        if (parsed) return parsed;
+        return new Recurrence({
+            frequency: "custom",
+            interval: 1,
+            basis: sourceText.toLowerCase().startsWith("every!") ? "after_completion" : "scheduled",
+            source_text: sourceText,
+        });
+    }
+
+    /**
+     * Reports whether the application can calculate future occurrences for this rule.
+     * @returns {boolean}
+     */
+    isSupported() {
+        return this.frequency !== "custom";
+    }
+
+    /**
+     * Returns a human-readable recurrence phrase, preferring the original imported/editor text.
+     * @returns {string}
+     */
+    describe() {
+        if (this.source_text) return this.source_text;
+        const prefix = this.basis === "after_completion" ? "every!" : "every";
+        if (this.frequency === "daily") {
+            return this.interval === 1 ? `${prefix} day` : `${prefix} ${this.interval} days`;
+        }
+        if (this.frequency === "weekly") {
+            if (this.interval === 1 && this.weekdays.length === 1) {
+                return `${prefix} ${WEEKDAY_NAMES[this.weekdays[0] - 1]}`;
+            }
+            return this.interval === 1 ? `${prefix} week` : `${prefix} ${this.interval} weeks`;
+        }
+        if (this.frequency === "monthly") {
+            return this.interval === 1 ? `${prefix} month` : `${prefix} ${this.interval} months`;
+        }
+        if (this.frequency === "yearly") {
+            return this.interval === 1 ? `${prefix} year` : `${prefix} ${this.interval} years`;
+        }
+        return this.source_text || "custom recurrence";
+    }
+
+    /**
+     * Advances one scheduled occurrence according to frequency-specific calendar rules.
+     * @param {string} currentDate
+     * @returns {string | null}
+     */
+    advanceScheduledDate(currentDate) {
+        const current = parseTodoCalendarDate(currentDate);
+        if (!current || !this.isSupported()) return null;
+        if (this.frequency === "daily") return addIsoDays(currentDate, this.interval);
+        if (this.frequency === "weekly") {
+            const currentWeekday = isoWeekdayIndex(currentDate) + 1;
+            const weekdays = this.weekdays.length ? this.weekdays : [currentWeekday];
+            const nextInWeek = weekdays.find((weekday) => weekday > currentWeekday);
+            if (nextInWeek) return addIsoDays(currentDate, nextInWeek - currentWeekday);
+            const first = weekdays[0];
+            return addIsoDays(currentDate, this.interval * 7 - currentWeekday + first);
+        }
+        if (this.frequency === "monthly") {
+            return addTodoMonths(currentDate, this.interval, this.month_day || current.day);
+        }
+        return addTodoYears(
+            currentDate,
+            this.interval,
+            this.month || current.month,
+            this.month_day || current.day,
+        );
+    }
+
+    /**
+     * Calculates the first occurrence strictly after a completion timestamp.
+     * Scheduled rules skip overdue occurrences; completion-relative rules apply their interval once from the completion date.
+     * @param {TodoDueRaw} due
+     * @param {string} completedAt
+     * @param {import("./utils.js").TimeContext} timeContext
+     * @returns {TodoDueRaw | null}
+     */
+    nextDue(due, completedAt, timeContext) {
+        if (!this.isSupported() || !due || !parseTodoCalendarDate(due.date)) return null;
+        const completedDate = new Date(completedAt);
+        if (Number.isNaN(completedDate.getTime())) return null;
+        const completedLocalDate = timeContext.formatDate(completedDate);
+        const completedLocalTime = timeContext.formatTime(completedDate);
+        const hasTime = /T\d{2}:\d{2}/.test(due.date);
+
+        if (this.basis === "after_completion") {
+            const completedParts = parseTodoCalendarDate(completedLocalDate);
+            if (!completedParts) return null;
+            let nextDate = null;
+            if (this.frequency === "daily") {
+                nextDate = addIsoDays(completedLocalDate, this.interval);
+            } else if (this.frequency === "weekly") {
+                nextDate = addIsoDays(completedLocalDate, this.interval * 7);
+            } else if (this.frequency === "monthly") {
+                nextDate = addTodoMonths(completedLocalDate, this.interval, completedParts.day);
+            } else if (this.frequency === "yearly") {
+                nextDate = addTodoYears(
+                    completedLocalDate,
+                    this.interval,
+                    completedParts.month,
+                    completedParts.day,
+                );
+            }
+            return nextDate ? replaceTodoDueDate(due, nextDate) : null;
+        }
+
+        let candidateDate = this.advanceScheduledDate(due.date.slice(0, 10));
+        for (let attempts = 0; candidateDate && attempts < 10000; attempts += 1) {
+            const candidate = replaceTodoDueDate(due, candidateDate);
+            const candidateKey = hasTime ? candidate.date.slice(0, 16) : candidate.date.slice(0, 10);
+            const completedKey = hasTime ? `${completedLocalDate}T${completedLocalTime}` : completedLocalDate;
+            if (candidateKey > completedKey) return candidate;
+            candidateDate = this.advanceScheduledDate(candidateDate);
+        }
+        return null;
+    }
+
+    /**
+     * Returns the stable JSON representation persisted in data/todos.json.
+     * @returns {RecurrenceRaw}
+     */
+    toRaw() {
+        return {
+            frequency: this.frequency,
+            interval: this.interval,
+            basis: this.basis,
+            weekdays: this.weekdays.slice(),
+            month_day: this.month_day,
+            month: this.month,
+            source_text: this.source_text,
+        };
+    }
+}
+
+/**
+ * Represents one actionable TODO independent of its visual presentation.
+ * Project associations are stored by canonical project name so TODOs and time entries resolve through the same ProjectList.
+ */
+export class Todo {
+    /**
+     * Normalizes a raw TODO payload into the provider-neutral schema used by the editor.
+     * Schema-version-1 Todoist recurrence fields are migrated from `due` into a structured Recurrence automatically.
+     * Invalid optional values are reduced to safe defaults so one malformed row cannot prevent the rest of the list from loading.
+     * @param {TodoRaw} raw
+     */
+    constructor(raw) {
+        this.id = typeof raw?.id === "string" ? raw.id.trim() : "";
+        this.content = typeof raw?.content === "string" ? raw.content.trim() : "";
+        this.description = typeof raw?.description === "string" ? raw.description : "";
+        this.project = typeof raw?.project === "string" && raw.project.trim() ? raw.project.trim() : null;
+        this.section = typeof raw?.section === "string" && raw.section.trim() ? raw.section.trim() : null;
+        this.parent_id = typeof raw?.parent_id === "string" && raw.parent_id.trim() ? raw.parent_id.trim() : null;
+        this.labels = Array.isArray(raw?.labels)
+            ? raw.labels.filter((label) => typeof label === "string" && label.trim()).map((label) => label.trim())
+            : [];
+        const priority = Number(raw?.priority);
+        this.priority = Number.isInteger(priority) ? Math.max(1, Math.min(4, priority)) : 1;
+        this.due = Todo.normalizeDue(raw?.due);
+        this.recurrence = Recurrence.fromRaw(raw?.recurrence) || Recurrence.fromTodoistDue(raw?.due);
+        this.completion_history = Todo.normalizeCompletionHistory(raw?.completion_history);
+        this.deadline = raw?.deadline && typeof raw.deadline === "object" ? cloneJson(raw.deadline) : null;
+        this.completed_at = typeof raw?.completed_at === "string" && raw.completed_at ? raw.completed_at : null;
+        this.created_at = typeof raw?.created_at === "string" ? raw.created_at : "";
+        this.updated_at = typeof raw?.updated_at === "string" ? raw.updated_at : "";
+        this.archived = raw?.archived === true;
+        const order = Number(raw?.order);
+        this.order = Number.isFinite(order) ? order : 0;
+        this.source = Todo.normalizeSource(raw?.source);
+        this.searchHaystack = [
+            this.content,
+            this.description,
+            this.project || "",
+            this.section || "",
+            this.recurrence?.describe() || "",
+            ...this.labels,
+        ]
+            .join(" ")
+            .toLowerCase();
+    }
+
+    /**
+     * Clones and validates the current due occurrence independently from recurrence.
+     * Legacy Todoist recurrence fields are deliberately omitted here because the constructor migrates them into Recurrence.
+     * @param {TodoDueRaw | null | undefined} due
+     * @returns {TodoDueRaw | null}
+     */
+    static normalizeDue(due) {
+        if (!due || typeof due !== "object") return null;
+        const date = typeof due.date === "string" ? due.date.trim() : "";
+        if (!date) return null;
+        return {
+            date,
+            timezone: typeof due.timezone === "string" && due.timezone ? due.timezone : null,
+        };
+    }
+
+    /**
+     * Normalizes the immutable occurrence log kept for a recurring TODO.
+     * Invalid records are ignored while the original order is retained for auditability and deterministic undo snapshots.
+     * @param {unknown} history
+     * @returns {TodoCompletionRaw[]}
+     */
+    static normalizeCompletionHistory(history) {
+        if (!Array.isArray(history)) return [];
+        const normalized = [];
+        for (const item of history) {
+            if (!item || typeof item !== "object") continue;
+            const record = /** @type {Partial<TodoCompletionRaw>} */ (item);
+            const completedAt = typeof record.completed_at === "string" ? record.completed_at.trim() : "";
+            const scheduledFor = typeof record.scheduled_for === "string" ? record.scheduled_for.trim() : "";
+            if (!completedAt || !scheduledFor) continue;
+            normalized.push({
+                completed_at: completedAt,
+                scheduled_for: scheduledFor,
+            });
+        }
+        return normalized;
+    }
+
+    /**
+     * Clones supported import provenance without making it part of the task identity rules.
+     * Locally created TODOs omit this object, while imported TODOs keep their original service identifiers for auditing.
+     * @param {TodoSourceRaw | null | undefined} source
+     * @returns {TodoSourceRaw | null}
+     */
+    static normalizeSource(source) {
+        if (!source || typeof source !== "object") return null;
+        const provider = typeof source.provider === "string" ? source.provider.trim() : "";
+        const id = typeof source.id === "string" ? source.id.trim() : "";
+        if (!provider || !id) return null;
+        return {
+            provider,
+            id,
+            project_id: typeof source.project_id === "string" && source.project_id ? source.project_id : null,
+            section_id: typeof source.section_id === "string" && source.section_id ? source.section_id : null,
+        };
+    }
+
+    /**
+     * Reports whether the TODO has a completion timestamp.
+     * Keeping this derived state out of JSON avoids contradictory completed flags.
+     * @returns {boolean}
+     */
+    isCompleted() {
+        return Boolean(this.completed_at);
+    }
+
+    /**
+     * Reports whether this TODO represents an active recurrence series.
+     * This remains true even when an imported custom rule cannot yet be calculated by the application.
+     * @returns {boolean}
+     */
+    isRecurring() {
+        return this.recurrence instanceof Recurrence;
+    }
+
+    /**
+     * Returns a detached JSON-ready representation of this TODO.
+     * Callers may edit the returned object without mutating the model held by TodoStore.
+     * @returns {TodoRaw}
+     */
+    toRaw() {
+        return {
+            id: this.id,
+            content: this.content,
+            description: this.description,
+            project: this.project,
+            section: this.section,
+            parent_id: this.parent_id,
+            labels: this.labels.slice(),
+            priority: this.priority,
+            due: this.due ? cloneJson(this.due) : null,
+            recurrence: this.recurrence ? this.recurrence.toRaw() : null,
+            completion_history: cloneJson(this.completion_history),
+            deadline: this.deadline ? cloneJson(this.deadline) : null,
+            completed_at: this.completed_at,
+            created_at: this.created_at,
+            updated_at: this.updated_at,
+            archived: this.archived,
+            order: this.order,
+            source: this.source ? cloneJson(this.source) : null,
+        };
+    }
+}
+
+/**
+ * Represents the complete todos.json document and its serialization metadata.
+ * The collection owns Todo models while project definitions remain in the shared ProjectList managed by EntryStore.
+ */
+export class TodoList {
+    /**
+     * Creates a TODO collection from already normalized models.
+     * The input order is retained because imported child ordering is meaningful when due dates are equal.
+     * @param {Todo[]} todos
+     * @param {string} generatedAt
+     */
+    constructor(todos, generatedAt) {
+        this.todos = todos;
+        this.generated_at = generatedAt;
+        this.schema_version = 2;
+        this.todosById = new Map();
+        for (const todo of todos) {
+            this.todosById.set(todo.id, todo);
+        }
+    }
+
+    /**
+     * Parses data/todos.json and discards rows without a stable id or content.
+     * Duplicate identifiers keep the last valid row, which mirrors update semantics and makes recovery from hand edits deterministic.
+     * @param {unknown} raw
+     * @returns {TodoList}
+     */
+    static fromRaw(raw) {
+        const rawObj = raw && typeof raw === "object" ? /** @type {TodosFileRaw} */ (raw) : {};
+        const rawTodos = Array.isArray(rawObj.todos) ? rawObj.todos : [];
+        const byId = new Map();
+        for (const item of rawTodos) {
+            if (!item || typeof item !== "object") continue;
+            const todo = new Todo(item);
+            if (!todo.id || !todo.content) continue;
+            byId.set(todo.id, todo);
+        }
+        const generatedAt = typeof rawObj.generated_at === "string" ? rawObj.generated_at : "";
+        return new TodoList(Array.from(byId.values()), generatedAt);
+    }
+
+    /**
+     * Creates an empty TODO document for new repositories or a missing optional file.
+     * @param {string} [generatedAt]
+     * @returns {TodoList}
+     */
+    static createEmpty(generatedAt = "") {
+        return new TodoList([], generatedAt);
+    }
+
+    /**
+     * Returns the TODO matching an exact stable id.
+     * @param {string} id
+     * @returns {Todo | null}
+     */
+    getTodoById(id) {
+        return this.todosById.get(String(id || "")) || null;
+    }
+
+    /**
+     * Returns a shallow copy of the model array for read-only iteration by views.
+     * @returns {Todo[]}
+     */
+    list() {
+        return this.todos.slice();
+    }
+
+    /**
+     * Returns detached raw TODO rows suitable for snapshots, undo history, and draft persistence.
+     * @returns {TodoRaw[]}
+     */
+    snapshotRaw() {
+        return this.todos.map((todo) => todo.toRaw());
+    }
+
+    /**
+     * Returns the complete JSON-ready document while preserving current collection order.
+     * @returns {TodosFileRaw}
+     */
+    toObject() {
+        return {
+            generated_at: this.generated_at,
+            schema_version: this.schema_version,
+            todos: this.snapshotRaw(),
+        };
+    }
+
+    /**
+     * Produces deterministic JSON for data/todos.json in both GitHub and local modes.
      * @returns {string}
      */
     toJson() {

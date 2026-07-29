@@ -183,6 +183,7 @@ export class WeekView {
         this.onSearchDirty = options.onSearchDirty;
         this.onManifestUpdated = options.onManifestUpdated;
 
+        this.active = false;
         this.weekDom = null;
         this.segmentsIndex = new Map();
         this.projectColorCache = new Map();
@@ -323,8 +324,10 @@ export class WeekView {
      * @returns {void}
      */
     setActive(isActive) {
-        setVisible(this.weekViewSection, isActive);
-        if (isActive) {
+        this.active = Boolean(isActive);
+        setVisible(this.weekViewSection, this.active);
+        if (this.active) {
+            this.updateEditorBadge();
             queueMicrotask(() => {
                 try {
                     this.weekScrollEl.focus();
@@ -485,9 +488,10 @@ export class WeekView {
      * @returns {void}
      */
     updateEditorBadge() {
+        if (!this.active) return;
         const dirty = this.dirtyWeekStarts.size > 0;
         const mode = String(this.editMode || "normal").toUpperCase();
-        const save = this.saveInFlight ? "Saving…" : dirty ? "Unsaved" : "Saved";
+        const save = this.saveInFlight ? "Saving…" : dirty ? "Changed" : "Saved";
         this.editorBadgeEl.classList.toggle("is-dirty", dirty);
         this.editorBadgeEl.innerHTML = `<span class="dot"></span><span class="mode">${mode}</span><span class="save">${save}</span>`;
     }

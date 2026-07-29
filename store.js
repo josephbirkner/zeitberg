@@ -9,7 +9,7 @@ import {
     isoWeekdayIndex,
     utcNowIso,
 } from "./utils.js";
-import { Entry, Manifest, ProjectList, Week, WeekRequirements } from "./model.js";
+import { Entry, Manifest, ProjectList, TodoList, Week, WeekRequirements } from "./model.js";
 
 /**
  * @typedef {Object} WeekFile
@@ -56,6 +56,300 @@ import { Entry, Manifest, ProjectList, Week, WeekRequirements } from "./model.js
 
 const LONG_ENTRY_MS = 7 * 24 * 60 * 60 * 1000;
 const BALANCE_ACCUMULATION_START = "2025-09-01";
+
+/**
+ * @typedef {Object} TodoDetails
+ * @description Editable TODO fields accepted by TodoStore create/update operations.
+ * @property {string} content
+ * @property {string} [description]
+ * @property {string | null} [project]
+ * @property {string | null} [section]
+ * @property {string[]} [labels]
+ * @property {number} [priority]
+ * @property {import("./model.js").TodoDueRaw | null} [due]
+ * @property {import("./model.js").RecurrenceRaw | null} [recurrence]
+ */
+
+/**
+ * Stores the TODO document and provides validated mutations for TodoView.
+ * Project names are resolved through the existing EntryStore, making its ProjectList the single inventory for both TODOs and time entries.
+ */
+export class TodoStore {
+    /**
+     * Initializes an empty TODO document backed by the canonical project store.
+     * @param {EntryStore} projectStore
+     */
+    constructor(projectStore) {
+        this.projectStore = projectStore;
+        this.todoList = TodoList.createEmpty();
+    }
+
+    /**
+     * Replaces the currently loaded TODO document after loading, restoring a draft, or applying undo/redo.
+     * @param {TodoList | null} todoList
+     * @returns {void}
+     */
+    setTodoList(todoList) {
+        this.todoList = todoList instanceof TodoList ? todoList : TodoList.createEmpty();
+    }
+
+    /**
+     * Resets all TODO state without changing the shared project inventory.
+     * @returns {void}
+     */
+    clear() {
+        this.todoList = TodoList.createEmpty();
+    }
+
+    /**
+     * Returns the complete TODO document model.
+     * @returns {TodoList}
+     */
+    getTodoList() {
+        return this.todoList;
+    }
+
+    /**
+     * Returns a copy of all TODO models for filtering and rendering.
+     * @returns {import("./model.js").Todo[]}
+     */
+    getTodos() {
+        return this.todoList.list();
+    }
+
+    /**
+     * Finds one TODO by its stable local or imported identifier.
+     * @param {string} id
+     * @returns {import("./model.js").Todo | null}
+     */
+    getTodoById(id) {
+        return this.todoList.getTodoById(id);
+    }
+
+    /**
+     * Returns detached raw rows used as editor snapshots and durable browser drafts.
+     * @returns {import("./model.js").TodoRaw[]}
+     */
+    snapshotRaw() {
+        return this.todoList.snapshotRaw();
+    }
+
+    /**
+     * Rebuilds models from a raw snapshot while retaining or replacing document metadata.
+     * @param {import("./model.js").TodoRaw[]} todosRaw
+     * @param {string} [generatedAt]
+     * @returns {void}
+     */
+    applySnapshot(todosRaw, generatedAt = this.todoList.generated_at) {
+        this.todoList = TodoList.fromRaw({
+            generated_at: generatedAt,
+            schema_version: 2,
+            todos: Array.isArray(todosRaw) ? todosRaw : [],
+        });
+    }
+
+    /**
+     * Validates and returns the due occurrence together with its optional recurrence rule.
+     * Keeping this invariant in TodoStore protects callers other than the modal editor from creating an unadvanceable series.
+     * @param {TodoDetails} details
+     * @returns {{due: import("./model.js").TodoDueRaw | null, recurrence: import("./model.js").RecurrenceRaw | null}}
+     */
+    normalizeSchedule(details) {
+        const due = details?.due || null;
+        const recurrence = details?.recurrence || null;
+        if (recurrence && !due) {
+            throw new Error("A recurring TODO needs a due date.");
+        }
+        return { due, recurrence };
+    }
+
+    /**
+     * Resolves an optional project name against the one shared ProjectList.
+     * Unknown names are rejected so TODO creation cannot silently fork the project inventory.
+     * @param {string | null | undefined} name
+     * @returns {string | null}
+     */
+    normalizeProjectName(name) {
+        const value = typeof name === "string" ? name.trim() : "";
+        if (!value) return null;
+        const project = this.projectStore.getProjectByName(value);
+        if (!project) {
+            throw new Error(`Unknown project: ${value}`);
+        }
+        return project.name;
+    }
+
+    /**
+     * Generates a collision-resistant local id without depending on a server round-trip.
+     * @returns {string}
+     */
+    reserveTodoId() {
+        let suffix = "";
+        if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+            suffix = crypto.randomUUID();
+        } else {
+            suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        }
+        let candidate = `local:${suffix}`;
+        while (this.todoList.getTodoById(candidate)) {
+            candidate = `local:${suffix}-${Math.random().toString(36).slice(2)}`;
+        }
+        return candidate;
+    }
+
+    /**
+     * Creates and inserts a new TODO using only validated editable fields.
+     * @param {TodoDetails} details
+     * @param {string} [nowIso]
+     * @returns {import("./model.js").Todo}
+     */
+    createTodo(details, nowIso = utcNowIso()) {
+        const content = String(details?.content || "").trim();
+        if (!content) throw new Error("A TODO needs a title.");
+        const project = this.normalizeProjectName(details?.project);
+        const schedule = this.normalizeSchedule(details);
+        const maxOrder = this.getTodos().reduce((max, todo) => Math.max(max, todo.order), 0);
+        const raw = {
+            id: this.reserveTodoId(),
+            content,
+            description: String(details?.description || ""),
+            project,
+            section: details?.section ? String(details.section).trim() : null,
+            parent_id: null,
+            labels: Array.isArray(details?.labels) ? details.labels : [],
+            priority: Number(details?.priority || 1),
+            due: schedule.due,
+            recurrence: schedule.recurrence,
+            completion_history: [],
+            deadline: null,
+            completed_at: null,
+            created_at: nowIso,
+            updated_at: nowIso,
+            archived: false,
+            order: maxOrder + 1,
+            source: null,
+        };
+        const next = this.snapshotRaw();
+        next.push(raw);
+        this.applySnapshot(next);
+        const created = this.getTodoById(raw.id);
+        if (!created) throw new Error("Failed to create TODO.");
+        return created;
+    }
+
+    /**
+     * Updates editable fields while preserving parent links, provenance, and untouched imported metadata.
+     * @param {string} id
+     * @param {TodoDetails} details
+     * @param {string} [nowIso]
+     * @returns {import("./model.js").Todo}
+     */
+    updateTodo(id, details, nowIso = utcNowIso()) {
+        const current = this.getTodoById(id);
+        if (!current) throw new Error("TODO not found.");
+        const content = String(details?.content || "").trim();
+        if (!content) throw new Error("A TODO needs a title.");
+        const project = this.normalizeProjectName(details?.project);
+        const schedule = this.normalizeSchedule(details);
+        const next = this.snapshotRaw();
+        const index = next.findIndex((todo) => todo.id === current.id);
+        if (index < 0) throw new Error("TODO not found.");
+        next[index] = {
+            ...next[index],
+            content,
+            description: String(details?.description || ""),
+            project,
+            section: details?.section ? String(details.section).trim() : null,
+            labels: Array.isArray(details?.labels) ? details.labels : [],
+            priority: Number(details?.priority || 1),
+            due: schedule.due,
+            recurrence: schedule.recurrence,
+            updated_at: nowIso,
+        };
+        this.applySnapshot(next);
+        const updated = this.getTodoById(current.id);
+        if (!updated) throw new Error("Failed to update TODO.");
+        return updated;
+    }
+
+    /**
+     * Toggles completion for a one-off task or completes the current occurrence of a recurring series.
+     * A recurring completion is appended to `completion_history`, advances `due` beyond the completion instant, and leaves the series open.
+     * Snapshot-based callers therefore receive the entire mutation as one undoable action.
+     * @param {string} id
+     * @param {string} [nowIso]
+     * @returns {import("./model.js").Todo}
+     */
+    toggleTodoCompleted(id, nowIso = utcNowIso()) {
+        const current = this.getTodoById(id);
+        if (!current) throw new Error("TODO not found.");
+        const next = this.snapshotRaw();
+        const index = next.findIndex((todo) => todo.id === current.id);
+        if (index < 0) throw new Error("TODO not found.");
+
+        if (current.isCompleted()) {
+            next[index] = {
+                ...next[index],
+                completed_at: null,
+                updated_at: nowIso,
+            };
+        } else if (current.recurrence) {
+            if (!current.due) {
+                throw new Error("Cannot complete a recurring TODO without a due date.");
+            }
+            const nextDue = current.recurrence.nextDue(current.due, nowIso, this.projectStore.timeContext);
+            if (!nextDue) {
+                throw new Error(`Cannot advance unsupported recurrence: ${current.recurrence.describe()}`);
+            }
+            next[index] = {
+                ...next[index],
+                due: nextDue,
+                completion_history: [
+                    ...current.completion_history,
+                    {
+                        completed_at: nowIso,
+                        scheduled_for: current.due.date,
+                    },
+                ],
+                completed_at: null,
+                updated_at: nowIso,
+            };
+        } else {
+            next[index] = {
+                ...next[index],
+                completed_at: nowIso,
+                updated_at: nowIso,
+            };
+        }
+        this.applySnapshot(next);
+        const updated = this.getTodoById(current.id);
+        if (!updated) throw new Error("Failed to update TODO.");
+        return updated;
+    }
+
+    /**
+     * Removes one TODO from the document; TodoView snapshots make the operation undoable until and after saving.
+     * @param {string} id
+     * @returns {boolean}
+     */
+    deleteTodo(id) {
+        const current = this.getTodoById(id);
+        if (!current) return false;
+        const next = this.snapshotRaw().filter((todo) => todo.id !== current.id);
+        this.applySnapshot(next);
+        return true;
+    }
+
+    /**
+     * Stamps the document generation time and returns deterministic data/todos.json content.
+     * @param {string} [nowIso]
+     * @returns {string}
+     */
+    serialize(nowIso = utcNowIso()) {
+        this.applySnapshot(this.snapshotRaw(), nowIso);
+        return this.todoList.toJson();
+    }
+}
 
 /**
  * Stores entries as Week objects and provides fast indexes.

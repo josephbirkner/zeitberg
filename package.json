@@ -2,7 +2,10 @@
   "name": "timetracking",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
+    "import:todoist": "node scripts/import-todoist.mjs",
+    "test": "node --test tests/*.test.mjs",
     "typecheck": "npx tsc --noEmit"
   },
   "devDependencies": {

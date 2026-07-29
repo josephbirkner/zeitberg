@@ -1,6 +1,6 @@
-# Timetracking Viewer / Editor (Static)
+# Diary and TODO Editor (Static)
 
-This is a static HTML5 viewer that stays “public” as code, but loads **private** time-entry data from GitHub via the API after you provide a token.
+This is a static HTML5 application that stays “public” as code, but loads **private** time-entry and TODO data from GitHub via the API after you provide a token.
 
 ## How it works
 
@@ -9,14 +9,44 @@ This is a static HTML5 viewer that stays “public” as code, but loads **priva
 - The manifest lists weekly chunks in `data/entries/<iso-year>/<week>.json` (and their Git blob SHAs), which are then loaded via the Git blob API.
 - Your token is stored in the browser (localStorage if “Remember” is enabled; otherwise sessionStorage).
 - Edits are saved back into the repo as commits (GitHub mode) or written to disk via `server.py` (local mode).
-- Unsaved week edits are journaled in IndexedDB after every editor command, restored on reload, and removed only after a successful manual save.
+- Unsaved week and TODO edits are journaled in IndexedDB after every editor command, restored on reload, and removed only after a successful manual save. The journal is reload protection, not a repository save.
+- TODOs and time entries share the one project inventory in `data/projects.json`.
 - Startup and explicit reloads use a dedicated progress screen; the application toolbar appears only after initialization succeeds.
 
 ## Views
 
 - **Week**: graphical week timeline (Mon–Sun) with keyboard navigation (`←/→` day, `↑/↓` entry, `PageUp/PageDown` week), daily billable totals, and a zoom slider.
-- **Search**: the query/table UI for filtering and browsing entries. Switch views from the top-left menu or with `Ctrl+K` / `Ctrl+W`.
+- **TODOs**: keyboard-first task list (`↑/↓` select, `Enter` edit, `A` add, `Space` complete, `D` delete, `Ctrl+Z/Y` undo/redo, `Ctrl+S` save). The top bar mirrors the week editor with `Changed`, `Saving…`, and `Saved` states.
+- **Search**: the query/table UI for filtering and browsing entries. Switch views from the top-left menu or with `Ctrl+K`, `Ctrl+T`, and `Ctrl+W`.
 - The current week's balance deducts only the requirement due through today, distributed evenly across Monday–Friday; past weeks use their complete requirement.
+
+## Recurring TODOs
+
+`data/todos.json` schema version 2 stores three independent pieces of recurrence state:
+
+- `due` is the current occurrence's date and optional local time.
+- `recurrence` is a structured daily, weekly, monthly, or yearly rule with an interval and either a scheduled (`every`) or completion-relative (`every!`) basis.
+- `completion_history` records when each occurrence was completed and which due occurrence it represented.
+
+The recurrence field in the editor accepts forms such as `every day`, `every Friday`, `every 2 weeks`, `every month`, and `every! 3 days`. Completing a scheduled recurring TODO advances it to the first occurrence after the completion time, skipping stale overdue occurrences. Completing an `every!` TODO calculates one interval from the completion date. Monthly and yearly rules retain their preferred calendar day across short months and leap years.
+
+## Todoist migration
+
+The one-way importer reads the API token from `~/.todoist`, imports all active tasks plus completed history since 2007, and retains sections, labels, priorities, due dates, and shared active or archived projects. Supported Todoist recurrence text is normalized into the schema above:
+
+```bash
+npm run import:todoist
+```
+
+The command refuses to replace an earlier Todoist import unless `--replace-todoist` is explicitly supplied. Refresh an existing import with:
+
+```bash
+npm run import:todoist -- --replace-todoist
+```
+
+Use `--active-only` to skip completed history, or `--completed-since YYYY-MM-DD` to choose a later archive boundary. The importer preserves local-only TODOs and locally recorded recurrence history, and it never copies the API token into the repository.
+
+TODO edits are saved manually. Each mutation updates the in-memory model and its IndexedDB recovery draft immediately; only `Ctrl+S` or **Save changes** writes `data/todos.json` through the GitHub/local save pipeline.
 
 ## Local testing
 

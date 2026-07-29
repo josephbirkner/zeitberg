@@ -12,7 +12,7 @@ export class AppState {
     constructor(config, isLocalMode) {
         this.config = { ...config };
         this.isLocalMode = isLocalMode;
-        /** @type {"week" | "search"} */
+        /** @type {"week" | "todos" | "search"} */
         this.activeTab = "week";
         this.weekStart = null;
         this.latestWeekStart = null;
@@ -74,10 +74,10 @@ export class AppState {
     /**
      * Sets the active UI tab identifier.
      * Provides a simple setter used by the views.
-     * @param {"week" | "search"} tab
+     * @param {"week" | "todos" | "search"} tab
      * @returns {void}
      */
     setActiveTab(tab) {
-        this.activeTab = tab === "search" ? "search" : "week";
+        this.activeTab = tab === "search" || tab === "todos" ? tab : "week";
     }
 }

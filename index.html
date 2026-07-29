@@ -23,6 +23,9 @@
           <button id="menuWeekBtn" class="app-menu-item" type="button" role="menuitem">
             <span>Week</span><span class="menu-shortcut">Ctrl+W</span>
           </button>
+          <button id="menuTodoBtn" class="app-menu-item" type="button" role="menuitem">
+            <span>TODOs</span><span class="menu-shortcut">Ctrl+T</span>
+          </button>
           <button id="menuSearchBtn" class="app-menu-item" type="button" role="menuitem">
             <span>Search</span><span class="menu-shortcut">Ctrl+K</span>
           </button>
@@ -52,13 +55,13 @@
         </button>
 
         <div class="topbar-spacer"></div>
-        <div id="editorBadge" class="editor-badge" aria-live="polite"></div>
 
         <label class="zoom zoom-compact" title="Timeline zoom">
           <span>Zoom</span>
           <input id="zoomInput" type="range" min="1" max="4" step="0.25" value="1" />
         </label>
       </div>
+      <div id="editorBadge" class="editor-badge" aria-live="polite" hidden></div>
     </header>
 
     <main>
@@ -117,6 +120,35 @@
       <section id="appSection" class="stack" hidden>
         <section id="weekViewSection" class="week-view" hidden>
           <div id="weekScroll" class="week-scroll" tabindex="0" aria-label="Week timeline"></div>
+        </section>
+
+        <section id="todoView" class="todo-view" hidden>
+          <div class="todo-toolbar">
+            <div class="todo-toolbar-actions">
+              <button id="todoAddBtn" class="btn" type="button" title="A">Add TODO</button>
+              <button id="todoSaveBtn" class="btn btn-secondary" type="button" title="Ctrl+S">Saved</button>
+            </div>
+            <label class="todo-toolbar-field todo-search-field">
+              <span>Search</span>
+              <input id="todoSearch" type="search" placeholder="Search TODOs…" autocomplete="off" />
+            </label>
+            <label class="todo-toolbar-field">
+              <span>View</span>
+              <select id="todoFilter">
+                <option value="open">Open</option>
+                <option value="today">Today + overdue</option>
+                <option value="upcoming">Upcoming</option>
+                <option value="completed">Completed</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+            <label class="todo-toolbar-field">
+              <span>Project</span>
+              <select id="todoProjectFilter"></select>
+            </label>
+            <div id="todoStats" class="todo-stats muted" aria-live="polite"></div>
+          </div>
+          <div id="todoList" class="todo-list" role="listbox" tabindex="0" aria-label="TODOs"></div>
         </section>
 
         <div id="searchView" class="stack" hidden>
@@ -207,6 +239,65 @@
         <div class="row dialog-actions">
           <button id="entrySaveBtn" class="btn" type="submit">Save</button>
           <button id="entryCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="todoDialog" class="dialog">
+      <form id="todoForm" method="dialog" class="dialog-card">
+        <div class="dialog-head">
+          <div id="todoDialogTitle" class="dialog-title">Edit TODO</div>
+          <button id="todoCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">✕</button>
+        </div>
+
+        <div id="todoDialogMeta" class="dialog-meta muted"></div>
+
+        <div class="grid dialog-grid todo-dialog-grid">
+          <label class="col-span-2">
+            <span>Title</span>
+            <input id="todoContent" type="text" autocomplete="off" required />
+          </label>
+          <label class="col-span-2">
+            <span>Description</span>
+            <textarea id="todoDescription" rows="4"></textarea>
+          </label>
+          <label>
+            <span>Project</span>
+            <select id="todoProject"></select>
+          </label>
+          <label>
+            <span>Section</span>
+            <input id="todoSection" type="text" autocomplete="off" />
+          </label>
+          <label>
+            <span>Due date</span>
+            <input id="todoDueDate" type="date" />
+          </label>
+          <label>
+            <span>Due time</span>
+            <input id="todoDueTime" type="time" />
+          </label>
+          <label class="col-span-2">
+            <span>Recurrence</span>
+            <input id="todoRecurrence" type="text" placeholder="e.g. every Friday or every! 2 weeks" autocomplete="off" />
+          </label>
+          <label>
+            <span>Priority</span>
+            <select id="todoPriority">
+              <option value="1">Normal</option>
+              <option value="2">Medium</option>
+              <option value="3">High</option>
+              <option value="4">Urgent</option>
+            </select>
+          </label>
+          <label>
+            <span>Labels (comma-separated)</span>
+            <input id="todoLabels" type="text" autocomplete="off" />
+          </label>
+        </div>
+
+        <div class="row dialog-actions">
+          <button class="btn" type="submit">Ok</button>
+          <button id="todoCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
         </div>
       </form>
     </dialog>

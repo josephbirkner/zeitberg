@@ -2,8 +2,9 @@ import { AppState } from "./appstate.js";
 import { ChunkCache, DraftJournal } from "./cache.js";
 import { ConfigService, DEFAULT_CONFIG } from "./config.js";
 import { GitHubDataSource, LocalDataSource } from "./datasource.js";
-import { EntryStore } from "./store.js";
+import { EntryStore, TodoStore } from "./store.js";
 import { SearchView } from "./search.view.js";
+import { TodoView } from "./todo.view.js";
 import { WeekView } from "./week.view.js";
 import {
     chunkKey,
@@ -15,7 +16,7 @@ import {
     TimeContext,
     utcNowIso,
 } from "./utils.js";
-import { Manifest, ProjectList, WeekRequirements } from "./model.js";
+import { Manifest, ProjectList, TodoList, WeekRequirements } from "./model.js";
 
 /**
  * @typedef {Object} ProjectDialogOptions
@@ -300,6 +301,7 @@ class App {
         this.state.setToken(this.token);
         this.timeContext = new TimeContext(this.config.timezone);
         this.store = new EntryStore(this.timeContext);
+        this.todoStore = new TodoStore(this.store);
         this.chunkCache = new ChunkCache();
         this.draftJournal = new DraftJournal();
 
@@ -317,6 +319,7 @@ class App {
         this.menuBtn = getRequiredElement("menuBtn", HTMLButtonElement);
         this.appMenuPanelEl = getRequiredElement("appMenuPanel", HTMLElement);
         this.menuWeekBtn = getRequiredElement("menuWeekBtn", HTMLButtonElement);
+        this.menuTodoBtn = getRequiredElement("menuTodoBtn", HTMLButtonElement);
         this.menuSearchBtn = getRequiredElement("menuSearchBtn", HTMLButtonElement);
         this.weekControlsEl = getRequiredElement("weekControls", HTMLElement);
         this.projectsBtn = getRequiredElement("projectsBtn", HTMLButtonElement);
@@ -378,6 +381,30 @@ class App {
         this.sortSelect = getRequiredElement("sortSelect", HTMLSelectElement);
         this.statsEl = getRequiredElement("stats", HTMLElement);
         this.entriesTbody = getRequiredElement("entriesTbody", HTMLTableSectionElement);
+
+        this.todoViewEl = getRequiredElement("todoView", HTMLElement);
+        this.todoListEl = getRequiredElement("todoList", HTMLElement);
+        this.todoAddBtn = getRequiredElement("todoAddBtn", HTMLButtonElement);
+        this.todoSaveBtn = getRequiredElement("todoSaveBtn", HTMLButtonElement);
+        this.todoSearchInput = getRequiredElement("todoSearch", HTMLInputElement);
+        this.todoFilterSelect = getRequiredElement("todoFilter", HTMLSelectElement);
+        this.todoProjectFilterSelect = getRequiredElement("todoProjectFilter", HTMLSelectElement);
+        this.todoStatsEl = getRequiredElement("todoStats", HTMLElement);
+        this.todoDialog = getRequiredElement("todoDialog", HTMLDialogElement);
+        this.todoForm = getRequiredElement("todoForm", HTMLFormElement);
+        this.todoDialogTitleEl = getRequiredElement("todoDialogTitle", HTMLElement);
+        this.todoCloseBtn = getRequiredElement("todoCloseBtn", HTMLButtonElement);
+        this.todoCancelBtn = getRequiredElement("todoCancelBtn", HTMLButtonElement);
+        this.todoContentInput = getRequiredElement("todoContent", HTMLInputElement);
+        this.todoDescriptionInput = getRequiredElement("todoDescription", HTMLTextAreaElement);
+        this.todoProjectSelect = getRequiredElement("todoProject", HTMLSelectElement);
+        this.todoSectionInput = getRequiredElement("todoSection", HTMLInputElement);
+        this.todoDueDateInput = getRequiredElement("todoDueDate", HTMLInputElement);
+        this.todoDueTimeInput = getRequiredElement("todoDueTime", HTMLInputElement);
+        this.todoRecurrenceInput = getRequiredElement("todoRecurrence", HTMLInputElement);
+        this.todoPrioritySelect = getRequiredElement("todoPriority", HTMLSelectElement);
+        this.todoLabelsInput = getRequiredElement("todoLabels", HTMLInputElement);
+        this.todoDialogMetaEl = getRequiredElement("todoDialogMeta", HTMLElement);
 
         this.ownerInput = getRequiredElement("ownerInput", HTMLInputElement);
         this.repoInput = getRequiredElement("repoInput", HTMLInputElement);
@@ -450,6 +477,44 @@ class App {
             },
         });
 
+        this.todoView = new TodoView({
+            store: this.todoStore,
+            projectStore: this.store,
+            dataSource: this.dataSource,
+            draftJournal: this.draftJournal,
+            draftNamespace: this.buildDraftNamespace(),
+            timeContext: this.timeContext,
+            elements: {
+                todoView: this.todoViewEl,
+                todoList: this.todoListEl,
+                todoAddBtn: this.todoAddBtn,
+                todoSaveBtn: this.todoSaveBtn,
+                todoSearch: this.todoSearchInput,
+                todoFilter: this.todoFilterSelect,
+                todoProjectFilter: this.todoProjectFilterSelect,
+                todoStats: this.todoStatsEl,
+                todoDialog: this.todoDialog,
+                todoForm: this.todoForm,
+                todoDialogTitle: this.todoDialogTitleEl,
+                todoCloseBtn: this.todoCloseBtn,
+                todoCancelBtn: this.todoCancelBtn,
+                todoContent: this.todoContentInput,
+                todoDescription: this.todoDescriptionInput,
+                todoProject: this.todoProjectSelect,
+                todoSection: this.todoSectionInput,
+                todoDueDate: this.todoDueDateInput,
+                todoDueTime: this.todoDueTimeInput,
+                todoRecurrence: this.todoRecurrenceInput,
+                todoPriority: this.todoPrioritySelect,
+                todoLabels: this.todoLabelsInput,
+                todoDialogMeta: this.todoDialogMetaEl,
+                editorBadge: this.editorBadgeEl,
+            },
+            onToast: (message, timeout, tone) => this.toast(message, timeout, tone),
+            onBusy: (busy) => this.setBusy(busy),
+            onSaved: () => this.refreshRepoLabel(),
+        });
+
         this.projectDialog = new ProjectDialog({
             store: this.store,
             dataSource: this.dataSource,
@@ -508,6 +573,10 @@ class App {
         });
         this.menuWeekBtn.addEventListener("click", () => {
             this.setTab("week");
+            this.closeMenu();
+        });
+        this.menuTodoBtn.addEventListener("click", () => {
+            this.setTab("todos");
             this.closeMenu();
         });
         this.menuSearchBtn.addEventListener("click", () => {
@@ -573,7 +642,12 @@ class App {
         this.menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
         this.menuBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
         if (open) {
-            const activeItem = this.state.activeTab === "search" ? this.menuSearchBtn : this.menuWeekBtn;
+            const activeItem =
+                this.state.activeTab === "search"
+                    ? this.menuSearchBtn
+                    : this.state.activeTab === "todos"
+                      ? this.menuTodoBtn
+                      : this.menuWeekBtn;
             queueMicrotask(() => activeItem.focus());
         }
     }
@@ -733,6 +807,12 @@ class App {
                 return;
             }
 
+            if (keyLower === "t") {
+                ev.preventDefault();
+                this.setTab("todos");
+                return;
+            }
+
             if (keyLower === "g" || keyLower === "w") {
                 ev.preventDefault();
                 this.setTab("week");
@@ -750,6 +830,7 @@ class App {
             }
         }
 
+        if (this.state.activeTab === "todos" && this.todoView.handleKeydown(ev)) return;
         this.weekView.handleKeydown(ev);
     }
 
@@ -792,6 +873,7 @@ class App {
         this.configService.saveConfig(this.config);
         this.configService.saveToken(tok, remember);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
+        this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.tokenInput.value = "";
 
         try {
@@ -812,6 +894,7 @@ class App {
         this.config = { ...DEFAULT_CONFIG };
         this.state.setConfig(this.config);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
+        this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.ownerInput.value = this.config.owner;
         this.repoInput.value = this.config.repo;
         this.refInput.value = this.config.ref;
@@ -882,6 +965,7 @@ class App {
         this.projectsBtn.disabled = isBusy;
         this.menuBtn.disabled = isBusy;
         this.menuWeekBtn.disabled = isBusy;
+        this.menuTodoBtn.disabled = isBusy;
         this.menuSearchBtn.disabled = isBusy;
         this.prevWeekBtn.disabled = isBusy;
         this.nextWeekBtn.disabled = isBusy;
@@ -903,6 +987,7 @@ class App {
         this.weekReqOkBtn.disabled = isBusy;
         this.weekReqHours.disabled = isBusy;
         this.weekReqComment.disabled = isBusy;
+        this.todoView.setBusy(isBusy);
     }
 
     /**
@@ -921,24 +1006,28 @@ class App {
     }
 
     /**
-     * Switches between Week and Search tabs.
+     * Switches between Week, TODO, and Search tabs.
      * Keeps the main UI flow and data loading coordinated.
-     * @param {"week" | "search"} tab
+     * @param {"week" | "todos" | "search"} tab
      * @returns {void}
      */
     setTab(tab) {
-        const next = tab === "search" ? "search" : "week";
+        const next = tab === "search" || tab === "todos" ? tab : "week";
         this.state.setActiveTab(next);
-        if (next === "week") {
-            this.menuWeekBtn.setAttribute("aria-current", "page");
-            this.menuSearchBtn.removeAttribute("aria-current");
-        } else {
-            this.menuSearchBtn.setAttribute("aria-current", "page");
-            this.menuWeekBtn.removeAttribute("aria-current");
+        for (const [button, isCurrent] of [
+            [this.menuWeekBtn, next === "week"],
+            [this.menuTodoBtn, next === "todos"],
+            [this.menuSearchBtn, next === "search"],
+        ]) {
+            if (!(button instanceof HTMLButtonElement)) continue;
+            if (isCurrent) button.setAttribute("aria-current", "page");
+            else button.removeAttribute("aria-current");
         }
         this.weekView.setActive(next === "week");
+        this.todoView.setActive(next === "todos");
         this.searchView.setActive(next === "search");
         setVisible(this.weekControlsEl, next === "week" && !this.topbarEl.hidden);
+        setVisible(this.editorBadgeEl, next !== "search" && !this.topbarEl.hidden);
     }
 
     /**
@@ -973,6 +1062,7 @@ class App {
      */
     handleProjectsSaved(projectList) {
         this.weekView.setProjects(projectList);
+        this.todoView.setProjects();
         this.markSearchDirty();
     }
 
@@ -993,6 +1083,7 @@ class App {
         if (typeof manifest.total_entries === "number" && Number.isFinite(manifest.total_entries)) {
             totals.push(`${manifest.total_entries} entries`);
         }
+        totals.push(`${this.todoStore.getTodos().length} TODOs`);
         if (manifest.generated_at) totals.push(`manifest @ ${manifest.generated_at}`);
 
         if (this.isLocalMode) {
@@ -1054,6 +1145,19 @@ class App {
             this.weekView.setWeekRequirements(defaults);
             this.toast(`Week requirements not loaded: ${safeText(err)}`, 5000);
         }
+    }
+
+    /**
+     * Loads data/todos.json, establishes its clean editor baseline, and restores any durable unsaved browser draft.
+     * Project references are resolved later by TodoView through the already loaded shared ProjectList.
+     * @returns {Promise<void>}
+     */
+    async fetchTodos() {
+        this.setProgress(0, 1, this.isLocalMode ? "Loading TODOs (local)…" : "Loading TODOs…");
+        const raw = await this.dataSource.fetchTodos();
+        this.todoStore.setTodoList(TodoList.fromRaw(raw || {}));
+        await this.todoView.initializeLoadedData();
+        this.refreshRepoLabel();
     }
 
     /**
@@ -1143,6 +1247,8 @@ class App {
         this.store.recomputeNextEntryId();
         const seedResult = this.store.mergeProjectsFromEntries();
         if (seedResult.added > 0) {
+            if (seedResult.projectList) this.weekView.setProjects(seedResult.projectList);
+            this.todoView.setProjects();
             this.toast(`Seeded ${seedResult.added} project(s) from entries. Open Projects to review and save.`, 5000, "success");
         }
 
@@ -1165,7 +1271,7 @@ class App {
     }
 
     /**
-     * Reloads manifest, projects, and all chunk data.
+     * Reloads manifest, shared projects, TODOs, requirements, and all time-entry chunks.
      * Keeps the main UI flow and data loading coordinated.
      * @returns {Promise<boolean>}
      */
@@ -1176,11 +1282,15 @@ class App {
         this.entriesTbody.innerHTML = "";
         this.statsEl.textContent = "";
         await this.weekView.flushDraftWrites();
+        await this.todoView.flushDraftWrites();
         this.weekView.reset();
+        this.todoStore.clear();
+        this.todoView.reset();
         try {
             await this.fetchManifest();
             await this.fetchProjects();
             await this.fetchWeekRequirements();
+            await this.fetchTodos();
             await this.loadAllChunks();
             this.showApplicationScreen();
             return true;
@@ -1204,6 +1314,8 @@ class App {
         this.dataSource = new GitHubDataSource(this.config, token);
         this.weekView.setDataSource(this.dataSource);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
+        this.todoView.setDataSource(this.dataSource);
+        this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.projectDialog.setDataSource(this.dataSource);
         this.setAuthStatus("Connecting…");
         this.showLoadingScreen("Connecting to GitHub…");
@@ -1239,8 +1351,10 @@ class App {
         this.state.setWeekStart(null);
         this.state.setLatestWeekStart(null);
         this.store.clear();
+        this.todoStore.clear();
         this.chunkCache.clearMemory();
         this.weekView.reset();
+        this.todoView.reset();
         this.searchView.reset();
         this.setProgress(0, 1, "");
         this.setAuthStatus("Not logged in");

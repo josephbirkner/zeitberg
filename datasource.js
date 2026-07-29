@@ -94,6 +94,15 @@ export class DataSource {
     }
 
     /**
+     * Loads the TODO document used by the task-management view.
+     * Missing files are represented by an empty document so TODO management can be introduced without a repository migration gate.
+     * @returns {Promise<Object>}
+     */
+    async fetchTodos() {
+        throw new Error("Not implemented");
+    }
+
+    /**
      * Writes a set of files with a commit message, returning shas when available.
      * Used by the app to read or persist data.
      * @param {SaveFile[]} files
@@ -320,6 +329,27 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Loads data/todos.json through the authenticated GitHub contents API.
+     * A repository without the optional file starts with an empty TODO document and will create it on first save.
+     * @returns {Promise<Object>}
+     */
+    async fetchTodos() {
+        try {
+            const raw = await this.fetchRaw(this.buildContentsUrl("data/todos.json"));
+            return JSON.parse(raw);
+        } catch (err) {
+            const message = String(err || "");
+            if (message.includes("404")) {
+                return { generated_at: "", schema_version: 2, todos: [] };
+            }
+            if (err instanceof SyntaxError) {
+                throw new Error("Failed to parse todos.json");
+            }
+            throw new Error(`Failed to load todos.json: ${message}`);
+        }
+    }
+
+    /**
      * Commits a set of files to the repository.
      * Used by the app to read or persist data.
      * @param {SaveFile[]} files
@@ -500,6 +530,28 @@ export class LocalDataSource extends DataSource {
             return JSON.parse(raw);
         } catch {
             throw new Error("Failed to parse week-requirements.json");
+        }
+    }
+
+    /**
+     * Loads the local data/todos.json document without browser caching.
+     * A missing file behaves like an empty task list and is created through POST /save on first persistence.
+     * @returns {Promise<Object>}
+     */
+    async fetchTodos() {
+        const resp = await fetch(this.buildLocalUrl("data/todos.json"), { cache: "no-store" });
+        if (!resp.ok) {
+            if (resp.status === 404) {
+                return { generated_at: "", schema_version: 2, todos: [] };
+            }
+            throw new Error(`Local todos.json not found (${resp.status}).`);
+        }
+
+        const raw = await resp.text();
+        try {
+            return JSON.parse(raw);
+        } catch {
+            throw new Error("Failed to parse todos.json");
         }
     }
 

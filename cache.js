@@ -17,6 +17,17 @@
  * @property {number} updatedAt
  */
 
+/**
+ * @typedef {Object} DocumentDraftRecord
+ * @description Browser-persisted baseline and edited value for a small repository JSON document.
+ * @property {string} key
+ * @property {string} namespace
+ * @property {string} documentName
+ * @property {Object} baseValue
+ * @property {Object} value
+ * @property {number} updatedAt
+ */
+
 const CHUNK_CACHE = {
     dbName: "tt_viewer:chunk_cache:v1",
     dbVersion: 1,
@@ -25,7 +36,8 @@ const CHUNK_CACHE = {
 
 const DRAFT_JOURNAL = {
     dbName: "tt_viewer:draft_journal:v1",
-    dbVersion: 1,
+    dbVersion: 2,
+    documentStoreName: "document_drafts",
     namespaceIndex: "namespace",
     storeName: "week_drafts",
 };
@@ -291,6 +303,15 @@ export class DraftJournal {
                 if (store && !store.indexNames.contains(DRAFT_JOURNAL.namespaceIndex)) {
                     store.createIndex(DRAFT_JOURNAL.namespaceIndex, "namespace", { unique: false });
                 }
+                let documentStore;
+                if (db.objectStoreNames.contains(DRAFT_JOURNAL.documentStoreName)) {
+                    documentStore = req.transaction?.objectStore(DRAFT_JOURNAL.documentStoreName);
+                } else {
+                    documentStore = db.createObjectStore(DRAFT_JOURNAL.documentStoreName, { keyPath: "key" });
+                }
+                if (documentStore && !documentStore.indexNames.contains(DRAFT_JOURNAL.namespaceIndex)) {
+                    documentStore.createIndex(DRAFT_JOURNAL.namespaceIndex, "namespace", { unique: false });
+                }
             };
 
             req.onsuccess = () => resolve(req.result);
@@ -401,6 +422,103 @@ export class DraftJournal {
         try {
             const tx = db.transaction(DRAFT_JOURNAL.storeName, "readwrite");
             tx.objectStore(DRAFT_JOURNAL.storeName).delete(this.buildKey(scope, start));
+            await transactionDone(tx);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Builds an isolated key for a small editable document such as data/todos.json.
+     * @param {string} namespace
+     * @param {string} documentName
+     * @returns {string}
+     */
+    buildDocumentKey(namespace, documentName) {
+        return `${String(namespace || "").trim()}\u0000document\u0000${String(documentName || "").trim()}`;
+    }
+
+    /**
+     * Reads one durable document draft for the active local or GitHub namespace.
+     * Invalid records are ignored so application startup can fall back to repository data safely.
+     * @param {string} namespace
+     * @param {string} documentName
+     * @returns {Promise<DocumentDraftRecord | null>}
+     */
+    async getDocumentDraft(namespace, documentName) {
+        const scope = String(namespace || "").trim();
+        const name = String(documentName || "").trim();
+        if (!scope || !name) return null;
+        const db = await this.openDb();
+        if (!db) return null;
+
+        try {
+            const tx = db.transaction(DRAFT_JOURNAL.documentStoreName, "readonly");
+            const store = tx.objectStore(DRAFT_JOURNAL.documentStoreName);
+            const result = await requestToPromise(store.get(this.buildDocumentKey(scope, name)));
+            await transactionDone(tx);
+            if (!result || typeof result !== "object") return null;
+            if (!result.baseValue || typeof result.baseValue !== "object") return null;
+            if (!result.value || typeof result.value !== "object") return null;
+            return result;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Persists one edited JSON document together with the clean repository value it was based on.
+     * @param {string} namespace
+     * @param {string} documentName
+     * @param {{baseValue: Object, value: Object, updatedAt: number}} draft
+     * @returns {Promise<boolean>}
+     */
+    async putDocumentDraft(namespace, documentName, draft) {
+        if (this.writesDisabled) return false;
+        const scope = String(namespace || "").trim();
+        const name = String(documentName || "").trim();
+        if (!scope || !name || !draft?.baseValue || !draft?.value) return false;
+        const db = await this.openDb();
+        if (!db) return false;
+
+        /** @type {DocumentDraftRecord} */
+        const record = {
+            key: this.buildDocumentKey(scope, name),
+            namespace: scope,
+            documentName: name,
+            baseValue: draft.baseValue,
+            value: draft.value,
+            updatedAt: Number(draft.updatedAt || Date.now()),
+        };
+
+        try {
+            const tx = db.transaction(DRAFT_JOURNAL.documentStoreName, "readwrite");
+            tx.objectStore(DRAFT_JOURNAL.documentStoreName).put(record);
+            await transactionDone(tx);
+            return true;
+        } catch (err) {
+            if (isQuotaError(err)) this.writesDisabled = true;
+            return false;
+        }
+    }
+
+    /**
+     * Removes a document draft after a successful save or an undo back to the clean snapshot.
+     * @param {string} namespace
+     * @param {string} documentName
+     * @returns {Promise<boolean>}
+     */
+    async deleteDocumentDraft(namespace, documentName) {
+        const scope = String(namespace || "").trim();
+        const name = String(documentName || "").trim();
+        if (!scope || !name) return false;
+        const db = await this.openDb();
+        if (!db) return false;
+
+        try {
+            const tx = db.transaction(DRAFT_JOURNAL.documentStoreName, "readwrite");
+            tx.objectStore(DRAFT_JOURNAL.documentStoreName).delete(this.buildDocumentKey(scope, name));
             await transactionDone(tx);
             return true;
         } catch {
