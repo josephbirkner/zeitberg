@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Recurrence, TodoList } from "../docs/model.js";
+import { ProjectList, Recurrence, TodoList } from "../docs/model.js";
 
 const API_ROOT = "https://api.todoist.com/api/v1";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -104,32 +104,6 @@ async function readJsonOrDefault(path, fallback) {
         if (error && typeof error === "object" && error.code === "ENOENT") return fallback;
         throw error;
     }
-}
-
-/**
- * Recursively sorts object keys so generated files match the deterministic browser serializer.
- * Array order is retained because it carries project and task ordering semantics.
- * @param {unknown} value
- * @returns {unknown}
- */
-function sortJsonValue(value) {
-    if (Array.isArray(value)) return value.map((item) => sortJsonValue(item));
-    if (!value || typeof value !== "object") return value;
-    const source = /** @type {Record<string, unknown>} */ (value);
-    const result = {};
-    for (const key of Object.keys(source).sort()) {
-        result[key] = sortJsonValue(source[key]);
-    }
-    return result;
-}
-
-/**
- * Serializes repository data with stable key ordering and the trailing newline used elsewhere in the project.
- * @param {Object} value
- * @returns {string}
- */
-function stringifyJson(value) {
-    return `${JSON.stringify(sortJsonValue(value), null, 2)}\n`;
 }
 
 /**
@@ -292,14 +266,14 @@ function mapDue(due) {
 /**
  * Maps an active task or one completed-history record into the repository's provider-neutral TODO schema.
  * Historical records receive occurrence-specific local IDs, preventing collisions with reopened or recurring active tasks.
- * Project references use canonical shared names; Inbox deliberately maps to no project.
+ * Project references use canonical stable keys; Inbox deliberately maps to no project.
  * @param {Object} task
- * @param {Map<string, string | null>} projectNameById
- * @param {Map<string, string>} sectionNameById
+ * @param {Map<string, {projectKey: string | null, sectionKey: string | null}>} projectAssignmentById
+ * @param {Map<string, {projectKey: string | null, sectionKey: string | null}>} sectionAssignmentById
  * @param {{historical?: boolean}} [options]
  * @returns {Object | null}
  */
-export function mapTask(task, projectNameById, sectionNameById, options = {}) {
+export function mapTask(task, projectAssignmentById, sectionAssignmentById, options = {}) {
     const sourceId = String(task?.id || "").trim();
     const content = typeof task?.content === "string" ? task.content.trim() : "";
     if (!sourceId || !content || task?.is_deleted === true) return null;
@@ -310,6 +284,17 @@ export function mapTask(task, projectNameById, sectionNameById, options = {}) {
     const parentId = task?.parent_id == null ? null : String(task.parent_id);
     const priority = Number(task?.priority);
     const order = Number(task?.child_order);
+    if (projectId && !projectAssignmentById.has(projectId)) {
+        throw new Error(`Todoist task ${sourceId} references unknown project ${projectId}.`);
+    }
+    if (sectionId && !sectionAssignmentById.has(sectionId)) {
+        throw new Error(`Todoist task ${sourceId} references unknown section ${sectionId}.`);
+    }
+    const assignment = sectionId
+        ? sectionAssignmentById.get(sectionId)
+        : projectId
+          ? projectAssignmentById.get(projectId)
+          : null;
     const localId = options.historical ? `todoist-completed:${sourceId}:${completedAt}` : `todoist:${sourceId}`;
     let localParentId = null;
     if (parentId) {
@@ -321,8 +306,8 @@ export function mapTask(task, projectNameById, sectionNameById, options = {}) {
         id: localId,
         content,
         description: typeof task?.description === "string" ? task.description : "",
-        project: projectId ? projectNameById.get(projectId) ?? null : null,
-        section: sectionId ? sectionNameById.get(sectionId) ?? null : null,
+        project_key: assignment?.projectKey || null,
+        section_key: assignment?.sectionKey || null,
         parent_id: localParentId,
         labels: Array.isArray(task?.labels) ? task.labels.filter((label) => typeof label === "string") : [],
         priority: Number.isInteger(priority) ? Math.max(1, Math.min(4, priority)) : 1,
@@ -393,9 +378,9 @@ function compareImportedTodos(left, right) {
         const completedOrder = String(right.completed_at || "").localeCompare(String(left.completed_at || ""));
         if (completedOrder !== 0) return completedOrder;
     }
-    const projectOrder = String(left?.project || "").localeCompare(String(right?.project || ""));
+    const projectOrder = String(left?.project_key || "").localeCompare(String(right?.project_key || ""));
     if (projectOrder !== 0) return projectOrder;
-    const sectionOrder = String(left?.section || "").localeCompare(String(right?.section || ""));
+    const sectionOrder = String(left?.section_key || "").localeCompare(String(right?.section_key || ""));
     if (sectionOrder !== 0) return sectionOrder;
     return (
         Number(left?.order || 0) - Number(right?.order || 0) ||
@@ -404,7 +389,153 @@ function compareImportedTodos(left, right) {
 }
 
 /**
- * Performs the one-way import, merging Todoist projects into the existing shared project inventory.
+ * Adds one provider identity to a mutable project or section payload without duplicating it.
+ * @param {{external_refs?: import("../docs/model.js").ExternalReferenceRaw[]}} target
+ * @param {string} provider
+ * @param {string} id
+ * @returns {void}
+ */
+function addExternalReference(target, provider, id) {
+    const references = Array.isArray(target.external_refs) ? target.external_refs : [];
+    if (!references.some((reference) => reference.provider === provider && String(reference.id) === id)) {
+        references.push({ provider, id });
+    }
+    target.external_refs = references;
+}
+
+/**
+ * Reconciles Todoist's project/section inventory with the canonical shared taxonomy.
+ * Existing external-reference bindings win, exact display-name matches acquire a binding, and only genuinely unknown definitions create new keys.
+ * @param {ProjectList} currentProjectList
+ * @param {Object[]} todoistProjects
+ * @param {Object[]} todoistSections
+ * @returns {{projectList: ProjectList, projectAssignmentById: Map<string, {projectKey: string | null, sectionKey: string | null}>, sectionAssignmentById: Map<string, {projectKey: string | null, sectionKey: string | null}>, addedProjects: number, addedSections: number}}
+ */
+export function mergeTodoistTaxonomy(currentProjectList, todoistProjects, todoistSections) {
+    const raw = currentProjectList.toObject();
+    const projects = Array.isArray(raw.projects) ? raw.projects : [];
+    const projectsByKey = new Map(projects.map((project) => [project.key, project]));
+    const projectsByName = new Map(projects.map((project) => [project.name.toLowerCase(), project]));
+    const usedProjectKeys = new Set(projects.map((project) => project.key));
+    const externalAssignments = new Map();
+    const projectAssignmentById = new Map();
+    const sectionAssignmentById = new Map();
+    for (const project of projects) {
+        for (const reference of project.external_refs || []) {
+            const assignment = {
+                projectKey: project.key,
+                sectionKey: null,
+            };
+            externalAssignments.set(`${reference.provider}\u0000${reference.id}`, assignment);
+            if (reference.provider === "todoist") projectAssignmentById.set(String(reference.id), assignment);
+        }
+        for (const candidate of project.sections || []) {
+            for (const reference of candidate.external_refs || []) {
+                const assignment = {
+                    projectKey: project.key,
+                    sectionKey: candidate.key,
+                };
+                externalAssignments.set(`${reference.provider}\u0000${reference.id}`, assignment);
+                if (reference.provider === "todoist") sectionAssignmentById.set(String(reference.id), assignment);
+            }
+        }
+    }
+
+    let addedProjects = 0;
+    for (const remoteProject of todoistProjects) {
+        const id = String(remoteProject?.id || "").trim();
+        const name = typeof remoteProject?.name === "string" ? remoteProject.name.trim() : "";
+        if (!id || !name) continue;
+        if (remoteProject?.inbox_project === true) {
+            projectAssignmentById.set(id, { projectKey: null, sectionKey: null });
+            continue;
+        }
+
+        const bound = externalAssignments.get(`todoist\u0000${id}`);
+        if (bound) {
+            if (bound.sectionKey) throw new Error(`Todoist project ${id} is bound to a section instead of a project.`);
+            projectAssignmentById.set(id, { ...bound });
+            continue;
+        }
+
+        let project = projectsByName.get(name.toLowerCase());
+        if (!project) {
+            const key = ProjectList.reserveKey(name, usedProjectKeys);
+            project = {
+                archived: remoteProject?.is_archived === true,
+                billable: false,
+                color: mapProjectColor(remoteProject?.color),
+                external_refs: [],
+                key,
+                name,
+                sections: [],
+            };
+            projects.push(project);
+            projectsByKey.set(key, project);
+            projectsByName.set(name.toLowerCase(), project);
+            addedProjects += 1;
+        }
+        addExternalReference(project, "todoist", id);
+        const assignment = { projectKey: project.key, sectionKey: null };
+        externalAssignments.set(`todoist\u0000${id}`, assignment);
+        projectAssignmentById.set(id, assignment);
+    }
+
+    let addedSections = 0;
+    for (const remoteSection of todoistSections) {
+        const id = String(remoteSection?.id || "").trim();
+        const name = typeof remoteSection?.name === "string" ? remoteSection.name.trim() : "";
+        const remoteProjectId = String(remoteSection?.project_id || "").trim();
+        if (!id || !name || !remoteProjectId) continue;
+        const parentAssignment = projectAssignmentById.get(remoteProjectId);
+        if (!parentAssignment) throw new Error(`Todoist section ${id} references unknown project ${remoteProjectId}.`);
+        if (!parentAssignment.projectKey) {
+            sectionAssignmentById.set(id, { projectKey: null, sectionKey: null });
+            continue;
+        }
+
+        const bound = externalAssignments.get(`todoist\u0000${id}`);
+        if (bound) {
+            if (bound.projectKey !== parentAssignment.projectKey || !bound.sectionKey) {
+                throw new Error(`Todoist section ${id} is bound outside its canonical parent project.`);
+            }
+            sectionAssignmentById.set(id, { ...bound });
+            continue;
+        }
+
+        const project = projectsByKey.get(parentAssignment.projectKey);
+        if (!project) throw new Error(`Canonical project ${parentAssignment.projectKey} is missing.`);
+        project.sections = Array.isArray(project.sections) ? project.sections : [];
+        let localSection = project.sections.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase());
+        if (!localSection) {
+            const usedSectionKeys = new Set(project.sections.map((candidate) => candidate.key));
+            localSection = {
+                archived: remoteSection?.is_archived === true,
+                billable: null,
+                color: null,
+                external_refs: [],
+                key: ProjectList.reserveKey(name, usedSectionKeys),
+                name,
+            };
+            project.sections.push(localSection);
+            addedSections += 1;
+        }
+        addExternalReference(localSection, "todoist", id);
+        const assignment = { projectKey: project.key, sectionKey: localSection.key };
+        externalAssignments.set(`todoist\u0000${id}`, assignment);
+        sectionAssignmentById.set(id, assignment);
+    }
+
+    const projectList = ProjectList.fromRaw({
+        ...raw,
+        projects,
+        schema_version: 2,
+    });
+    return { projectList, projectAssignmentById, sectionAssignmentById, addedProjects, addedSections };
+}
+
+/**
+ * Performs the one-way import, reconciling Todoist projects/sections with the existing shared taxonomy.
  * Existing locally authored TODOs and local recurring-completion history are retained; replacing an earlier import requires an explicit flag.
  * @param {ImportOptions} options
  * @returns {Promise<void>}
@@ -431,9 +562,9 @@ async function run(options) {
 
     const projectsPath = join(REPO_ROOT, "data", "projects.json");
     const todosPath = join(REPO_ROOT, "data", "todos.json");
-    const projectsFile = await readJsonOrDefault(projectsPath, { projects: [] });
-    const existingTodosFile = await readJsonOrDefault(todosPath, { todos: [] });
-    const existingProjects = Array.isArray(projectsFile.projects) ? projectsFile.projects : [];
+    const projectsFile = await readJsonOrDefault(projectsPath, { generated_at: "", projects: [], schema_version: 2 });
+    const existingTodosFile = await readJsonOrDefault(todosPath, { generated_at: "", schema_version: 3, todos: [] });
+    const currentProjectList = ProjectList.fromRaw(projectsFile);
     const existingTodos = TodoList.fromRaw(existingTodosFile).snapshotRaw();
     const priorImported = existingTodos.filter((todo) => todo?.source?.provider === "todoist");
     if (priorImported.length && !options.replaceTodoist) {
@@ -442,68 +573,31 @@ async function run(options) {
         );
     }
 
-    const projectNameByLower = new Map();
-    for (const project of existingProjects) {
-        const name = typeof project?.name === "string" ? project.name.trim() : "";
-        if (name) projectNameByLower.set(name.toLowerCase(), name);
-    }
-
-    const mergedProjects = existingProjects.slice();
-    const projectNameById = new Map();
-    let addedProjects = 0;
-    for (const project of todoistProjects) {
-        const id = String(project?.id || "");
-        const name = typeof project?.name === "string" ? project.name.trim() : "";
-        if (!id || !name) continue;
-        if (project?.inbox_project === true) {
-            projectNameById.set(id, null);
-            continue;
-        }
-        let canonicalName = projectNameByLower.get(name.toLowerCase()) || "";
-        if (!canonicalName) {
-            canonicalName = name;
-            mergedProjects.push({
-                name: canonicalName,
-                color: mapProjectColor(project?.color),
-                billable: false,
-                archived: project?.is_archived === true,
-            });
-            projectNameByLower.set(canonicalName.toLowerCase(), canonicalName);
-            addedProjects += 1;
-        }
-        projectNameById.set(id, canonicalName);
-    }
-
-    const sectionNameById = new Map();
-    for (const section of sections) {
-        const id = String(section?.id || "");
-        const name = typeof section?.name === "string" ? section.name.trim() : "";
-        if (id && name) sectionNameById.set(id, name);
-    }
+    const taxonomy = mergeTodoistTaxonomy(currentProjectList, todoistProjects, sections);
 
     const importedActive = preserveLocalCompletionHistory(
         activeTasks
-            .map((task) => mapTask(task, projectNameById, sectionNameById))
+            .map((task) => mapTask(task, taxonomy.projectAssignmentById, taxonomy.sectionAssignmentById))
             .filter(Boolean),
         priorImported,
     );
     const historicalById = new Map();
     for (const task of completedTasks) {
-        const mapped = mapTask(task, projectNameById, sectionNameById, { historical: true });
+        const mapped = mapTask(task, taxonomy.projectAssignmentById, taxonomy.sectionAssignmentById, { historical: true });
         if (mapped) historicalById.set(mapped.id, mapped);
     }
     const importedCompleted = Array.from(historicalById.values());
     const importedTodos = [...importedActive, ...importedCompleted].sort(compareImportedTodos);
     const localTodos = existingTodos.filter((todo) => todo?.source?.provider !== "todoist");
     const generatedAt = new Date().toISOString();
-    const nextProjectsFile = {
-        generated_at: generatedAt,
-        schema_version: 1,
-        projects: mergedProjects.sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""))),
-    };
-    const nextTodosFile = {
+    const nextProjectsFile = ProjectList.fromRaw({
+        ...taxonomy.projectList.toObject(),
         generated_at: generatedAt,
         schema_version: 2,
+    });
+    const nextTodosFile = {
+        generated_at: generatedAt,
+        schema_version: 3,
         todos: [...localTodos, ...importedTodos],
     };
     const normalizedTodos = TodoList.fromRaw(nextTodosFile);
@@ -512,7 +606,7 @@ async function run(options) {
     }
 
     if (!options.dryRun) {
-        await writeFile(projectsPath, stringifyJson(nextProjectsFile), "utf8");
+        await writeFile(projectsPath, nextProjectsFile.toJson(), "utf8");
         await writeFile(todosPath, normalizedTodos.toJson(), "utf8");
     }
 
@@ -520,7 +614,8 @@ async function run(options) {
     process.stdout.write(
         `${mode} ${importedActive.length} active and ${importedCompleted.length} completed task(s), ` +
             `${activeProjects.length} active and ${archivedProjects.length} archived Todoist project(s), ` +
-            `${sections.length} section(s), and ${labels.length} label(s); added ${addedProjects} shared project(s).\n`,
+            `${sections.length} section(s), and ${labels.length} label(s); added ${taxonomy.addedProjects} shared project(s) ` +
+            `and ${taxonomy.addedSections} shared section(s).\n`,
     );
 }
 

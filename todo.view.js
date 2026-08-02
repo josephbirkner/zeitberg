@@ -20,8 +20,8 @@ const TODO_DOCUMENT_NAME = "todos";
  * @property {HTMLButtonElement} todoCancelBtn
  * @property {HTMLInputElement} todoContent
  * @property {HTMLTextAreaElement} todoDescription
- * @property {HTMLSelectElement} todoProject
- * @property {HTMLInputElement} todoSection
+ * @property {HTMLInputElement} todoAssignment
+ * @property {HTMLDataListElement} todoAssignmentList
  * @property {HTMLInputElement} todoDueDate
  * @property {HTMLInputElement} todoDueTime
  * @property {HTMLInputElement} todoRecurrence
@@ -151,8 +151,8 @@ export class TodoView {
         this.cancelBtn = options.elements.todoCancelBtn;
         this.contentInput = options.elements.todoContent;
         this.descriptionInput = options.elements.todoDescription;
-        this.projectSelect = options.elements.todoProject;
-        this.sectionInput = options.elements.todoSection;
+        this.assignmentInput = options.elements.todoAssignment;
+        this.assignmentListEl = options.elements.todoAssignmentList;
         this.dueDateInput = options.elements.todoDueDate;
         this.dueTimeInput = options.elements.todoDueTime;
         this.recurrenceInput = options.elements.todoRecurrence;
@@ -181,7 +181,7 @@ export class TodoView {
         this.draftWarningShown = false;
 
         this.bindEvents();
-        this.populateProjectControls();
+        this.populateProjectControls({ projectKey: null, sectionKey: null });
         this.updateSaveState();
     }
 
@@ -261,8 +261,7 @@ export class TodoView {
         this.cancelBtn.disabled = this.busy;
         this.contentInput.disabled = this.busy;
         this.descriptionInput.disabled = this.busy;
-        this.projectSelect.disabled = this.busy;
-        this.sectionInput.disabled = this.busy;
+        this.assignmentInput.disabled = this.busy;
         this.dueDateInput.disabled = this.busy;
         this.dueTimeInput.disabled = this.busy;
         this.recurrenceInput.disabled = this.busy;
@@ -286,6 +285,8 @@ export class TodoView {
         this.searchInput.value = "";
         this.filterSelect.value = "open";
         this.projectFilterSelect.value = "*";
+        this.assignmentInput.value = "";
+        this.assignmentListEl.innerHTML = "";
         this.listEl.innerHTML = "";
         this.statsEl.textContent = "";
         this.updateSaveState();
@@ -317,12 +318,16 @@ export class TodoView {
     }
 
     /**
-     * Rebuilds project filter and editor options from EntryStore's canonical ProjectList.
+     * Rebuilds the project filter and the editor's single searchable project/section list from the canonical taxonomy.
+     * Archived assignments stay available only when they are the value of the TODO currently being edited.
+     * @param {{projectKey: string | null, sectionKey: string | null} | undefined} [selectedAssignment]
      * @returns {void}
      */
-    populateProjectControls() {
+    populateProjectControls(selectedAssignment = undefined) {
         const previousFilter = this.projectFilterSelect.value || "*";
-        const previousEditor = this.projectSelect.value || "";
+        const previousLabel = this.assignmentInput.value;
+        const resolvedPrevious = this.projectStore.findAssignmentByLabel(previousLabel);
+        const selectedKeys = selectedAssignment === undefined ? resolvedPrevious : selectedAssignment;
         const projects = this.projectStore
             .getProjects()
             .slice()
@@ -331,7 +336,7 @@ export class TodoView {
         this.projectFilterSelect.innerHTML = "";
         this.projectFilterSelect.append(new Option("All projects", "*"), new Option("No project", ""));
         for (const project of projects) {
-            this.projectFilterSelect.append(new Option(project.archived ? `${project.name} (archived)` : project.name, project.name));
+            this.projectFilterSelect.append(new Option(project.archived ? `${project.name} (archived)` : project.name, project.key));
         }
         this.projectFilterSelect.value = Array.from(this.projectFilterSelect.options).some(
             (option) => option.value === previousFilter,
@@ -339,15 +344,21 @@ export class TodoView {
             ? previousFilter
             : "*";
 
-        this.projectSelect.innerHTML = "";
-        this.projectSelect.append(new Option("No project", ""));
-        for (const project of projects) {
-            if (project.archived && project.name !== previousEditor) continue;
-            this.projectSelect.append(new Option(project.archived ? `${project.name} (archived)` : project.name, project.name));
+        this.assignmentListEl.innerHTML = "";
+        for (const assignment of this.projectStore.getAssignmentOptions()) {
+            const isSelected =
+                selectedKeys !== null &&
+                assignment.projectKey === selectedKeys?.projectKey &&
+                assignment.sectionKey === selectedKeys?.sectionKey;
+            if (assignment.archived && !isSelected) continue;
+            const option = document.createElement("option");
+            option.value = assignment.label;
+            option.label = assignment.archived ? `${assignment.label} (archived)` : assignment.label;
+            this.assignmentListEl.append(option);
         }
-        this.projectSelect.value = Array.from(this.projectSelect.options).some((option) => option.value === previousEditor)
-            ? previousEditor
-            : "";
+        this.assignmentInput.value = selectedKeys
+            ? this.projectStore.getAssignmentLabel(selectedKeys.projectKey, selectedKeys.sectionKey)
+            : previousLabel;
     }
 
     /**
@@ -367,8 +378,9 @@ export class TodoView {
             if (filter === "today" && (completed || !due || due > today)) return false;
             if (filter === "upcoming" && (completed || !due || due <= today)) return false;
             if (filter === "completed" && !completed) return false;
-            if (projectFilter !== "*" && (todo.project || "") !== projectFilter) return false;
-            if (query && !todo.searchHaystack.includes(query)) return false;
+            if (projectFilter !== "*" && (todo.projectKey || "") !== projectFilter) return false;
+            const assignmentText = this.projectStore.getAssignmentLabel(todo.projectKey, todo.sectionKey).toLowerCase();
+            if (query && !`${todo.searchHaystack} ${assignmentText}`.includes(query)) return false;
             return true;
         });
 
@@ -381,9 +393,9 @@ export class TodoView {
             const rightDue = dueDateKey(right.due) || "9999-12-31";
             if (leftDue !== rightDue) return leftDue.localeCompare(rightDue);
             if (left.priority !== right.priority) return right.priority - left.priority;
-            const projectOrder = String(left.project || "").localeCompare(String(right.project || ""));
+            const projectOrder = String(left.projectKey || "").localeCompare(String(right.projectKey || ""));
             if (projectOrder !== 0) return projectOrder;
-            const sectionOrder = String(left.section || "").localeCompare(String(right.section || ""));
+            const sectionOrder = String(left.sectionKey || "").localeCompare(String(right.sectionKey || ""));
             if (sectionOrder !== 0) return sectionOrder;
             return left.order - right.order || left.content.localeCompare(right.content);
         });
@@ -432,8 +444,8 @@ export class TodoView {
         row.classList.toggle("is-selected", todo.id === this.selectedTodoId);
         row.classList.toggle("is-completed", todo.isCompleted());
         row.style.setProperty("--todo-depth", String(this.getTodoDepth(todo)));
-        const project = todo.project ? this.projectStore.getProjectByName(todo.project) : null;
-        if (project?.color) row.style.setProperty("--todo-project-color", project.color);
+        const assignment = this.projectStore.resolveAssignment(todo.projectKey, todo.sectionKey);
+        if (assignment?.color) row.style.setProperty("--todo-project-color", assignment.color);
 
         const check = document.createElement("button");
         check.type = "button";
@@ -457,16 +469,16 @@ export class TodoView {
 
         const meta = document.createElement("div");
         meta.className = "todo-meta";
-        if (todo.project) {
+        if (assignment?.project) {
             const projectBadge = document.createElement("span");
             projectBadge.className = "todo-project";
-            projectBadge.textContent = todo.project;
-            if (project?.color) projectBadge.style.setProperty("--todo-project-color", project.color);
+            projectBadge.textContent = assignment.project.name;
+            if (assignment.color) projectBadge.style.setProperty("--todo-project-color", assignment.color);
             meta.append(projectBadge);
         }
-        if (todo.section) {
+        if (assignment?.section) {
             const section = document.createElement("span");
-            section.textContent = todo.section;
+            section.textContent = assignment.section.name;
             meta.append(section);
         }
         const due = this.buildDueBadge(todo);
@@ -710,10 +722,11 @@ export class TodoView {
         this.dialogMetaEl.textContent = "New task";
         this.contentInput.value = "";
         this.descriptionInput.value = "";
-        this.populateProjectControls();
+        this.populateProjectControls({ projectKey: null, sectionKey: null });
         const filteredProject = this.projectFilterSelect.value;
-        this.projectSelect.value = filteredProject !== "*" ? filteredProject : "";
-        this.sectionInput.value = "";
+        this.assignmentInput.value = filteredProject !== "*"
+            ? this.projectStore.getAssignmentLabel(filteredProject, null)
+            : "";
         this.dueDateInput.value = "";
         this.dueTimeInput.value = "";
         this.recurrenceInput.value = "";
@@ -741,12 +754,7 @@ export class TodoView {
         this.dialogMetaEl.textContent = `${todo.isCompleted() ? "Completed" : "Open"}${hierarchy}${source}`;
         this.contentInput.value = todo.content;
         this.descriptionInput.value = todo.description;
-        this.populateProjectControls();
-        if (todo.project && !Array.from(this.projectSelect.options).some((option) => option.value === todo.project)) {
-            this.projectSelect.append(new Option(`${todo.project} (missing)`, todo.project));
-        }
-        this.projectSelect.value = todo.project || "";
-        this.sectionInput.value = todo.section || "";
+        this.populateProjectControls({ projectKey: todo.projectKey, sectionKey: todo.sectionKey });
         this.originalDue = todo.due ? cloneJson(todo.due) : null;
         this.originalDueFields = splitDue(todo.due);
         this.originalRecurrence = todo.recurrence ? todo.recurrence.toRaw() : null;
@@ -828,6 +836,10 @@ export class TodoView {
      * @returns {import("./store.js").TodoDetails}
      */
     collectDetails() {
+        const assignment = this.projectStore.findAssignmentByLabel(this.assignmentInput.value);
+        if (!assignment) {
+            throw new Error("Please select a project or section from the list (or clear the field for No project).");
+        }
         const labels = this.labelsInput.value
             .split(",")
             .map((label) => label.trim())
@@ -836,8 +848,8 @@ export class TodoView {
         return {
             content: this.contentInput.value.trim(),
             description: this.descriptionInput.value,
-            project: this.projectSelect.value || null,
-            section: this.sectionInput.value.trim() || null,
+            projectKey: assignment.projectKey,
+            sectionKey: assignment.sectionKey,
             labels,
             priority: Number(this.prioritySelect.value || 1),
             due,
@@ -858,7 +870,11 @@ export class TodoView {
             details = this.collectDetails();
         } catch (error) {
             this.onToast(error instanceof Error ? error.message : String(error));
-            this.recurrenceInput.focus();
+            if (!this.projectStore.findAssignmentByLabel(this.assignmentInput.value)) {
+                this.assignmentInput.focus();
+            } else {
+                this.recurrenceInput.focus();
+            }
             return;
         }
         if (!details.content) {

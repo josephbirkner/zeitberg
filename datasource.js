@@ -340,7 +340,7 @@ export class GitHubDataSource extends DataSource {
         } catch (err) {
             const message = String(err || "");
             if (message.includes("404")) {
-                return { generated_at: "", schema_version: 2, todos: [] };
+                return { generated_at: "", schema_version: 3, todos: [] };
             }
             if (err instanceof SyntaxError) {
                 throw new Error("Failed to parse todos.json");
@@ -542,7 +542,7 @@ export class LocalDataSource extends DataSource {
         const resp = await fetch(this.buildLocalUrl("data/todos.json"), { cache: "no-store" });
         if (!resp.ok) {
             if (resp.status === 404) {
-                return { generated_at: "", schema_version: 2, todos: [] };
+                return { generated_at: "", schema_version: 3, todos: [] };
             }
             throw new Error(`Local todos.json not found (${resp.status}).`);
         }

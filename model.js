@@ -5,7 +5,8 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
  * @property {number} id
  * @property {string} start
  * @property {string | null} [end]
- * @property {string | null} [project]
+ * @property {string | null} project_key
+ * @property {string | null} section_key
  * @property {number | null} [project_id]
  * @property {string | null} [description]
  * @property {string | null} [client]
@@ -16,11 +17,33 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
  */
 
 /**
+ * @typedef {Object} ExternalReferenceRaw
+ * @description A stable identifier from an upstream service used only when importing data into the canonical local taxonomy.
+ * @property {string} provider
+ * @property {string} id
+ */
+
+/**
+ * @typedef {Object} SectionRaw
+ * @description A configurable subdivision of one project. Missing color or billable values inherit from the parent project.
+ * @property {string} key
+ * @property {string} name
+ * @property {string | null} [color]
+ * @property {boolean | null} [billable]
+ * @property {boolean} archived
+ * @property {ExternalReferenceRaw[]} [external_refs]
+ */
+
+/**
  * @typedef {Object} ProjectRaw
+ * @description One canonical project together with its optional sections and upstream identity bindings.
+ * @property {string} key
  * @property {string} name
  * @property {string} color
  * @property {boolean} billable
  * @property {boolean} archived
+ * @property {SectionRaw[]} [sections]
+ * @property {ExternalReferenceRaw[]} [external_refs]
  */
 
 /**
@@ -92,8 +115,8 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
  * @property {string} id
  * @property {string} content
  * @property {string} [description]
- * @property {string | null} [project]
- * @property {string | null} [section]
+ * @property {string | null} project_key
+ * @property {string | null} section_key
  * @property {string | null} [parent_id]
  * @property {string[]} [labels]
  * @property {number} [priority]
@@ -148,6 +171,7 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
  * @property {ManifestChunk[]} [chunks]
  * @property {string} [timezone]
  * @property {string} [generated_at]
+ * @property {number} [schema_version]
  */
 
 export const DEFAULT_WEEK_REQUIRED_HOURS = 40;
@@ -203,10 +227,18 @@ export class Entry {
         this.startDate = start;
         this.endDate = end;
         this.durationSeconds = durationSeconds;
-        this.project = this.raw.project || "";
+        this.projectKey = typeof this.raw.project_key === "string" && this.raw.project_key ? this.raw.project_key : null;
+        this.sectionKey = typeof this.raw.section_key === "string" && this.raw.section_key ? this.raw.section_key : null;
         this.description = this.raw.description || "";
         this.billable = this.raw.billable === true ? true : this.raw.billable === false ? false : null;
-        this.searchHaystack = [this.project, this.description, this.raw.client || ""]
+        this.assignmentSearchText = this.assignmentSearchText || "";
+        this.searchHaystack = [
+            this.projectKey || "",
+            this.sectionKey || "",
+            this.assignmentSearchText,
+            this.description,
+            this.raw.client || "",
+        ]
             .filter(Boolean)
             .join(" ")
             .toLowerCase();
@@ -252,14 +284,26 @@ export class Entry {
     /**
      * Applies edited metadata fields and refreshes derived fields.
      * Defines the data shape used by the store.
-     * @param {{project: string, description: string, billable: boolean | null, updatedAt: string}} details
+     * @param {{projectKey: string | null, sectionKey: string | null, description: string, billable: boolean | null, updatedAt: string}} details
      * @returns {void}
      */
     applyDetails(details) {
-        this.raw.project = details.project;
+        this.raw.project_key = details.projectKey;
+        this.raw.section_key = details.sectionKey;
         this.raw.description = details.description;
         this.raw.billable = details.billable;
         this.raw.updated_at = details.updatedAt;
+        this.updateDerived();
+    }
+
+    /**
+     * Injects the current human-readable project/section label into the cached search text.
+     * Assignment names live in projects.json rather than entry rows, so EntryStore calls this whenever entries or project definitions change.
+     * @param {string} value
+     * @returns {void}
+     */
+    setAssignmentSearchText(value) {
+        this.assignmentSearchText = String(value || "");
         this.updateDerived();
     }
 
@@ -376,7 +420,7 @@ export class Week {
         const payload = {
             entries: this.snapshotRawEntries(),
             generated_at: nowIso,
-            schema_version: 1,
+            schema_version: 2,
             timezone,
             week: this.isoWeek,
             year: this.isoYear,
@@ -386,104 +430,413 @@ export class Week {
     }
 }
 
+const PROJECT_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PROJECT_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
 /**
- * Represents a single project definition from projects.json.
- * Used to assign colors and defaults to time entries.
+ * Normalizes provider identifiers attached to projects and sections.
+ * Duplicate references inside one definition are collapsed; ProjectList later rejects references reused by different assignments.
+ * @param {unknown} raw
+ * @returns {ExternalReferenceRaw[]}
  */
-export class Project {
+function normalizeExternalReferences(raw) {
+    if (!Array.isArray(raw)) return [];
+    const result = [];
+    const seen = new Set();
+    for (const item of raw) {
+        if (!item || typeof item !== "object") continue;
+        const candidate = /** @type {Partial<ExternalReferenceRaw>} */ (item);
+        const provider = typeof candidate.provider === "string" ? candidate.provider.trim().toLowerCase() : "";
+        const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+        const identity = `${provider}\u0000${id}`;
+        if (!provider || !id || seen.has(identity)) continue;
+        seen.add(identity);
+        result.push({ provider, id });
+    }
+    result.sort((left, right) => left.provider.localeCompare(right.provider) || left.id.localeCompare(right.id));
+    return result;
+}
+
+/**
+ * Represents one optional subdivision of a project.
+ * Sections inherit color and billable state from their parent unless an explicit override is stored.
+ */
+export class Section {
     /**
-     * Normalizes raw project fields into a consistent shape.
-     * Defines the data shape used by the store.
-     * @param {ProjectRaw} raw
+     * Creates a normalized immutable-identity section model from projects.json.
+     * The key is the persisted identity; renaming the human-readable name never changes existing entry or TODO references.
+     * @param {SectionRaw} raw
      */
     constructor(raw) {
-        const name = typeof raw?.name === "string" ? raw.name.trim() : "";
-        this.name = name;
-        this.color = typeof raw?.color === "string" ? raw.color.trim() : "";
-        this.billable = raw?.billable === true;
+        this.key = typeof raw?.key === "string" ? raw.key.trim() : "";
+        this.name = typeof raw?.name === "string" ? raw.name.trim() : "";
+        const color = typeof raw?.color === "string" ? raw.color.trim() : "";
+        this.color = PROJECT_COLOR_PATTERN.test(color) ? color : null;
+        this.billable = typeof raw?.billable === "boolean" ? raw.billable : null;
         this.archived = raw?.archived === true;
+        this.externalRefs = normalizeExternalReferences(raw?.external_refs);
     }
 
     /**
-     * Returns a JSON-ready project object.
-     * Defines the data shape used by the store.
-     * @returns {ProjectRaw}
+     * Returns the stable JSON representation persisted beneath its parent project.
+     * Explicit null overrides mean inherit and keep project-dialog serialization deterministic.
+     * @returns {SectionRaw}
      */
     toRaw() {
         return {
-            name: this.name,
-            color: this.color,
-            billable: this.billable,
             archived: this.archived,
+            billable: this.billable,
+            color: this.color,
+            external_refs: this.externalRefs.map((reference) => ({ ...reference })),
+            key: this.key,
+            name: this.name,
         };
     }
 }
 
 /**
- * Represents the projects.json payload with validation and serialization.
- * Provides lookup helpers and consistent ordering.
+ * Represents one canonical project and all of its configured sections.
+ * Project-level color and billable values provide defaults shared by time entries and TODOs.
+ */
+export class Project {
+    /**
+     * Creates a project model whose stable key is independent from its editable display name.
+     * @param {ProjectRaw} raw
+     */
+    constructor(raw) {
+        this.key = typeof raw?.key === "string" ? raw.key.trim() : "";
+        this.name = typeof raw?.name === "string" ? raw.name.trim() : "";
+        const color = typeof raw?.color === "string" ? raw.color.trim() : "";
+        this.color = PROJECT_COLOR_PATTERN.test(color) ? color : "";
+        this.billable = raw?.billable === true;
+        this.archived = raw?.archived === true;
+        this.sections = (Array.isArray(raw?.sections) ? raw.sections : []).map((section) => new Section(section));
+        this.externalRefs = normalizeExternalReferences(raw?.external_refs);
+        this.sectionsByKey = new Map(this.sections.map((section) => [section.key, section]));
+    }
+
+    /**
+     * Looks up one section by its stable key within this project.
+     * @param {string | null | undefined} key
+     * @returns {Section | null}
+     */
+    getSectionByKey(key) {
+        const normalized = String(key || "").trim();
+        return normalized ? this.sectionsByKey.get(normalized) || null : null;
+    }
+
+    /**
+     * Finds a section by display name for project-management and import matching only.
+     * Persisted assignments always use keys.
+     * @param {string} name
+     * @returns {Section | null}
+     */
+    findSectionByName(name) {
+        const normalized = String(name || "").trim().toLowerCase();
+        if (!normalized) return null;
+        return this.sections.find((section) => section.name.toLowerCase() === normalized) || null;
+    }
+
+    /**
+     * Returns a shallow copy so views cannot reorder the project model accidentally.
+     * @returns {Section[]}
+     */
+    listSections() {
+        return this.sections.slice();
+    }
+
+    /**
+     * Returns the complete JSON-ready project object including hidden upstream bindings.
+     * @returns {ProjectRaw}
+     */
+    toRaw() {
+        return {
+            archived: this.archived,
+            billable: this.billable,
+            color: this.color,
+            external_refs: this.externalRefs.map((reference) => ({ ...reference })),
+            key: this.key,
+            name: this.name,
+            sections: this.sections.map((section) => section.toRaw()),
+        };
+    }
+}
+
+/**
+ * @typedef {Object} ResolvedAssignment
+ * @description Fully resolved project metadata used by editors, rendering, search, and billable defaults.
+ * @property {Project | null} project
+ * @property {Section | null} section
+ * @property {string} label
+ * @property {string} color
+ * @property {boolean | null} billable
+ * @property {boolean} archived
+ */
+
+/**
+ * @typedef {Object} AssignmentOption
+ * @description One searchable project/section choice exposed by the canonical taxonomy.
+ * Root projects use a null section key, while section choices use the full “Project / Section” display label.
+ * @property {string} projectKey
+ * @property {string | null} sectionKey
+ * @property {string} label
+ * @property {boolean} archived
+ */
+
+/**
+ * Represents the authoritative projects.json taxonomy.
+ * It validates stable identities once, exposes shared assignment resolution, and prevents either frontend from inventing project names.
  */
 export class ProjectList {
     /**
-     * Creates a project list with metadata.
-     * Defines the data shape used by the store.
+     * Creates lookup indexes for canonical keys and external provider identities.
+     * Duplicate provider references are rejected because an import must never resolve one source id to two local assignments.
      * @param {Project[]} projects
      * @param {string} generatedAt
      */
     constructor(projects, generatedAt) {
         this.projects = projects;
         this.generated_at = generatedAt;
-        this.schema_version = 1;
+        this.schema_version = 2;
+        this.projectsByKey = new Map(projects.map((project) => [project.key, project]));
+        /** @type {Map<string, {projectKey: string, sectionKey: string | null}>} */
+        this.assignmentsByExternalRef = new Map();
+
+        for (const project of projects) {
+            for (const reference of project.externalRefs) {
+                this.addExternalReference(reference, project.key, null);
+            }
+            for (const section of project.sections) {
+                for (const reference of section.externalRefs) {
+                    this.addExternalReference(reference, project.key, section.key);
+                }
+            }
+        }
     }
 
     /**
-     * Builds a ProjectList from raw JSON data.
-     * Defines the data shape used by the store.
+     * Registers one upstream identifier and rejects ambiguous configuration immediately.
+     * @param {ExternalReferenceRaw} reference
+     * @param {string} projectKey
+     * @param {string | null} sectionKey
+     * @returns {void}
+     */
+    addExternalReference(reference, projectKey, sectionKey) {
+        const key = `${reference.provider}\u0000${reference.id}`;
+        const prior = this.assignmentsByExternalRef.get(key);
+        if (prior && (prior.projectKey !== projectKey || prior.sectionKey !== sectionKey)) {
+            throw new Error(`External reference ${reference.provider}:${reference.id} is assigned more than once.`);
+        }
+        this.assignmentsByExternalRef.set(key, { projectKey, sectionKey });
+    }
+
+    /**
+     * Parses and strictly validates the schema-version-2 project document.
+     * The application intentionally has no legacy name-based fallback after the one-shot migration.
      * @param {ProjectsFileRaw} raw
      * @returns {ProjectList}
      */
     static fromRaw(raw) {
-        const list = [];
-        const seen = new Set();
-        const projects = Array.isArray(raw?.projects) ? raw.projects : [];
+        if (!raw || typeof raw !== "object" || Number(raw.schema_version) !== 2) {
+            throw new Error("projects.json must use schema_version 2.");
+        }
+        const projects = Array.isArray(raw.projects) ? raw.projects : [];
+        const result = [];
+        const projectKeys = new Set();
+        const projectNames = new Set();
 
         for (const item of projects) {
-            if (!item || typeof item !== "object") continue;
-            const name = typeof item.name === "string" ? item.name.trim() : "";
-            if (!name || seen.has(name.toLowerCase())) continue;
-            const rawColor = typeof item.color === "string" ? item.color.trim() : "";
-            const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : "";
-            list.push(
-                new Project({
-                    name,
-                    color,
-                    billable: item.billable === true,
-                    archived: item.archived === true,
-                }),
-            );
-            seen.add(name.toLowerCase());
+            if (!item || typeof item !== "object") throw new Error("projects.json contains an invalid project.");
+            const project = new Project(item);
+            if (!PROJECT_KEY_PATTERN.test(project.key)) throw new Error(`Invalid project key: ${project.key || "(empty)"}`);
+            if (!project.name) throw new Error(`Project ${project.key} needs a name.`);
+            if (!project.color) throw new Error(`Project ${project.name} needs a valid color.`);
+            const nameKey = project.name.toLowerCase();
+            if (projectKeys.has(project.key)) throw new Error(`Duplicate project key: ${project.key}`);
+            if (projectNames.has(nameKey)) throw new Error(`Duplicate project name: ${project.name}`);
+            projectKeys.add(project.key);
+            projectNames.add(nameKey);
+
+            const sectionKeys = new Set();
+            const sectionNames = new Set();
+            for (const section of project.sections) {
+                if (!PROJECT_KEY_PATTERN.test(section.key)) {
+                    throw new Error(`Invalid section key in ${project.name}: ${section.key || "(empty)"}`);
+                }
+                if (!section.name) throw new Error(`Section ${project.key}/${section.key} needs a name.`);
+                const sectionNameKey = section.name.toLowerCase();
+                if (sectionKeys.has(section.key)) throw new Error(`Duplicate section key in ${project.name}: ${section.key}`);
+                if (sectionNames.has(sectionNameKey)) throw new Error(`Duplicate section name in ${project.name}: ${section.name}`);
+                sectionKeys.add(section.key);
+                sectionNames.add(sectionNameKey);
+            }
+            project.sections.sort((left, right) => left.name.localeCompare(right.name));
+            project.sectionsByKey = new Map(project.sections.map((section) => [section.key, section]));
+            result.push(project);
         }
 
-        list.sort((a, b) => a.name.localeCompare(b.name));
-        const generatedAt = typeof raw?.generated_at === "string" ? raw.generated_at : "";
-        return new ProjectList(list, generatedAt);
+        result.sort((left, right) => left.name.localeCompare(right.name));
+        const generatedAt = typeof raw.generated_at === "string" ? raw.generated_at : "";
+        return new ProjectList(result, generatedAt);
     }
 
     /**
-     * Returns a project by name or null when missing.
-     * Defines the data shape used by the store.
+     * Creates an empty but schema-valid taxonomy for error recovery and new repositories.
+     * @param {string} [generatedAt]
+     * @returns {ProjectList}
+     */
+    static createEmpty(generatedAt = "") {
+        return new ProjectList([], generatedAt);
+    }
+
+    /**
+     * Converts a display name into a deterministic key candidate for newly created definitions.
+     * Callers must still reserve uniqueness within the relevant project scope.
+     * @param {string} name
+     * @returns {string}
+     */
+    static keyFromName(name) {
+        const normalized = String(name || "")
+            .normalize("NFKD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+        return normalized || "item";
+    }
+
+    /**
+     * Reserves a readable unique key by adding a numeric suffix when necessary.
+     * @param {string} name
+     * @param {Set<string>} used
+     * @returns {string}
+     */
+    static reserveKey(name, used) {
+        const base = ProjectList.keyFromName(name);
+        let candidate = base;
+        let suffix = 2;
+        while (used.has(candidate)) {
+            candidate = `${base}-${suffix}`;
+            suffix += 1;
+        }
+        used.add(candidate);
+        return candidate;
+    }
+
+    /**
+     * Returns a project by stable key.
+     * @param {string | null | undefined} key
+     * @returns {Project | null}
+     */
+    getProjectByKey(key) {
+        const normalized = String(key || "").trim();
+        return normalized ? this.projectsByKey.get(normalized) || null : null;
+    }
+
+    /**
+     * Finds a project by display name for combobox input and import diagnostics only.
+     * Persisted records never use this mutable name as identity.
      * @param {string} name
      * @returns {Project | null}
      */
-    getProjectByName(name) {
-        const key = String(name || "");
-        if (!key) return null;
-        return this.projects.find((project) => project.name === key) || null;
+    findProjectByName(name) {
+        const normalized = String(name || "").trim().toLowerCase();
+        if (!normalized) return null;
+        return this.projects.find((project) => project.name.toLowerCase() === normalized) || null;
     }
 
     /**
-     * Returns a shallow copy of the project array.
-     * Defines the data shape used by the store.
+     * Resolves a project and optional section into effective display and accounting metadata.
+     * Invalid key pairs return null, while the intentional no-project pair resolves to neutral metadata.
+     * @param {string | null | undefined} projectKey
+     * @param {string | null | undefined} sectionKey
+     * @returns {ResolvedAssignment | null}
+     */
+    resolveAssignment(projectKey, sectionKey) {
+        const normalizedProject = String(projectKey || "").trim();
+        const normalizedSection = String(sectionKey || "").trim();
+        if (!normalizedProject) {
+            if (normalizedSection) return null;
+            return { project: null, section: null, label: "", color: "", billable: null, archived: false };
+        }
+        const project = this.getProjectByKey(normalizedProject);
+        if (!project) return null;
+        const section = normalizedSection ? project.getSectionByKey(normalizedSection) : null;
+        if (normalizedSection && !section) return null;
+        return {
+            project,
+            section,
+            label: section ? `${project.name} / ${section.name}` : project.name,
+            color: section?.color || project.color,
+            billable: typeof section?.billable === "boolean" ? section.billable : project.billable,
+            archived: project.archived || section?.archived === true,
+        };
+    }
+
+    /**
+     * Returns every assignable root project and section as a flat searchable list.
+     * Keeping this projection in the model gives time entries and TODOs exactly the same labels and archive semantics.
+     * The intentional no-project assignment is represented by an empty editor value and is therefore not included.
+     * @returns {AssignmentOption[]}
+     */
+    listAssignmentOptions() {
+        const options = [];
+        for (const project of this.projects) {
+            options.push({
+                projectKey: project.key,
+                sectionKey: null,
+                label: project.name,
+                archived: project.archived,
+            });
+            for (const section of project.sections) {
+                options.push({
+                    projectKey: project.key,
+                    sectionKey: section.key,
+                    label: `${project.name} / ${section.name}`,
+                    archived: project.archived || section.archived,
+                });
+            }
+        }
+        return options;
+    }
+
+    /**
+     * Resolves the exact human-readable value entered in a project/section combobox back to stable keys.
+     * Matching is case-insensitive and surrounding whitespace is ignored; an empty value means “No project”.
+     * Unknown or ambiguous labels return null so callers can reject arbitrary text instead of persisting mutable names.
+     * @param {string | null | undefined} label
+     * @returns {{projectKey: string | null, sectionKey: string | null} | null}
+     */
+    findAssignmentByLabel(label) {
+        const normalized = String(label || "").trim().toLowerCase();
+        if (!normalized) return { projectKey: null, sectionKey: null };
+
+        let match = null;
+        for (const option of this.listAssignmentOptions()) {
+            if (option.label.toLowerCase() !== normalized) continue;
+            if (match) return null;
+            match = { projectKey: option.projectKey, sectionKey: option.sectionKey };
+        }
+        return match;
+    }
+
+    /**
+     * Resolves an upstream service identifier to one canonical assignment.
+     * This is the only supported bridge for Todoist/Toggl imports after migration.
+     * @param {string} provider
+     * @param {string | number | null | undefined} id
+     * @returns {{projectKey: string, sectionKey: string | null} | null}
+     */
+    findAssignmentByExternalRef(provider, id) {
+        const normalizedProvider = String(provider || "").trim().toLowerCase();
+        const normalizedId = String(id ?? "").trim();
+        if (!normalizedProvider || !normalizedId) return null;
+        const assignment = this.assignmentsByExternalRef.get(`${normalizedProvider}\u0000${normalizedId}`);
+        return assignment ? { ...assignment } : null;
+    }
+
+    /**
+     * Returns a shallow copy of canonical projects for rendering and management.
      * @returns {Project[]}
      */
     list() {
@@ -491,8 +844,7 @@ export class ProjectList {
     }
 
     /**
-     * Returns a JSON-serializable payload object.
-     * Defines the data shape used by the store.
+     * Returns a JSON-serializable payload object with stable schema metadata.
      * @returns {ProjectsFileRaw}
      */
     toObject() {
@@ -504,8 +856,7 @@ export class ProjectList {
     }
 
     /**
-     * Returns stable JSON output for projects.json.
-     * Defines the data shape used by the store.
+     * Returns deterministic projects.json content shared by local and GitHub save paths.
      * @returns {string}
      */
     toJson() {
@@ -895,7 +1246,7 @@ export class Recurrence {
 
 /**
  * Represents one actionable TODO independent of its visual presentation.
- * Project associations are stored by canonical project name so TODOs and time entries resolve through the same ProjectList.
+ * Project and section associations use stable keys so display-name edits cannot break historical TODO references.
  */
 export class Todo {
     /**
@@ -908,8 +1259,8 @@ export class Todo {
         this.id = typeof raw?.id === "string" ? raw.id.trim() : "";
         this.content = typeof raw?.content === "string" ? raw.content.trim() : "";
         this.description = typeof raw?.description === "string" ? raw.description : "";
-        this.project = typeof raw?.project === "string" && raw.project.trim() ? raw.project.trim() : null;
-        this.section = typeof raw?.section === "string" && raw.section.trim() ? raw.section.trim() : null;
+        this.projectKey = typeof raw?.project_key === "string" && raw.project_key.trim() ? raw.project_key.trim() : null;
+        this.sectionKey = typeof raw?.section_key === "string" && raw.section_key.trim() ? raw.section_key.trim() : null;
         this.parent_id = typeof raw?.parent_id === "string" && raw.parent_id.trim() ? raw.parent_id.trim() : null;
         this.labels = Array.isArray(raw?.labels)
             ? raw.labels.filter((label) => typeof label === "string" && label.trim()).map((label) => label.trim())
@@ -930,8 +1281,8 @@ export class Todo {
         this.searchHaystack = [
             this.content,
             this.description,
-            this.project || "",
-            this.section || "",
+            this.projectKey || "",
+            this.sectionKey || "",
             this.recurrence?.describe() || "",
             ...this.labels,
         ]
@@ -1025,8 +1376,8 @@ export class Todo {
             id: this.id,
             content: this.content,
             description: this.description,
-            project: this.project,
-            section: this.section,
+            project_key: this.projectKey,
+            section_key: this.sectionKey,
             parent_id: this.parent_id,
             labels: this.labels.slice(),
             priority: this.priority,
@@ -1058,7 +1409,7 @@ export class TodoList {
     constructor(todos, generatedAt) {
         this.todos = todos;
         this.generated_at = generatedAt;
-        this.schema_version = 2;
+        this.schema_version = 3;
         this.todosById = new Map();
         for (const todo of todos) {
             this.todosById.set(todo.id, todo);
@@ -1072,11 +1423,17 @@ export class TodoList {
      * @returns {TodoList}
      */
     static fromRaw(raw) {
-        const rawObj = raw && typeof raw === "object" ? /** @type {TodosFileRaw} */ (raw) : {};
+        const rawObj = raw && typeof raw === "object" ? /** @type {TodosFileRaw} */ (raw) : null;
+        if (!rawObj || Number(rawObj.schema_version) !== 3) {
+            throw new Error("todos.json must use schema_version 3.");
+        }
         const rawTodos = Array.isArray(rawObj.todos) ? rawObj.todos : [];
         const byId = new Map();
         for (const item of rawTodos) {
             if (!item || typeof item !== "object") continue;
+            if (!("project_key" in item) || !("section_key" in item)) {
+                throw new Error("todos.json contains a TODO without canonical project_key/section_key fields.");
+            }
             const todo = new Todo(item);
             if (!todo.id || !todo.content) continue;
             byId.set(todo.id, todo);
@@ -1199,7 +1556,7 @@ export class WeekRequirements {
     constructor(defaultRequiredHours, weeks, generatedAt) {
         this.default_required_hours = normalizeRequiredHours(defaultRequiredHours, DEFAULT_WEEK_REQUIRED_HOURS);
         this.generated_at = generatedAt;
-        this.schema_version = 1;
+        this.schema_version = 2;
         this.weeks = weeks
             .filter((week) => week instanceof WeekRequirement && week.isValid())
             .slice()
@@ -1370,7 +1727,7 @@ export class Manifest {
         this.chunks = chunks;
         this.timezone = timezone;
         this.generated_at = generatedAt;
-        this.schema_version = 1;
+        this.schema_version = 2;
         this.total_chunks = chunks.length;
         this.total_entries = totalEntries;
     }
@@ -1387,6 +1744,9 @@ export class Manifest {
         }
 
         const rawObj = /** @type {ManifestFileRaw} */ (raw);
+        if (Number(rawObj.schema_version) !== 2) {
+            throw new Error("entries-manifest.json must use schema_version 2.");
+        }
         const chunksRaw = Array.isArray(rawObj.chunks) ? rawObj.chunks : [];
         const chunks = [];
         for (const c of chunksRaw) {

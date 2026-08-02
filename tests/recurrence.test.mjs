@@ -17,8 +17,8 @@ function makeTodo(overrides = {}) {
         id: "test:todo",
         content: "Recurring test",
         description: "",
-        project: null,
-        section: null,
+        project_key: null,
+        section_key: null,
         parent_id: null,
         labels: [],
         priority: 1,
@@ -58,7 +58,7 @@ test("all recurrence phrases currently imported from Todoist normalize", () => {
     }
 });
 
-test("schema v1 Todoist due metadata migrates into schema v2 recurrence", () => {
+test("legacy Todoist due metadata normalizes into the schema v3 recurrence fields", () => {
     const todo = new Todo(
         makeTodo({
             due: {
@@ -76,7 +76,7 @@ test("schema v1 Todoist due metadata migrates into schema v2 recurrence", () => 
     assert.deepEqual(raw.due, { date: "2026-07-27", timezone: null });
     assert.equal("is_recurring" in raw.due, false);
     assert.equal(raw.recurrence?.source_text, "every Monday");
-    assert.equal(TodoList.fromRaw({ schema_version: 1, todos: [raw] }).schema_version, 2);
+    assert.equal(TodoList.fromRaw({ schema_version: 3, todos: [raw] }).schema_version, 3);
 });
 
 test("scheduled recurrence skips overdue occurrences to the first future date", () => {
@@ -142,7 +142,7 @@ test("TodoStore logs a recurring occurrence and keeps the series open", () => {
     const recurrence = Recurrence.fromText("every day", "2026-07-08");
     todoStore.setTodoList(
         TodoList.fromRaw({
-            schema_version: 2,
+            schema_version: 3,
             todos: [
                 makeTodo({
                     due: { date: "2026-07-08", timezone: null },
@@ -172,7 +172,7 @@ test("TodoStore logs a recurring occurrence and keeps the series open", () => {
 test("one-off completion remains a reversible completed timestamp", () => {
     const entryStore = new EntryStore(timeContext);
     const todoStore = new TodoStore(entryStore);
-    todoStore.setTodoList(TodoList.fromRaw({ schema_version: 2, todos: [makeTodo({ id: "test:one-off" })] }));
+    todoStore.setTodoList(TodoList.fromRaw({ schema_version: 3, todos: [makeTodo({ id: "test:one-off" })] }));
 
     assert.equal(todoStore.toggleTodoCompleted("test:one-off", "2026-07-24T10:00:00Z").completed_at, "2026-07-24T10:00:00Z");
     assert.equal(todoStore.toggleTodoCompleted("test:one-off", "2026-07-24T11:00:00Z").completed_at, null);

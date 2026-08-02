@@ -232,8 +232,8 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {HTMLButtonElement} elements.entryCloseBtn
  * @property {HTMLButtonElement} elements.entryCancelBtn
  * @property {HTMLElement} elements.entryMeta
- * @property {HTMLInputElement} elements.entryProject
- * @property {HTMLDataListElement} elements.entryProjectList
+ * @property {HTMLInputElement} elements.entryAssignment
+ * @property {HTMLDataListElement} elements.entryAssignmentList
  * @property {HTMLTextAreaElement} elements.entryDesc
  * @property {HTMLElement} elements.entryDescSuggestions
  * @property {(message: string, timeout?: number, tone?: "error" | "success") => void} onToast
@@ -295,8 +295,8 @@ export class WeekView {
         this.entryCloseBtn = options.elements.entryCloseBtn;
         this.entryCancelBtn = options.elements.entryCancelBtn;
         this.entryMetaEl = options.elements.entryMeta;
-        this.entryProjectInput = options.elements.entryProject;
-        this.entryProjectListEl = options.elements.entryProjectList;
+        this.entryAssignmentInput = options.elements.entryAssignment;
+        this.entryAssignmentListEl = options.elements.entryAssignmentList;
         this.entryDescInput = options.elements.entryDesc;
         this.entryDescSuggestionsEl = options.elements.entryDescSuggestions;
 
@@ -320,7 +320,6 @@ export class WeekView {
         this.addDraft = null;
         this.addDraftEl = null;
         this.dialogEntryId = null;
-        this.dialogAllowUnlistedProject = false;
         this.descSuggestions = [];
 
         this.dirtyWeekStarts = new Set();
@@ -378,6 +377,7 @@ export class WeekView {
             this.busy || Boolean(this.appState.latestWeekStart && this.appState.latestWeekStart === this.appState.weekStart);
         this.zoomInput.disabled = this.busy;
         this.weekReqBtn.disabled = this.busy;
+        this.entryAssignmentInput.disabled = this.busy;
         for (const button of this.weekScrollEl.querySelectorAll(".entry-control, .entry-resize-handle, .entry-gap-add")) {
             if (button instanceof HTMLButtonElement) button.disabled = this.busy;
         }
@@ -424,9 +424,9 @@ export class WeekView {
         if (this.entryDialog.open && this.dialogEntryId) {
             const entry = this.store.getEntryById(this.dialogEntryId);
             if (entry) {
-                this.populateProjectSelect({
-                    selected: safeText(entry.project),
-                    allowUnlisted: !this.store.getProjectByName(entry.project || ""),
+                this.populateAssignmentCombobox({
+                    projectKey: entry.projectKey,
+                    sectionKey: entry.sectionKey,
                 });
             }
         }
@@ -568,7 +568,6 @@ export class WeekView {
         this.selectedSegKey = null;
         this.selectedEntryId = null;
         this.dialogEntryId = null;
-        this.dialogAllowUnlistedProject = false;
         this.saveInFlight = false;
         this.dirtyWeekStarts.clear();
         this.dirtyEntryIdsByWeek.clear();
@@ -1454,7 +1453,7 @@ export class WeekView {
                 (a, b) =>
                     a.startMinutes - b.startMinutes ||
                     a.endMinutes - b.endMinutes ||
-                    (a.entry?.project || "").localeCompare(b.entry?.project || "") ||
+                    (a.entry?.projectKey || "").localeCompare(b.entry?.projectKey || "") ||
                     (a.entry?.id || 0) - (b.entry?.id || 0),
             );
 
@@ -1485,8 +1484,7 @@ export class WeekView {
             for (let idx = 0; idx < assigned.length; idx++) {
                 const { lane, seg } = assigned[idx];
                 const entry = seg.entry || {};
-                const projectName = entry.project || "";
-                const projectLabel = projectName || "No project";
+                const projectLabel = this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) || "No project";
                 const description = entry.description || "";
 
                 dayKeys[dayIdx].push(seg.key);
@@ -1503,7 +1501,7 @@ export class WeekView {
                 el.dataset.start = String(seg.startMinutes);
                 el.dataset.end = String(seg.endMinutes);
 
-                const colors = this.projectColors(projectName);
+                const colors = this.projectColors(entry.projectKey, entry.sectionKey);
                 el.style.setProperty("--entry-bg", colors.bg);
                 el.style.setProperty("--entry-border", colors.border);
 
@@ -2061,25 +2059,26 @@ export class WeekView {
     }
 
     /**
-     * Returns a cached color pair for a project name.
+     * Returns a cached color pair for one canonical project/section assignment.
      * Part of the week view interaction flow.
-     * @param {string} project
+     * @param {string | null | undefined} projectKey
+     * @param {string | null | undefined} sectionKey
      * @returns {{bg: string, border: string}}
      */
-    projectColors(project) {
-        const key = String(project || "");
+    projectColors(projectKey, sectionKey) {
+        const key = `${projectKey || ""}/${sectionKey || ""}`;
         const cached = this.projectColorCache.get(key);
         if (cached) return cached;
 
-        if (!key) {
+        if (!projectKey) {
             const neutral = { bg: "rgba(255, 255, 255, 0.06)", border: "rgba(255, 255, 255, 0.16)" };
             this.projectColorCache.set(key, neutral);
             return neutral;
         }
 
-        const projectDef = this.store.getProjectByName(key);
-        if (projectDef && projectDef.color) {
-            const rgb = parseHexColor(projectDef.color);
+        const configuredColor = this.store.getAssignmentColor(projectKey, sectionKey);
+        if (configuredColor) {
+            const rgb = parseHexColor(configuredColor);
             if (rgb) {
                 const colors = {
                     bg: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.26)`,
@@ -2804,8 +2803,9 @@ export class WeekView {
             end: null,
             id: params.id,
             is_running: false,
-            project: "",
+            project_key: null,
             project_id: null,
+            section_key: null,
             start: null,
             updated_at: null,
             user_id: null,
@@ -3750,7 +3750,7 @@ export class WeekView {
      * Gathers description suggestions from recent week entries.
      * Filters on the query text and de-duplicates similar pairs.
      * @param {string} query
-     * @returns {{project: string, description: string}[]}
+     * @returns {{projectKey: string | null, sectionKey: string | null, label: string, description: string}[]}
      */
     buildDescriptionSuggestions(query) {
         const trimmed = String(query || "").trim();
@@ -3765,8 +3765,6 @@ export class WeekView {
         const seen = new Set();
         const suggestions = [];
         const weekStart = this.appState.weekStart;
-        const hasProjectList = Boolean(this.store.getProjectList());
-
         for (let offset = 0; offset < 4; offset += 1) {
             const ws = addIsoDays(weekStart, -7 * offset);
             const week = this.store.getWeek(ws);
@@ -3775,12 +3773,13 @@ export class WeekView {
                 const desc = safeText(entry.description).trim();
                 if (!desc) continue;
                 if (!desc.toLowerCase().includes(q)) continue;
-                const project = safeText(entry.project).trim();
-                if (project && hasProjectList && !this.store.getProjectByName(project)) continue;
-                const key = `${project.toLowerCase()}|${desc.toLowerCase()}`;
+                const projectKey = entry.projectKey;
+                const sectionKey = entry.sectionKey;
+                const label = this.store.getAssignmentLabel(projectKey, sectionKey);
+                const key = `${projectKey || ""}/${sectionKey || ""}|${desc.toLowerCase()}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
-                suggestions.push({ project, description: desc });
+                suggestions.push({ projectKey, sectionKey, label, description: desc });
                 if (suggestions.length >= DESC_SUGGEST_LIMIT) {
                     return suggestions;
                 }
@@ -3793,7 +3792,7 @@ export class WeekView {
     /**
      * Renders description suggestions into the dialog list container.
      * Hides the container when there are no matching entries.
-     * @param {{project: string, description: string}[]} suggestions
+     * @param {{projectKey: string | null, sectionKey: string | null, label: string, description: string}[]} suggestions
      * @returns {void}
      */
     renderDescriptionSuggestions(suggestions) {
@@ -3812,7 +3811,7 @@ export class WeekView {
 
             const projectEl = document.createElement("span");
             projectEl.className = "suggestion-project";
-            projectEl.textContent = suggestion.project ? suggestion.project : "No project";
+            projectEl.textContent = suggestion.label || "No project";
 
             const descEl = document.createElement("span");
             descEl.className = "suggestion-desc";
@@ -3841,18 +3840,13 @@ export class WeekView {
     /**
      * Applies a selected suggestion to the dialog fields.
      * Keeps focus in the description field for continued typing.
-     * @param {{project: string, description: string}} suggestion
+     * @param {{projectKey: string | null, sectionKey: string | null, label: string, description: string}} suggestion
      * @returns {void}
      */
     applyDescriptionSuggestion(suggestion) {
         if (!suggestion) return;
         this.entryDescInput.value = suggestion.description || "";
-        const projectValue = suggestion.project || "";
-        if (projectValue && this.store.getProjectByName(projectValue)) {
-            this.entryProjectInput.value = projectValue;
-        } else {
-            this.entryProjectInput.value = "";
-        }
+        this.entryAssignmentInput.value = suggestion.label || "";
         this.clearDescriptionSuggestions();
         queueMicrotask(() => {
             try {
@@ -3881,22 +3875,22 @@ export class WeekView {
         if (!entry) return this.closeEntryDialog();
         if (entry.weekStart !== this.appState.weekStart) return this.closeEntryDialog();
 
-        const project = this.entryProjectInput.value.trim();
-        if (project && !this.store.getProjectByName(project) && !this.dialogAllowUnlistedProject) {
-            this.onToast("Please select a project from the list (or choose No project).");
+        const selectedKeys = this.store.findAssignmentByLabel(this.entryAssignmentInput.value);
+        if (!selectedKeys) {
+            this.onToast("Please select a project or section from the list (or clear the field for No project).");
+            this.entryAssignmentInput.focus();
+            return;
+        }
+        const { projectKey, sectionKey } = selectedKeys;
+        const assignment = this.store.resolveAssignment(projectKey, sectionKey);
+        if (!assignment) {
+            this.onToast("The selected project or section no longer exists.");
+            this.entryAssignmentInput.focus();
             return;
         }
         const description = this.entryDescInput.value.trim();
-
-        let billable = null;
-        if (project) {
-            const projectDef = this.store.getProjectByName(project);
-            if (projectDef) {
-                billable = projectDef.billable;
-            } else if (this.dialogAllowUnlistedProject) {
-                billable = entry.billable === true ? true : entry.billable === false ? false : null;
-            }
-        }
+        const assignmentChanged = entry.projectKey !== projectKey || entry.sectionKey !== sectionKey;
+        const billable = assignmentChanged ? assignment.billable : entry.billable;
 
         this.applyWeekEdit({
             weekStart: this.appState.weekStart,
@@ -3906,7 +3900,8 @@ export class WeekView {
                 const raws = this.store.snapshotWeekRaw(this.appState.weekStart);
                 const idx = raws.findIndex((raw) => Number(raw?.id) === id);
                 if (idx < 0) throw new Error("Entry not found in this week");
-                raws[idx].project = project;
+                raws[idx].project_key = projectKey;
+                raws[idx].section_key = sectionKey;
                 raws[idx].description = description;
                 raws[idx].billable = billable;
                 raws[idx].updated_at = this.timeContext.formatIsoWithOffset(new Date());
@@ -3918,44 +3913,27 @@ export class WeekView {
     }
 
     /**
-     * Builds the project completion list for the entry dialog.
-     * Part of the week view interaction flow.
-     * @param {{selected?: string, allowUnlisted?: boolean}} options
+     * Builds the entry editor's single searchable project/section combobox.
+     * Active root projects and sections share one flat list; an archived assignment remains visible only for the entry already using it.
+     * @param {{projectKey?: string | null, sectionKey?: string | null}} options
      * @returns {void}
      */
-    populateProjectSelect(options) {
-        const selected = String(options?.selected || "");
-        const allowUnlisted = Boolean(options?.allowUnlisted);
-        const projects = this.store.getProjects();
-        const byName = new Map();
-        for (const project of projects) {
-            if (!project || !project.name) continue;
-            byName.set(project.name, project);
-        }
+    populateAssignmentCombobox(options) {
+        const selectedProjectKey = options?.projectKey || null;
+        const selectedSectionKey = options?.sectionKey || null;
+        const selectedLabel = this.store.getAssignmentLabel(selectedProjectKey, selectedSectionKey);
 
-        this.entryProjectListEl.innerHTML = "";
-        this.dialogAllowUnlistedProject = false;
-
-        const sorted = projects.slice().sort((a, b) => a.name.localeCompare(b.name));
-        for (const project of sorted) {
+        this.entryAssignmentListEl.innerHTML = "";
+        for (const assignment of this.store.getAssignmentOptions()) {
+            const isSelected =
+                assignment.projectKey === selectedProjectKey && assignment.sectionKey === selectedSectionKey;
+            if (assignment.archived && !isSelected) continue;
             const opt = document.createElement("option");
-            opt.value = project.name;
-            opt.label = project.archived ? `${project.name} (archived)` : project.name;
-            this.entryProjectListEl.append(opt);
+            opt.value = assignment.label;
+            opt.label = assignment.archived ? `${assignment.label} (archived)` : assignment.label;
+            this.entryAssignmentListEl.append(opt);
         }
-
-        if (selected && !byName.has(selected) && allowUnlisted) {
-            const opt = document.createElement("option");
-            opt.value = selected;
-            opt.label = `${selected} (unlisted)`;
-            this.entryProjectListEl.append(opt);
-            this.dialogAllowUnlistedProject = true;
-        }
-
-        this.entryProjectInput.value = selected;
-        if (!this.entryProjectInput.value) {
-            this.entryProjectInput.value = "";
-        }
+        this.entryAssignmentInput.value = selectedLabel.startsWith("[Missing:") ? "" : selectedLabel;
     }
 
     /**
@@ -3965,7 +3943,6 @@ export class WeekView {
      */
     closeEntryDialog() {
         this.dialogEntryId = null;
-        this.dialogAllowUnlistedProject = false;
         this.clearDescriptionSuggestions();
         if (this.entryDialog.open) this.entryDialog.close();
         queueMicrotask(() => {
@@ -3997,9 +3974,9 @@ export class WeekView {
         }
 
         this.dialogEntryId = id;
-        this.populateProjectSelect({
-            selected: safeText(entry.project),
-            allowUnlisted: !this.store.getProjectByName(entry.project || ""),
+        this.populateAssignmentCombobox({
+            projectKey: entry.projectKey,
+            sectionKey: entry.sectionKey,
         });
         this.entryDescInput.value = safeText(entry.description);
 

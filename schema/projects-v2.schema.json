@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/timetracking/projects-v2.schema.json",
+  "title": "TimeTracking Projects and Sections (v2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated_at", "schema_version", "projects"],
+  "properties": {
+    "generated_at": { "type": "string" },
+    "schema_version": { "type": "integer", "const": 2 },
+    "projects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/project" }
+    }
+  },
+  "$defs": {
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "externalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "id"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archived", "billable", "color", "external_refs", "key", "name"],
+      "properties": {
+        "archived": { "type": "boolean" },
+        "billable": { "type": ["boolean", "null"] },
+        "color": {
+          "anyOf": [
+            { "$ref": "#/$defs/color" },
+            { "type": "null" }
+          ]
+        },
+        "external_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/externalReference" }
+        },
+        "key": { "$ref": "#/$defs/key" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archived", "billable", "color", "external_refs", "key", "name", "sections"],
+      "properties": {
+        "archived": { "type": "boolean" },
+        "billable": { "type": "boolean" },
+        "color": { "$ref": "#/$defs/color" },
+        "external_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/externalReference" }
+        },
+        "key": { "$ref": "#/$defs/key" },
+        "name": { "type": "string", "minLength": 1 },
+        "sections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/section" }
+        }
+      }
+    }
+  }
+}

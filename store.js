@@ -2,7 +2,6 @@ import {
     addIsoDays,
     chunkKey,
     gitBlobSha1,
-    hashColorHex,
     hhmmToMinutes,
     isoWeekInfo,
     isoWeekStart,
@@ -62,8 +61,8 @@ const BALANCE_ACCUMULATION_START = "2025-09-01";
  * @description Editable TODO fields accepted by TodoStore create/update operations.
  * @property {string} content
  * @property {string} [description]
- * @property {string | null} [project]
- * @property {string | null} [section]
+ * @property {string | null} [projectKey]
+ * @property {string | null} [sectionKey]
  * @property {string[]} [labels]
  * @property {number} [priority]
  * @property {import("./model.js").TodoDueRaw | null} [due]
@@ -72,7 +71,7 @@ const BALANCE_ACCUMULATION_START = "2025-09-01";
 
 /**
  * Stores the TODO document and provides validated mutations for TodoView.
- * Project names are resolved through the existing EntryStore, making its ProjectList the single inventory for both TODOs and time entries.
+ * Project/section keys are resolved through EntryStore, making its ProjectList the single inventory for TODOs and time entries.
  */
 export class TodoStore {
     /**
@@ -90,7 +89,13 @@ export class TodoStore {
      * @returns {void}
      */
     setTodoList(todoList) {
-        this.todoList = todoList instanceof TodoList ? todoList : TodoList.createEmpty();
+        const next = todoList instanceof TodoList ? todoList : TodoList.createEmpty();
+        for (const todo of next.list()) {
+            if (!this.projectStore.resolveAssignment(todo.projectKey, todo.sectionKey)) {
+                throw new Error(`TODO ${todo.id} references unknown assignment ${todo.projectKey || "(none)"}/${todo.sectionKey || "(none)"}.`);
+            }
+        }
+        this.todoList = next;
     }
 
     /**
@@ -141,11 +146,11 @@ export class TodoStore {
      * @returns {void}
      */
     applySnapshot(todosRaw, generatedAt = this.todoList.generated_at) {
-        this.todoList = TodoList.fromRaw({
+        this.setTodoList(TodoList.fromRaw({
             generated_at: generatedAt,
-            schema_version: 2,
+            schema_version: 3,
             todos: Array.isArray(todosRaw) ? todosRaw : [],
-        });
+        }));
     }
 
     /**
@@ -164,19 +169,21 @@ export class TodoStore {
     }
 
     /**
-     * Resolves an optional project name against the one shared ProjectList.
-     * Unknown names are rejected so TODO creation cannot silently fork the project inventory.
-     * @param {string | null | undefined} name
-     * @returns {string | null}
+     * Resolves and validates an optional canonical project/section assignment.
+     * A section may only exist beneath its owning project; unknown keys are rejected before a TODO snapshot is changed.
+     * @param {string | null | undefined} projectKey
+     * @param {string | null | undefined} sectionKey
+     * @returns {{projectKey: string | null, sectionKey: string | null}}
      */
-    normalizeProjectName(name) {
-        const value = typeof name === "string" ? name.trim() : "";
-        if (!value) return null;
-        const project = this.projectStore.getProjectByName(value);
-        if (!project) {
-            throw new Error(`Unknown project: ${value}`);
+    normalizeAssignment(projectKey, sectionKey) {
+        const normalizedProjectKey = typeof projectKey === "string" && projectKey.trim() ? projectKey.trim() : null;
+        const normalizedSectionKey = typeof sectionKey === "string" && sectionKey.trim() ? sectionKey.trim() : null;
+        const assignment = this.projectStore.resolveAssignment(normalizedProjectKey, normalizedSectionKey);
+        if (!assignment) {
+            const label = [normalizedProjectKey, normalizedSectionKey].filter(Boolean).join("/") || "(none)";
+            throw new Error(`Unknown project assignment: ${label}`);
         }
-        return project.name;
+        return { projectKey: normalizedProjectKey, sectionKey: normalizedSectionKey };
     }
 
     /**
@@ -206,15 +213,15 @@ export class TodoStore {
     createTodo(details, nowIso = utcNowIso()) {
         const content = String(details?.content || "").trim();
         if (!content) throw new Error("A TODO needs a title.");
-        const project = this.normalizeProjectName(details?.project);
+        const assignment = this.normalizeAssignment(details?.projectKey, details?.sectionKey);
         const schedule = this.normalizeSchedule(details);
         const maxOrder = this.getTodos().reduce((max, todo) => Math.max(max, todo.order), 0);
         const raw = {
             id: this.reserveTodoId(),
             content,
             description: String(details?.description || ""),
-            project,
-            section: details?.section ? String(details.section).trim() : null,
+            project_key: assignment.projectKey,
+            section_key: assignment.sectionKey,
             parent_id: null,
             labels: Array.isArray(details?.labels) ? details.labels : [],
             priority: Number(details?.priority || 1),
@@ -249,7 +256,7 @@ export class TodoStore {
         if (!current) throw new Error("TODO not found.");
         const content = String(details?.content || "").trim();
         if (!content) throw new Error("A TODO needs a title.");
-        const project = this.normalizeProjectName(details?.project);
+        const assignment = this.normalizeAssignment(details?.projectKey, details?.sectionKey);
         const schedule = this.normalizeSchedule(details);
         const next = this.snapshotRaw();
         const index = next.findIndex((todo) => todo.id === current.id);
@@ -258,8 +265,8 @@ export class TodoStore {
             ...next[index],
             content,
             description: String(details?.description || ""),
-            project,
-            section: details?.section ? String(details.section).trim() : null,
+            project_key: assignment.projectKey,
+            section_key: assignment.sectionKey,
             labels: Array.isArray(details?.labels) ? details.labels : [],
             priority: Number(details?.priority || 1),
             due: schedule.due,
@@ -371,7 +378,6 @@ export class EntryStore {
         this.nextEntryId = 1;
         this.manifest = null;
         this.projectList = null;
-        this.projectsByName = new Map();
         this.weekRequirements = WeekRequirements.createDefault();
     }
 
@@ -401,7 +407,6 @@ export class EntryStore {
         this.manifest = null;
         if (!options.keepProjects) {
             this.projectList = null;
-            this.projectsByName.clear();
         }
         if (!options.keepWeekRequirements) {
             this.weekRequirements = WeekRequirements.createDefault();
@@ -428,18 +433,15 @@ export class EntryStore {
     }
 
     /**
-     * Stores the project list and rebuilds the name index.
-     * Supports derived data and serialization steps.
+     * Stores the canonical project taxonomy and refreshes entry search labels.
+     * Recomputing the label cache also makes project/section renames immediately searchable without rewriting historical entries.
      * @param {ProjectList | null} projectList
      * @returns {void}
      */
     setProjectList(projectList) {
         this.projectList = projectList;
-        this.projectsByName.clear();
-        if (!projectList) return;
-        for (const project of projectList.list()) {
-            if (!project || !project.name) continue;
-            this.projectsByName.set(project.name, project);
+        for (const entry of this.entriesById.values()) {
+            this.updateEntryAssignmentSearchText(entry);
         }
     }
 
@@ -462,13 +464,104 @@ export class EntryStore {
     }
 
     /**
-     * Looks up a project by its exact name.
-     * Supports derived data and serialization steps.
+     * Looks up a project by its immutable canonical key.
+     * @param {string | null | undefined} key
+     * @returns {import("./model.js").Project | null}
+     */
+    getProjectByKey(key) {
+        return this.projectList ? this.projectList.getProjectByKey(key) : null;
+    }
+
+    /**
+     * Finds a project by its editable display name for combobox input only.
+     * Persisted entry and TODO identities always use keys returned by the matched model.
      * @param {string} name
      * @returns {import("./model.js").Project | null}
      */
-    getProjectByName(name) {
-        return this.projectsByName.get(String(name || "")) || null;
+    findProjectByName(name) {
+        return this.projectList ? this.projectList.findProjectByName(name) : null;
+    }
+
+    /**
+     * Returns the shared flat project/section choices used by every assignment combobox.
+     * Views receive copies from ProjectList, so they may filter archived choices without mutating the taxonomy.
+     * @returns {import("./model.js").AssignmentOption[]}
+     */
+    getAssignmentOptions() {
+        return this.projectList ? this.projectList.listAssignmentOptions() : [];
+    }
+
+    /**
+     * Converts an exact project/section combobox label back into stable persisted keys.
+     * Empty input intentionally resolves to no project; arbitrary or ambiguous text returns null for validation.
+     * @param {string | null | undefined} label
+     * @returns {{projectKey: string | null, sectionKey: string | null} | null}
+     */
+    findAssignmentByLabel(label) {
+        if (this.projectList) return this.projectList.findAssignmentByLabel(label);
+        return String(label || "").trim() ? null : { projectKey: null, sectionKey: null };
+    }
+
+    /**
+     * Resolves a canonical assignment into its project, section, label, color, and effective billable state.
+     * Returns null for unknown key pairs and a neutral assignment for an intentional no-project entry.
+     * @param {string | null | undefined} projectKey
+     * @param {string | null | undefined} sectionKey
+     * @returns {import("./model.js").ResolvedAssignment | null}
+     */
+    resolveAssignment(projectKey, sectionKey) {
+        if (this.projectList) return this.projectList.resolveAssignment(projectKey, sectionKey);
+        if (!projectKey && !sectionKey) {
+            return { project: null, section: null, label: "", color: "", billable: null, archived: false };
+        }
+        return null;
+    }
+
+    /**
+     * Returns a concise display label for a valid assignment, or an explicit missing-reference marker for corrupt data.
+     * @param {string | null | undefined} projectKey
+     * @param {string | null | undefined} sectionKey
+     * @returns {string}
+     */
+    getAssignmentLabel(projectKey, sectionKey) {
+        const assignment = this.resolveAssignment(projectKey, sectionKey);
+        if (assignment) return assignment.label;
+        return `[Missing: ${[projectKey, sectionKey].filter(Boolean).join("/")}]`;
+    }
+
+    /**
+     * Returns the effective configured color for an assignment, including section overrides.
+     * @param {string | null | undefined} projectKey
+     * @param {string | null | undefined} sectionKey
+     * @returns {string}
+     */
+    getAssignmentColor(projectKey, sectionKey) {
+        return this.resolveAssignment(projectKey, sectionKey)?.color || "";
+    }
+
+    /**
+     * Returns the effective configured billable state for a new or edited assignment.
+     * Existing entry snapshots retain their persisted billable value until their assignment is changed explicitly.
+     * @param {string | null | undefined} projectKey
+     * @param {string | null | undefined} sectionKey
+     * @returns {boolean | null}
+     */
+    getAssignmentBillable(projectKey, sectionKey) {
+        return this.resolveAssignment(projectKey, sectionKey)?.billable ?? null;
+    }
+
+    /**
+     * Updates one entry's derived human-readable assignment search text.
+     * Unknown assignments fail early during loading instead of silently rendering as a different project.
+     * @param {import("./model.js").Entry} entry
+     * @returns {void}
+     */
+    updateEntryAssignmentSearchText(entry) {
+        const assignment = this.resolveAssignment(entry.projectKey, entry.sectionKey);
+        if (!assignment) {
+            throw new Error(`Entry ${entry.id} references unknown assignment ${entry.projectKey || "(none)"}/${entry.sectionKey || "(none)"}.`);
+        }
+        entry.setAssignmentSearchText(assignment.label);
     }
 
     /**
@@ -523,59 +616,6 @@ export class EntryStore {
         const next = this.weekRequirements.withUpdatedWeek(weekStart, requiredHours, comment, updatedAt);
         this.weekRequirements = next;
         return next;
-    }
-
-    /**
-     * Adds missing projects based on entry data.
-     * Uses deterministic colors and billable defaults from existing entries.
-     * @returns {{projectList: ProjectList | null, added: number}}
-     */
-    mergeProjectsFromEntries() {
-        const existing = this.projectList ? this.projectList.list() : [];
-        const existingByLower = new Map();
-        for (const project of existing) {
-            if (!project || !project.name) continue;
-            existingByLower.set(project.name.toLowerCase(), project);
-        }
-
-        const statsByLower = new Map();
-        for (const entry of this.entriesById.values()) {
-            const name = String(entry?.project || "").trim();
-            if (!name) continue;
-            const key = name.toLowerCase();
-            if (!statsByLower.has(key)) {
-                statsByLower.set(key, { name, trueCount: 0, falseCount: 0 });
-            }
-            const stats = statsByLower.get(key);
-            if (!stats) continue;
-            if (entry.billable === true) stats.trueCount += 1;
-            if (entry.billable === false) stats.falseCount += 1;
-        }
-
-        const rawProjects = existing.map((project) => project.toRaw());
-        let added = 0;
-
-        for (const [key, stats] of statsByLower.entries()) {
-            if (existingByLower.has(key)) continue;
-            const votes = stats.trueCount + stats.falseCount;
-            const billable = votes ? stats.trueCount >= stats.falseCount : false;
-            rawProjects.push({
-                name: stats.name,
-                color: hashColorHex(stats.name),
-                billable,
-                archived: false,
-            });
-            added += 1;
-        }
-
-        if (!rawProjects.length || added === 0) {
-            return { projectList: this.projectList, added: 0 };
-        }
-
-        const generatedAt = this.projectList ? this.projectList.generated_at : "";
-        const projectList = ProjectList.fromRaw({ generated_at: generatedAt, projects: rawProjects });
-        this.setProjectList(projectList);
-        return { projectList, added };
     }
 
     /**
@@ -703,6 +743,7 @@ export class EntryStore {
         const week = new Week(weekStart);
         for (const entry of entries) {
             entry.setWeekStart(weekStart);
+            this.updateEntryAssignmentSearchText(entry);
             week.addEntry(entry);
             this.entriesById.set(entry.id, entry);
             this.updateLongEntryIndex(entry);
@@ -739,6 +780,9 @@ export class EntryStore {
         const entries = [];
         for (const raw of Array.isArray(rawEntries) ? rawEntries : []) {
             if (!raw || typeof raw !== "object") continue;
+            if (!("project_key" in raw) || !("section_key" in raw)) {
+                throw new Error(`Week ${weekStart} contains an entry without canonical project_key/section_key fields.`);
+            }
             const id = Number(raw.id);
             if (!Number.isFinite(id)) continue;
             const entry = new Entry(raw);

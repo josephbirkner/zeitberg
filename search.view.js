@@ -97,20 +97,14 @@ export class SearchView {
     }
 
     /**
-     * Rebuilds the project filter options from store data.
+     * Rebuilds the project filter from the canonical project/section hierarchy.
+     * Root options include every section beneath that project, while indented section options allow an exact assignment filter.
      * Keeps filtering behavior aligned with current data.
      * @param {import("./model.js").Entry[]} entries
      * @returns {void}
      */
     renderProjects(entries) {
         const knownProjects = this.store.getProjects();
-        const knownByName = new Set(knownProjects.map((project) => project.name));
-        const unknown = new Set();
-        for (const entry of entries) {
-            if (entry.project && !knownByName.has(entry.project)) {
-                unknown.add(entry.project);
-            }
-        }
 
         const current = this.projectSelect.value;
         this.projectSelect.innerHTML = "";
@@ -124,35 +118,16 @@ export class SearchView {
         noneOpt.textContent = "No project";
         this.projectSelect.append(noneOpt);
 
-        const activeGroup = document.createElement("optgroup");
-        activeGroup.label = "Active projects";
-        const archivedGroup = document.createElement("optgroup");
-        archivedGroup.label = "Archived projects";
         const sortedKnown = knownProjects.slice().sort((a, b) => a.name.localeCompare(b.name));
         for (const project of sortedKnown) {
-            const opt = document.createElement("option");
-            opt.value = project.name;
-            opt.textContent = project.archived ? `${project.name} (archived)` : project.name;
-            if (project.archived) {
-                archivedGroup.append(opt);
-            } else {
-                activeGroup.append(opt);
+            const group = document.createElement("optgroup");
+            group.label = project.archived ? `${project.name} (archived)` : project.name;
+            group.append(new Option(`All ${project.name}`, `p:${project.key}`));
+            for (const section of project.listSections()) {
+                const suffix = section.archived ? " (archived)" : "";
+                group.append(new Option(`${section.name}${suffix}`, `s:${project.key}/${section.key}`));
             }
-        }
-        if (activeGroup.children.length) this.projectSelect.append(activeGroup);
-        if (archivedGroup.children.length) this.projectSelect.append(archivedGroup);
-
-        if (unknown.size) {
-            const unknownGroup = document.createElement("optgroup");
-            unknownGroup.label = "Unlisted";
-            const sortedUnknown = Array.from(unknown).sort((a, b) => a.localeCompare(b));
-            for (const project of sortedUnknown) {
-                const opt = document.createElement("option");
-                opt.value = project;
-                opt.textContent = `${project} (unlisted)`;
-                unknownGroup.append(opt);
-            }
-            this.projectSelect.append(unknownGroup);
+            this.projectSelect.append(group);
         }
 
         this.projectSelect.value = current;
@@ -184,9 +159,13 @@ export class SearchView {
 
         let entries = this.allEntries;
         if (project === "__none__") {
-            entries = entries.filter((entry) => !entry.project);
-        } else if (project) {
-            entries = entries.filter((entry) => entry.project === project);
+            entries = entries.filter((entry) => !entry.projectKey);
+        } else if (project.startsWith("p:")) {
+            const projectKey = project.slice(2);
+            entries = entries.filter((entry) => entry.projectKey === projectKey);
+        } else if (project.startsWith("s:")) {
+            const [projectKey, sectionKey] = project.slice(2).split("/", 2);
+            entries = entries.filter((entry) => entry.projectKey === projectKey && entry.sectionKey === sectionKey);
         }
         if (from) {
             entries = entries.filter((entry) => this.timeContext.formatDate(entry.startDate) >= from);
@@ -232,7 +211,7 @@ export class SearchView {
             tdDur.textContent = formatDuration(entry.durationSeconds);
 
             const tdProject = document.createElement("td");
-            tdProject.textContent = entry.project ? entry.project : "No project";
+            tdProject.textContent = this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) || "No project";
             const tdDesc = document.createElement("td");
             tdDesc.textContent = safeText(entry.description);
             const tdBillable = document.createElement("td");

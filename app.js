@@ -35,8 +35,8 @@ import { Manifest, ProjectList, TodoList, WeekRequirements } from "./model.js";
  */
 
 /**
- * Manages the project list dialog UI and persistence.
- * Reads and writes projects.json using the shared save pipeline.
+ * Manages the canonical project/section taxonomy and persists it through the shared save pipeline.
+ * Stable keys and hidden external-provider references survive display-name edits; new keys are generated only when new rows are saved.
  */
 class ProjectDialog {
     /**
@@ -71,8 +71,7 @@ class ProjectDialog {
     }
 
     /**
-     * Wires click and submit handlers for dialog controls.
-     * Keeps the main UI flow and data loading coordinated.
+     * Wires dialog controls to local row creation and repository persistence.
      * @returns {void}
      */
     bindEvents() {
@@ -110,8 +109,7 @@ class ProjectDialog {
     }
 
     /**
-     * Rebuilds the project rows from the store state.
-     * Keeps the main UI flow and data loading coordinated.
+     * Rebuilds nested project and section rows from the authoritative store model.
      * @returns {void}
      */
     renderList() {
@@ -130,16 +128,18 @@ class ProjectDialog {
     }
 
     /**
-     * Adds a blank project row for quick creation.
-     * Keeps the main UI flow and data loading coordinated.
+     * Adds a blank root project whose key will be reserved from its first saved name.
      * @returns {void}
      */
     addProjectRow() {
         const row = this.buildProjectRow({
+            key: "",
             name: "",
             color: "#7c5cff",
             billable: false,
             archived: false,
+            sections: [],
+            externalRefs: [],
         });
         this.listEl.append(row);
         const input = row.querySelector(".project-name");
@@ -147,14 +147,18 @@ class ProjectDialog {
     }
 
     /**
-     * Builds a project row DOM element with editable controls.
-     * Keeps the main UI flow and data loading coordinated.
-     * @param {{name: string, color: string, billable: boolean, archived: boolean}} project
+     * Builds one project card with default metadata and a nested section editor.
+     * The dataset retains an existing stable key without exposing provider bindings as editable fields.
+     * @param {{key: string, name: string, color: string, billable: boolean, archived: boolean, sections: Array<Object>, externalRefs?: import("./model.js").ExternalReferenceRaw[], listSections?: () => import("./model.js").Section[]}} project
      * @returns {HTMLElement}
      */
     buildProjectRow(project) {
         const row = document.createElement("div");
         row.className = "project-row";
+        row.dataset.projectKey = project.key || "";
+
+        const fields = document.createElement("div");
+        fields.className = "project-fields";
 
         const nameWrap = document.createElement("label");
         nameWrap.className = "project-field";
@@ -197,19 +201,120 @@ class ProjectDialog {
         archivedSpan.textContent = "Archived";
         archivedWrap.append(archivedInput, archivedSpan);
 
+        fields.append(nameWrap, colorWrap, billableWrap, archivedWrap);
+
+        const sectionsHead = document.createElement("div");
+        sectionsHead.className = "project-sections-head";
+        const sectionsTitle = document.createElement("span");
+        sectionsTitle.textContent = "Sections";
+        const addSectionBtn = document.createElement("button");
+        addSectionBtn.type = "button";
+        addSectionBtn.className = "btn btn-secondary project-add-section";
+        addSectionBtn.textContent = "Add section";
+        sectionsHead.append(sectionsTitle, addSectionBtn);
+
+        const sectionsEl = document.createElement("div");
+        sectionsEl.className = "project-sections";
+        const sections = project.listSections ? project.listSections() : project.sections || [];
+        for (const section of sections) {
+            sectionsEl.append(this.buildSectionRow(section));
+        }
+        addSectionBtn.addEventListener("click", () => {
+            const sectionRow = this.buildSectionRow({
+                key: "",
+                name: "",
+                color: null,
+                billable: null,
+                archived: false,
+            });
+            sectionsEl.append(sectionRow);
+            const input = sectionRow.querySelector(".section-name");
+            if (input instanceof HTMLInputElement) input.focus();
+        });
+
+        row.append(fields, sectionsHead, sectionsEl);
+        return row;
+    }
+
+    /**
+     * Builds controls for one section and its optional color/billable overrides.
+     * An unchecked custom-color switch and the “Inherit” billable choice explicitly serialize as null.
+     * @param {{key: string, name: string, color: string | null, billable: boolean | null, archived: boolean}} section
+     * @returns {HTMLElement}
+     */
+    buildSectionRow(section) {
+        const row = document.createElement("div");
+        row.className = "section-row";
+        row.dataset.sectionKey = section.key || "";
+
+        const nameWrap = document.createElement("label");
+        nameWrap.className = "project-field section-name-field";
+        const nameLabel = document.createElement("span");
+        nameLabel.textContent = "Name";
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.className = "section-name";
+        nameInput.value = section.name || "";
+        nameInput.spellcheck = false;
+        nameWrap.append(nameLabel, nameInput);
+
+        const colorWrap = document.createElement("label");
+        colorWrap.className = "project-field section-color-field";
+        const colorLabel = document.createElement("span");
+        colorLabel.textContent = "Color override";
+        const colorControls = document.createElement("span");
+        colorControls.className = "section-color-controls";
+        const useColor = document.createElement("input");
+        useColor.type = "checkbox";
+        useColor.className = "section-use-color";
+        useColor.checked = typeof section.color === "string" && Boolean(section.color);
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.className = "section-color";
+        colorInput.value = /^#[0-9a-f]{6}$/i.test(section.color || "") ? String(section.color) : "#7c5cff";
+        colorInput.disabled = !useColor.checked;
+        useColor.addEventListener("change", () => {
+            colorInput.disabled = !useColor.checked;
+        });
+        colorControls.append(useColor, colorInput);
+        colorWrap.append(colorLabel, colorControls);
+
+        const billableWrap = document.createElement("label");
+        billableWrap.className = "project-field";
+        const billableLabel = document.createElement("span");
+        billableLabel.textContent = "Billable";
+        const billableSelect = document.createElement("select");
+        billableSelect.className = "section-billable";
+        billableSelect.append(new Option("Inherit", "inherit"), new Option("Billable", "true"), new Option("Not billable", "false"));
+        billableSelect.value = typeof section.billable === "boolean" ? String(section.billable) : "inherit";
+        billableWrap.append(billableLabel, billableSelect);
+
+        const archivedWrap = document.createElement("label");
+        archivedWrap.className = "checkbox project-field";
+        const archivedInput = document.createElement("input");
+        archivedInput.type = "checkbox";
+        archivedInput.className = "section-archived";
+        archivedInput.checked = section.archived === true;
+        const archivedLabel = document.createElement("span");
+        archivedLabel.textContent = "Archived";
+        archivedWrap.append(archivedInput, archivedLabel);
+
         row.append(nameWrap, colorWrap, billableWrap, archivedWrap);
         return row;
     }
 
     /**
-     * Reads and validates project rows from the dialog.
-     * Keeps the main UI flow and data loading coordinated.
-     * @returns {{projects: Array<{name: string, color: string, billable: boolean, archived: boolean}>, error: string | null}}
+     * Reads nested controls, validates names/colors, reserves keys for new definitions, and preserves existing external references.
+     * @returns {{projects: import("./model.js").ProjectRaw[], error: string | null}}
      */
     collectProjects() {
         const rows = Array.from(this.listEl.querySelectorAll(".project-row"));
         const projects = [];
-        const seen = new Set();
+        const seenNames = new Set();
+        const usedProjectKeys = new Set(
+            rows.map((row) => (row instanceof HTMLElement ? row.dataset.projectKey || "" : "")).filter(Boolean),
+        );
+        const currentByKey = new Map(this.store.getProjects().map((project) => [project.key, project]));
 
         for (const row of rows) {
             const nameInput = row.querySelector(".project-name");
@@ -225,22 +330,78 @@ class ProjectDialog {
             if (!name) {
                 return { projects: [], error: "Every project needs a name." };
             }
-            const key = name.toLowerCase();
-            if (seen.has(key)) {
+            const nameIdentity = name.toLowerCase();
+            if (seenNames.has(nameIdentity)) {
                 return { projects: [], error: `Duplicate project name: ${name}` };
             }
-            seen.add(key);
+            seenNames.add(nameIdentity);
 
             const color = colorInput.value.trim();
             if (!/^#[0-9a-f]{6}$/i.test(color)) {
                 return { projects: [], error: `Invalid color for ${name}.` };
             }
 
+            const existingKey = row instanceof HTMLElement ? row.dataset.projectKey || "" : "";
+            const projectKey = existingKey || ProjectList.reserveKey(name, usedProjectKeys);
+            const currentProject = currentByKey.get(projectKey);
+            const currentSectionsByKey = new Map(
+                (currentProject?.listSections() || []).map((section) => [section.key, section]),
+            );
+            const sectionRows = Array.from(row.querySelectorAll(".section-row"));
+            const usedSectionKeys = new Set(
+                sectionRows
+                    .map((sectionRow) => (sectionRow instanceof HTMLElement ? sectionRow.dataset.sectionKey || "" : ""))
+                    .filter(Boolean),
+            );
+            const seenSectionNames = new Set();
+            const sections = [];
+
+            for (const sectionRow of sectionRows) {
+                if (!(sectionRow instanceof HTMLElement)) continue;
+                const sectionNameInput = sectionRow.querySelector(".section-name");
+                const useColorInput = sectionRow.querySelector(".section-use-color");
+                const sectionColorInput = sectionRow.querySelector(".section-color");
+                const sectionBillableInput = sectionRow.querySelector(".section-billable");
+                const sectionArchivedInput = sectionRow.querySelector(".section-archived");
+                if (!(sectionNameInput instanceof HTMLInputElement)) continue;
+                if (!(useColorInput instanceof HTMLInputElement)) continue;
+                if (!(sectionColorInput instanceof HTMLInputElement)) continue;
+                if (!(sectionBillableInput instanceof HTMLSelectElement)) continue;
+                if (!(sectionArchivedInput instanceof HTMLInputElement)) continue;
+
+                const sectionName = sectionNameInput.value.trim();
+                if (!sectionName) return { projects: [], error: `Every section in ${name} needs a name.` };
+                const sectionNameIdentity = sectionName.toLowerCase();
+                if (seenSectionNames.has(sectionNameIdentity)) {
+                    return { projects: [], error: `Duplicate section in ${name}: ${sectionName}` };
+                }
+                seenSectionNames.add(sectionNameIdentity);
+                const existingSectionKey = sectionRow.dataset.sectionKey || "";
+                const sectionKey = existingSectionKey || ProjectList.reserveKey(sectionName, usedSectionKeys);
+                const sectionColor = useColorInput.checked ? sectionColorInput.value.trim() : null;
+                if (sectionColor !== null && !/^#[0-9a-f]{6}$/i.test(sectionColor)) {
+                    return { projects: [], error: `Invalid color for ${name} / ${sectionName}.` };
+                }
+                const billableValue = sectionBillableInput.value;
+                const sectionBillable = billableValue === "true" ? true : billableValue === "false" ? false : null;
+                sections.push({
+                    archived: sectionArchivedInput.checked,
+                    billable: sectionBillable,
+                    color: sectionColor,
+                    external_refs: (currentSectionsByKey.get(sectionKey)?.externalRefs || []).map((reference) => ({ ...reference })),
+                    key: sectionKey,
+                    name: sectionName,
+                });
+            }
+
             projects.push({
+                key: projectKey,
                 name,
                 color,
                 billable: billableInput.checked,
                 archived: archivedInput.checked,
+                sections,
+                external_refs: (currentProject?.externalRefs || []).map((reference) => ({ ...reference })),
             });
         }
 
@@ -264,7 +425,7 @@ class ProjectDialog {
         const payload = {
             generated_at: utcNowIso(),
             projects,
-            schema_version: 1,
+            schema_version: 2,
         };
         const projectList = ProjectList.fromRaw(payload);
         const content = projectList.toJson();
@@ -272,7 +433,6 @@ class ProjectDialog {
         this.onBusy(true);
         try {
             await this.dataSource.saveFiles([{ path: "data/projects.json", content }], "Update projects");
-            this.store.setProjectList(projectList);
             this.onProjectsSaved(projectList);
             this.close();
         } catch (err) {
@@ -359,8 +519,8 @@ class App {
         this.entryCloseBtn = getRequiredElement("entryCloseBtn", HTMLButtonElement);
         this.entryCancelBtn = getRequiredElement("entryCancelBtn", HTMLButtonElement);
         this.entryMetaEl = getRequiredElement("entryMeta", HTMLElement);
-        this.entryProjectInput = getRequiredElement("entryProject", HTMLInputElement);
-        this.entryProjectListEl = getRequiredElement("entryProjectList", HTMLDataListElement);
+        this.entryAssignmentInput = getRequiredElement("entryAssignment", HTMLInputElement);
+        this.entryAssignmentListEl = getRequiredElement("entryAssignmentList", HTMLDataListElement);
         this.entryDescInput = getRequiredElement("entryDesc", HTMLTextAreaElement);
         this.entryDescSuggestionsEl = getRequiredElement("entryDescSuggestions", HTMLElement);
         this.projectsDialog = getRequiredElement("projectsDialog", HTMLDialogElement);
@@ -405,8 +565,8 @@ class App {
         this.todoCancelBtn = getRequiredElement("todoCancelBtn", HTMLButtonElement);
         this.todoContentInput = getRequiredElement("todoContent", HTMLInputElement);
         this.todoDescriptionInput = getRequiredElement("todoDescription", HTMLTextAreaElement);
-        this.todoProjectSelect = getRequiredElement("todoProject", HTMLSelectElement);
-        this.todoSectionInput = getRequiredElement("todoSection", HTMLInputElement);
+        this.todoAssignmentInput = getRequiredElement("todoAssignment", HTMLInputElement);
+        this.todoAssignmentListEl = getRequiredElement("todoAssignmentList", HTMLDataListElement);
         this.todoDueDateInput = getRequiredElement("todoDueDate", HTMLInputElement);
         this.todoDueTimeInput = getRequiredElement("todoDueTime", HTMLInputElement);
         this.todoRecurrenceInput = getRequiredElement("todoRecurrence", HTMLInputElement);
@@ -461,8 +621,8 @@ class App {
                 entryCloseBtn: this.entryCloseBtn,
                 entryCancelBtn: this.entryCancelBtn,
                 entryMeta: this.entryMetaEl,
-                entryProject: this.entryProjectInput,
-                entryProjectList: this.entryProjectListEl,
+                entryAssignment: this.entryAssignmentInput,
+                entryAssignmentList: this.entryAssignmentListEl,
                 entryDesc: this.entryDescInput,
                 entryDescSuggestions: this.entryDescSuggestionsEl,
             },
@@ -516,8 +676,8 @@ class App {
                 todoCancelBtn: this.todoCancelBtn,
                 todoContent: this.todoContentInput,
                 todoDescription: this.todoDescriptionInput,
-                todoProject: this.todoProjectSelect,
-                todoSection: this.todoSectionInput,
+                todoAssignment: this.todoAssignmentInput,
+                todoAssignmentList: this.todoAssignmentListEl,
                 todoDueDate: this.todoDueDateInput,
                 todoDueTime: this.todoDueTimeInput,
                 todoRecurrence: this.todoRecurrenceInput,
@@ -1149,17 +1309,10 @@ class App {
      */
     async fetchProjects() {
         this.setProgress(0, 1, this.isLocalMode ? "Loading projects (local)…" : "Loading projects…");
-        try {
-            const raw = await this.dataSource.fetchProjects();
-            const projectList = ProjectList.fromRaw(raw || {});
-            this.store.setProjectList(projectList);
-            this.weekView.setProjects(projectList);
-        } catch (err) {
-            const emptyList = ProjectList.fromRaw({ projects: [], generated_at: "" });
-            this.store.setProjectList(emptyList);
-            this.weekView.setProjects(emptyList);
-            this.toast(`Projects not loaded: ${safeText(err)}`, 5000);
-        }
+        const raw = await this.dataSource.fetchProjects();
+        const projectList = ProjectList.fromRaw(raw || {});
+        this.store.setProjectList(projectList);
+        this.weekView.setProjects(projectList);
         this.markSearchDirty();
     }
 
@@ -1261,6 +1414,10 @@ class App {
                 await this.chunkCache.putRawBySha(chunk.sha, raw);
             }
 
+            if (!payload || typeof payload !== "object" || Number(payload.schema_version) !== 2) {
+                throw new Error(`${chunk.path} must use entry schema_version 2.`);
+            }
+
             const entriesRaw = Array.isArray(payload.entries) ? payload.entries : [];
             this.chunkCache.setMemory(key, { sha: chunk.sha, entriesRaw });
             const weekStart = isoWeekStartFromYearWeek(chunk.year, chunk.week);
@@ -1281,12 +1438,6 @@ class App {
     async finalizeLoadedEntries() {
         await this.weekView.restoreDrafts();
         this.store.recomputeNextEntryId();
-        const seedResult = this.store.mergeProjectsFromEntries();
-        if (seedResult.added > 0) {
-            if (seedResult.projectList) this.weekView.setProjects(seedResult.projectList);
-            this.todoView.setProjects();
-            this.toast(`Seeded ${seedResult.added} project(s) from entries. Open Projects to review and save.`, 5000, "success");
-        }
 
         const latest = this.store.getLatestWeekStart();
         this.state.setLatestWeekStart(latest);

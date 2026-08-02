@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/timetracking/todos-v3.schema.json",
+  "title": "TimeTracking TODOs (v3)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated_at", "schema_version", "todos"],
+  "properties": {
+    "generated_at": { "type": "string" },
+    "schema_version": { "type": "integer", "const": 3 },
+    "todos": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/todo" }
+    }
+  },
+  "$defs": {
+    "keyOrNull": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "due": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["date", "timezone"],
+      "properties": {
+        "date": { "type": "string", "minLength": 1 },
+        "timezone": { "type": ["string", "null"] }
+      }
+    },
+    "recurrence": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["basis", "frequency", "interval", "month", "month_day", "source_text", "weekdays"],
+      "properties": {
+        "basis": { "enum": ["scheduled", "after_completion"] },
+        "frequency": { "enum": ["daily", "weekly", "monthly", "yearly", "custom"] },
+        "interval": { "type": "integer", "minimum": 1 },
+        "month": { "type": ["integer", "null"], "minimum": 1, "maximum": 12 },
+        "month_day": { "type": ["integer", "null"], "minimum": 1, "maximum": 31 },
+        "source_text": { "type": "string" },
+        "weekdays": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 7 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed_at", "scheduled_for"],
+      "properties": {
+        "completed_at": { "type": "string", "minLength": 1 },
+        "scheduled_for": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "project_id", "provider", "section_id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "project_id": { "type": ["string", "null"] },
+        "provider": { "type": "string", "minLength": 1 },
+        "section_id": { "type": ["string", "null"] }
+      }
+    },
+    "todo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archived",
+        "completed_at",
+        "completion_history",
+        "content",
+        "created_at",
+        "deadline",
+        "description",
+        "due",
+        "id",
+        "labels",
+        "order",
+        "parent_id",
+        "priority",
+        "project_key",
+        "recurrence",
+        "section_key",
+        "source",
+        "updated_at"
+      ],
+      "properties": {
+        "archived": { "type": "boolean" },
+        "completed_at": { "type": ["string", "null"] },
+        "completion_history": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/completion" }
+        },
+        "content": { "type": "string", "minLength": 1 },
+        "created_at": { "type": "string" },
+        "deadline": { "type": ["object", "null"] },
+        "description": { "type": "string" },
+        "due": { "$ref": "#/$defs/due" },
+        "id": { "type": "string", "minLength": 1 },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "order": { "type": "number" },
+        "parent_id": { "type": ["string", "null"] },
+        "priority": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "project_key": { "$ref": "#/$defs/keyOrNull" },
+        "recurrence": { "$ref": "#/$defs/recurrence" },
+        "section_key": { "$ref": "#/$defs/keyOrNull" },
+        "source": { "$ref": "#/$defs/source" },
+        "updated_at": { "type": "string" }
+      }
+    }
+  }
+}

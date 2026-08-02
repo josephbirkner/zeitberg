@@ -1522,14 +1522,62 @@ body.is-entry-moving * {
 }
 
 .project-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr auto auto;
-  gap: 10px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.project-fields,
+.section-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 2fr) minmax(110px, 1fr) minmax(120px, auto) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.project-sections-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.project-add-section {
+  min-height: 28px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.project-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.section-row {
+  margin-left: 14px;
+  padding: 7px;
+  border-left: 2px solid var(--border);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.section-color-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-color-controls input[type="checkbox"] {
+  flex: 0 0 auto;
 }
 
 .project-row .project-field {
@@ -1556,6 +1604,17 @@ body.is-entry-moving * {
 .project-row input[type="color"]::-webkit-color-swatch {
   border: none;
   border-radius: 8px;
+}
+
+@media (max-width: 720px) {
+  .project-fields,
+  .section-row {
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 0.7fr);
+  }
+
+  .section-row {
+    margin-left: 5px;
+  }
 }
 
 .week-card {

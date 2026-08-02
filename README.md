@@ -10,7 +10,7 @@ This is a static HTML5 application that stays “public” as code, but loads **
 - Your token is stored in the browser (localStorage if “Remember” is enabled; otherwise sessionStorage).
 - Edits are saved back into the repo as commits (GitHub mode) or written to disk via `server.py` (local mode).
 - Unsaved week and TODO edits are journaled in IndexedDB after every editor command, restored on reload, and removed only after a successful manual save. The journal is reload protection, not a repository save.
-- TODOs and time entries share the one project inventory in `data/projects.json`.
+- TODOs and time entries share the schema-v2 project/section taxonomy in `data/projects.json`. Assignments use stable `project_key`/`section_key` values, so names can change without rewriting diary or TODO history.
 - Startup and explicit reloads use a dedicated progress screen; the application toolbar appears only after initialization succeeds.
 
 ## Views
@@ -22,7 +22,7 @@ This is a static HTML5 application that stays “public” as code, but loads **
 
 ## Recurring TODOs
 
-`data/todos.json` schema version 2 stores three independent pieces of recurrence state:
+`data/todos.json` schema version 3 stores stable project/section keys plus three independent pieces of recurrence state:
 
 - `due` is the current occurrence's date and optional local time.
 - `recurrence` is a structured daily, weekly, monthly, or yearly rule with an interval and either a scheduled (`every`) or completion-relative (`every!`) basis.
@@ -32,7 +32,7 @@ The recurrence field in the editor accepts forms such as `every day`, `every Fri
 
 ## Todoist migration
 
-The one-way importer reads the API token from `~/.todoist`, imports all active tasks plus completed history since 2007, and retains sections, labels, priorities, due dates, and shared active or archived projects. Supported Todoist recurrence text is normalized into the schema above:
+The one-way importer reads the API token from `~/.todoist`, imports all active tasks plus completed history since 2007, and retains sections, labels, priorities, due dates, and shared active or archived projects. Todoist IDs bind to canonical projects/sections through `external_refs`, so a remote name such as the former `💼Work` continues to resolve to `KE` after consolidation. Supported Todoist recurrence text is normalized into the schema above:
 
 ```bash
 npm run import:todoist
@@ -45,6 +45,12 @@ npm run import:todoist -- --replace-todoist
 ```
 
 Use `--active-only` to skip completed history, or `--completed-since YYYY-MM-DD` to choose a later archive boundary. The importer preserves local-only TODOs and locally recorded recurrence history, and it never copies the API token into the repository.
+
+The historical flat-project migration remains available as a guarded integrity utility. On this migrated repository it performs read-only count, reference, and manifest-hash checks:
+
+```bash
+node scripts/migrate-project-taxonomy.mjs --check
+```
 
 TODO edits are saved manually. Each mutation updates the in-memory model and its IndexedDB recovery draft immediately; only `Ctrl+S` or **Save changes** writes `data/todos.json` through the GitHub/local save pipeline.
 

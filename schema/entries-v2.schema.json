@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/timetracking/entries-v2.schema.json",
+  "title": "TimeTracking Weekly Entries (v2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "timezone", "year", "week", "generated_at", "entries"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "timezone": { "type": "string" },
+    "year": { "type": "integer", "minimum": 2000, "maximum": 3000 },
+    "week": { "type": "integer", "minimum": 1, "maximum": 53 },
+    "generated_at": { "type": "string" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "start", "end", "duration_seconds", "is_running", "project_key", "section_key"],
+        "properties": {
+          "id": { "type": "integer" },
+          "start": { "type": "string" },
+          "end": { "type": ["string", "null"] },
+          "duration_seconds": { "type": ["integer", "null"], "minimum": 0 },
+          "description": { "type": ["string", "null"] },
+          "project_id": { "type": ["integer", "null"] },
+          "project_key": {
+            "type": ["string", "null"],
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "section_key": {
+            "type": ["string", "null"],
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "client_id": { "type": ["integer", "null"] },
+          "client": { "type": ["string", "null"] },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "billable": { "type": ["boolean", "null"] },
+          "user_id": { "type": ["integer", "null"] },
+          "created_at": { "type": ["string", "null"] },
+          "updated_at": { "type": ["string", "null"] },
+          "is_running": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
