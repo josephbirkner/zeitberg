@@ -1,4 +1,4 @@
-import { cloneJson, setVisible, utcNowIso } from "./utils.js";
+import { cloneJson, createMaterialIcon, setVisible, utcNowIso } from "./utils.js";
 import { Recurrence } from "./model.js";
 
 const TODO_DOCUMENT_NAME = "todos";
@@ -8,11 +8,10 @@ const TODO_DOCUMENT_NAME = "todos";
  * @property {HTMLElement} todoView
  * @property {HTMLElement} todoList
  * @property {HTMLButtonElement} todoAddBtn
- * @property {HTMLButtonElement} todoSaveBtn
- * @property {HTMLInputElement} todoSearch
- * @property {HTMLSelectElement} todoFilter
- * @property {HTMLSelectElement} todoProjectFilter
- * @property {HTMLElement} todoStats
+ * @property {HTMLInputElement} searchInput
+ * @property {HTMLButtonElement} todoCurrentFilterBtn
+ * @property {HTMLButtonElement} todoOpenFilterBtn
+ * @property {HTMLElement} todoProjectFilters
  * @property {HTMLDialogElement} todoDialog
  * @property {HTMLFormElement} todoForm
  * @property {HTMLElement} todoDialogTitle
@@ -43,6 +42,7 @@ const TODO_DOCUMENT_NAME = "todos";
  * @property {(message: string, timeout?: number, tone?: "error" | "success") => void} onToast
  * @property {(isBusy: boolean) => void} onBusy
  * @property {() => void} onSaved
+ * @property {(summary: string) => void} onStatsChanged
  */
 
 /**
@@ -135,15 +135,15 @@ export class TodoView {
         this.onToast = options.onToast;
         this.onBusy = options.onBusy;
         this.onSaved = options.onSaved;
+        this.onStatsChanged = options.onStatsChanged;
 
         this.viewEl = options.elements.todoView;
         this.listEl = options.elements.todoList;
         this.addBtn = options.elements.todoAddBtn;
-        this.saveBtn = options.elements.todoSaveBtn;
-        this.searchInput = options.elements.todoSearch;
-        this.filterSelect = options.elements.todoFilter;
-        this.projectFilterSelect = options.elements.todoProjectFilter;
-        this.statsEl = options.elements.todoStats;
+        this.searchInput = options.elements.searchInput;
+        this.currentFilterBtn = options.elements.todoCurrentFilterBtn;
+        this.openFilterBtn = options.elements.todoOpenFilterBtn;
+        this.projectFiltersEl = options.elements.todoProjectFilters;
         this.dialog = options.elements.todoDialog;
         this.form = options.elements.todoForm;
         this.dialogTitleEl = options.elements.todoDialogTitle;
@@ -166,6 +166,10 @@ export class TodoView {
         this.saveInFlight = false;
         this.selectedTodoId = null;
         this.editingTodoId = null;
+        this.searchQuery = "";
+        this.currentOnly = true;
+        this.openOnly = true;
+        this.projectFilterKey = "*";
         this.originalDue = null;
         this.originalDueFields = { date: "", time: "" };
         /** @type {import("./model.js").RecurrenceRaw | null} */
@@ -182,6 +186,7 @@ export class TodoView {
 
         this.bindEvents();
         this.populateProjectControls({ projectKey: null, sectionKey: null });
+        this.updateFilterButtons();
         this.updateSaveState();
     }
 
@@ -209,11 +214,23 @@ export class TodoView {
      */
     bindEvents() {
         this.addBtn.addEventListener("click", () => this.openCreateDialog());
-        this.saveBtn.addEventListener("click", () => void this.saveNow());
-        this.searchInput.addEventListener("input", () => this.render());
+        this.searchInput.addEventListener("input", () => {
+            if (!this.active) return;
+            this.searchQuery = this.searchInput.value;
+            this.render();
+        });
         this.searchInput.addEventListener("keydown", (event) => this.handleSearchKeydown(event));
-        this.filterSelect.addEventListener("change", () => this.render());
-        this.projectFilterSelect.addEventListener("change", () => this.render());
+        this.currentFilterBtn.addEventListener("click", () => {
+            this.currentOnly = !this.currentOnly;
+            this.updateFilterButtons();
+            this.render();
+        });
+        this.openFilterBtn.addEventListener("click", () => {
+            this.openOnly = !this.openOnly;
+            this.updateFilterButtons();
+            this.render();
+        });
+        this.projectFiltersEl.addEventListener("click", (event) => this.handleProjectFilterClick(event));
         this.listEl.addEventListener("click", (event) => this.handleListClick(event));
         this.listEl.addEventListener("dblclick", (event) => this.handleListDoubleClick(event));
         this.closeBtn.addEventListener("click", () => this.closeDialog());
@@ -240,6 +257,7 @@ export class TodoView {
         this.active = Boolean(isActive);
         setVisible(this.viewEl, this.active);
         if (!this.active) return;
+        this.updateFilterButtons();
         this.render();
         queueMicrotask(() => {
             if (!this.dialog.open) this.listEl.focus({ preventScroll: true });
@@ -255,8 +273,11 @@ export class TodoView {
         this.busy = Boolean(isBusy);
         this.addBtn.disabled = this.busy;
         this.searchInput.disabled = this.busy;
-        this.filterSelect.disabled = this.busy;
-        this.projectFilterSelect.disabled = this.busy;
+        this.currentFilterBtn.disabled = this.busy;
+        this.openFilterBtn.disabled = this.busy;
+        for (const button of this.projectFiltersEl.querySelectorAll("button")) {
+            if (button instanceof HTMLButtonElement) button.disabled = this.busy;
+        }
         this.closeBtn.disabled = this.busy;
         this.cancelBtn.disabled = this.busy;
         this.contentInput.disabled = this.busy;
@@ -282,14 +303,36 @@ export class TodoView {
         this.dirty = false;
         this.undoStack.length = 0;
         this.redoStack.length = 0;
-        this.searchInput.value = "";
-        this.filterSelect.value = "open";
-        this.projectFilterSelect.value = "*";
+        this.searchQuery = "";
+        this.currentOnly = true;
+        this.openOnly = true;
+        this.projectFilterKey = "*";
+        this.projectFiltersEl.innerHTML = "";
         this.assignmentInput.value = "";
         this.assignmentListEl.innerHTML = "";
         this.listEl.innerHTML = "";
-        this.statsEl.textContent = "";
+        this.updateFilterButtons();
+        this.onStatsChanged("");
         this.updateSaveState();
+    }
+
+    /**
+     * Returns the TODO query independently of the shared top-bar input's current view.
+     * Keeping this local value lets App restore a previous TODO search after visiting Week or Search.
+     * @returns {string}
+     */
+    getSearchQuery() {
+        return this.searchQuery;
+    }
+
+    /**
+     * Synchronizes the two independent TODO filter toggles with their accessible pressed state.
+     * The clock limits results to dated tasks due today or earlier; the checkmark hides completed tasks.
+     * @returns {void}
+     */
+    updateFilterButtons() {
+        this.currentFilterBtn.setAttribute("aria-pressed", this.currentOnly ? "true" : "false");
+        this.openFilterBtn.setAttribute("aria-pressed", this.openOnly ? "true" : "false");
     }
 
     /**
@@ -324,7 +367,6 @@ export class TodoView {
      * @returns {void}
      */
     populateProjectControls(selectedAssignment = undefined) {
-        const previousFilter = this.projectFilterSelect.value || "*";
         const previousLabel = this.assignmentInput.value;
         const resolvedPrevious = this.projectStore.findAssignmentByLabel(previousLabel);
         const selectedKeys = selectedAssignment === undefined ? resolvedPrevious : selectedAssignment;
@@ -333,16 +375,26 @@ export class TodoView {
             .slice()
             .sort((left, right) => left.name.localeCompare(right.name));
 
-        this.projectFilterSelect.innerHTML = "";
-        this.projectFilterSelect.append(new Option("All projects", "*"), new Option("No project", ""));
-        for (const project of projects) {
-            this.projectFilterSelect.append(new Option(project.archived ? `${project.name} (archived)` : project.name, project.key));
+        const activeKeys = new Set(projects.filter((project) => !project.archived).map((project) => project.key));
+        if (this.projectFilterKey !== "*" && this.projectFilterKey !== "" && !activeKeys.has(this.projectFilterKey)) {
+            this.projectFilterKey = "*";
         }
-        this.projectFilterSelect.value = Array.from(this.projectFilterSelect.options).some(
-            (option) => option.value === previousFilter,
-        )
-            ? previousFilter
-            : "*";
+        this.projectFiltersEl.innerHTML = "";
+        const filterOptions = [
+            { key: "*", label: "All" },
+            { key: "", label: "No project" },
+            ...projects.filter((project) => !project.archived).map((project) => ({ key: project.key, label: project.name })),
+        ];
+        for (const filter of filterOptions) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "todo-project-filter";
+            button.dataset.projectKey = filter.key;
+            button.textContent = filter.label;
+            button.setAttribute("aria-pressed", filter.key === this.projectFilterKey ? "true" : "false");
+            button.disabled = this.busy;
+            this.projectFiltersEl.append(button);
+        }
 
         this.assignmentListEl.innerHTML = "";
         for (const assignment of this.projectStore.getAssignmentOptions()) {
@@ -362,22 +414,36 @@ export class TodoView {
     }
 
     /**
+     * Applies a project chip as the active TODO filter and keeps its pressed state synchronized without rebuilding project data.
+     * @param {MouseEvent} event
+     * @returns {void}
+     */
+    handleProjectFilterClick(event) {
+        const target = event.target instanceof Element ? event.target.closest(".todo-project-filter") : null;
+        if (!(target instanceof HTMLButtonElement) || target.disabled) return;
+        this.projectFilterKey = target.dataset.projectKey ?? "*";
+        for (const button of this.projectFiltersEl.querySelectorAll(".todo-project-filter")) {
+            if (!(button instanceof HTMLButtonElement)) continue;
+            button.setAttribute("aria-pressed", button === target ? "true" : "false");
+        }
+        this.render();
+        queueMicrotask(() => this.listEl.focus({ preventScroll: true }));
+    }
+
+    /**
      * Returns TODOs matching the active status, project, and free-text filters in deterministic display order.
      * @returns {import("./model.js").Todo[]}
      */
     getVisibleTodos() {
-        const filter = this.filterSelect.value || "open";
-        const projectFilter = this.projectFilterSelect.value;
-        const query = this.searchInput.value.trim().toLowerCase();
+        const projectFilter = this.projectFilterKey;
+        const query = this.searchQuery.trim().toLowerCase();
         const today = this.timeContext.formatDate(new Date());
         const result = this.store.getTodos().filter((todo) => {
             if (todo.archived) return false;
             const completed = todo.isCompleted();
             const due = dueDateKey(todo.due);
-            if (filter === "open" && completed) return false;
-            if (filter === "today" && (completed || !due || due > today)) return false;
-            if (filter === "upcoming" && (completed || !due || due <= today)) return false;
-            if (filter === "completed" && !completed) return false;
+            if (this.openOnly && completed) return false;
+            if (this.currentOnly && (!due || due > today)) return false;
             if (projectFilter !== "*" && (todo.projectKey || "") !== projectFilter) return false;
             const assignmentText = this.projectStore.getAssignmentLabel(todo.projectKey, todo.sectionKey).toLowerCase();
             if (query && !`${todo.searchHaystack} ${assignmentText}`.includes(query)) return false;
@@ -385,9 +451,6 @@ export class TodoView {
         });
 
         result.sort((left, right) => {
-            if (filter === "completed") {
-                return String(right.completed_at || "").localeCompare(String(left.completed_at || ""));
-            }
             if (left.isCompleted() !== right.isCompleted()) return left.isCompleted() ? 1 : -1;
             const leftDue = dueDateKey(left.due) || "9999-12-31";
             const rightDue = dueDateKey(right.due) || "9999-12-31";
@@ -419,15 +482,153 @@ export class TodoView {
             this.listEl.append(empty);
         } else {
             const fragment = document.createDocumentFragment();
-            for (const todo of visible) fragment.append(this.buildTodoRow(todo));
+            for (const group of this.buildTodoGroups(visible)) {
+                fragment.append(this.buildTodoGroupElement(group));
+            }
             this.listEl.append(fragment);
         }
 
         const all = this.store.getTodos().filter((todo) => !todo.archived);
         const openCount = all.filter((todo) => !todo.isCompleted()).length;
         const completedCount = all.length - openCount;
-        this.statsEl.textContent = `${visible.length} shown • ${openCount} open • ${completedCount} completed`;
+        this.onStatsChanged(`${visible.length} shown • ${openCount} open • ${completedCount} completed`);
         this.updateSaveState();
+    }
+
+    /**
+     * Groups already-filtered TODOs by canonical project and section while retaining the due-date ordering inside each group.
+     * Project and section order follows projects.json, with the intentional no-project bucket rendered last.
+     * @param {import("./model.js").Todo[]} todos
+     * @returns {Array<{projectKey: string | null, projectName: string, color: string, rootTodos: import("./model.js").Todo[], sections: Array<{sectionKey: string, sectionName: string, todos: import("./model.js").Todo[]}>}>}
+     */
+    buildTodoGroups(todos) {
+        const projects = this.projectStore.getProjects();
+        const projectOrder = new Map(projects.map((project, index) => [project.key, index]));
+        const groupsByKey = new Map();
+
+        for (const todo of todos) {
+            const projectKey = todo.projectKey || "";
+            let group = groupsByKey.get(projectKey);
+            if (!group) {
+                const project = this.projectStore.getProjectByKey(projectKey);
+                group = {
+                    projectKey: project?.key || null,
+                    projectName: project?.name || "No project",
+                    color: project?.color || "",
+                    rootTodos: [],
+                    sectionsByKey: new Map(),
+                };
+                groupsByKey.set(projectKey, group);
+            }
+            if (!todo.sectionKey) {
+                group.rootTodos.push(todo);
+                continue;
+            }
+            let section = group.sectionsByKey.get(todo.sectionKey);
+            if (!section) {
+                const project = this.projectStore.getProjectByKey(todo.projectKey);
+                const sectionModel = project?.getSectionByKey(todo.sectionKey);
+                section = {
+                    sectionKey: todo.sectionKey,
+                    sectionName: sectionModel?.name || todo.sectionKey,
+                    todos: [],
+                };
+                group.sectionsByKey.set(todo.sectionKey, section);
+            }
+            section.todos.push(todo);
+        }
+
+        return Array.from(groupsByKey.values())
+            .sort((left, right) => {
+                if (left.projectKey === null) return 1;
+                if (right.projectKey === null) return -1;
+                return (projectOrder.get(left.projectKey) ?? Number.MAX_SAFE_INTEGER) -
+                    (projectOrder.get(right.projectKey) ?? Number.MAX_SAFE_INTEGER);
+            })
+            .map((group) => {
+                const project = this.projectStore.getProjectByKey(group.projectKey);
+                const sectionOrder = new Map((project?.listSections() || []).map((section, index) => [section.key, index]));
+                return {
+                    projectKey: group.projectKey,
+                    projectName: group.projectName,
+                    color: group.color,
+                    rootTodos: group.rootTodos,
+                    sections: Array.from(group.sectionsByKey.values()).sort(
+                        (left, right) =>
+                            (sectionOrder.get(left.sectionKey) ?? Number.MAX_SAFE_INTEGER) -
+                                (sectionOrder.get(right.sectionKey) ?? Number.MAX_SAFE_INTEGER) ||
+                            left.sectionName.localeCompare(right.sectionName),
+                    ),
+                };
+            });
+    }
+
+    /**
+     * Builds a project group with a root-level add action and visually distinct section groups with their own add actions.
+     * @param {{projectKey: string | null, projectName: string, color: string, rootTodos: import("./model.js").Todo[], sections: Array<{sectionKey: string, sectionName: string, todos: import("./model.js").Todo[]}>}} group
+     * @returns {HTMLElement}
+     */
+    buildTodoGroupElement(group) {
+        const container = document.createElement("section");
+        container.className = "todo-project-group";
+        if (group.color) container.style.setProperty("--todo-project-color", group.color);
+
+        const header = document.createElement("div");
+        header.className = "todo-group-header";
+        const title = document.createElement("div");
+        title.className = "todo-group-title";
+        title.textContent = group.projectName;
+        const count = document.createElement("span");
+        count.className = "todo-group-count";
+        const total = group.rootTodos.length + group.sections.reduce((sum, section) => sum + section.todos.length, 0);
+        count.textContent = String(total);
+        header.append(title, count, this.buildTodoGroupAddButton(group.projectKey, null, `Add TODO to ${group.projectName}`));
+        container.append(header);
+
+        for (const todo of group.rootTodos) container.append(this.buildTodoRow(todo));
+        for (const section of group.sections) {
+            const sectionContainer = document.createElement("div");
+            sectionContainer.className = "todo-section-group";
+            const sectionHeader = document.createElement("div");
+            sectionHeader.className = "todo-section-header";
+            const sectionTitle = document.createElement("span");
+            sectionTitle.textContent = section.sectionName;
+            const sectionCount = document.createElement("span");
+            sectionCount.className = "todo-group-count";
+            sectionCount.textContent = String(section.todos.length);
+            sectionHeader.append(
+                sectionTitle,
+                sectionCount,
+                this.buildTodoGroupAddButton(
+                    group.projectKey,
+                    section.sectionKey,
+                    `Add TODO to ${group.projectName} / ${section.sectionName}`,
+                ),
+            );
+            sectionContainer.append(sectionHeader);
+            for (const todo of section.todos) sectionContainer.append(this.buildTodoRow(todo));
+            container.append(sectionContainer);
+        }
+        return container;
+    }
+
+    /**
+     * Creates an icon-only add button carrying the canonical assignment for a TODO group header.
+     * @param {string | null} projectKey
+     * @param {string | null} sectionKey
+     * @param {string} label
+     * @returns {HTMLButtonElement}
+     */
+    buildTodoGroupAddButton(projectKey, sectionKey, label) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "todo-group-add";
+        button.dataset.todoAddProject = projectKey || "";
+        button.dataset.todoAddSection = sectionKey || "";
+        button.title = label;
+        button.setAttribute("aria-label", label);
+        button.append(createMaterialIcon("add"));
+        return button;
     }
 
     /**
@@ -452,7 +653,7 @@ export class TodoView {
         check.className = "todo-check";
         check.dataset.todoAction = "toggle";
         check.setAttribute("aria-label", todo.isCompleted() ? `Reopen ${todo.content}` : `Complete ${todo.content}`);
-        check.textContent = todo.isCompleted() ? "✓" : "";
+        if (todo.isCompleted()) check.append(createMaterialIcon("check", "app-icon todo-check-icon"));
 
         const body = document.createElement("div");
         body.className = "todo-body";
@@ -469,18 +670,6 @@ export class TodoView {
 
         const meta = document.createElement("div");
         meta.className = "todo-meta";
-        if (assignment?.project) {
-            const projectBadge = document.createElement("span");
-            projectBadge.className = "todo-project";
-            projectBadge.textContent = assignment.project.name;
-            if (assignment.color) projectBadge.style.setProperty("--todo-project-color", assignment.color);
-            meta.append(projectBadge);
-        }
-        if (assignment?.section) {
-            const section = document.createElement("span");
-            section.textContent = assignment.section.name;
-            meta.append(section);
-        }
         const due = this.buildDueBadge(todo);
         if (due) meta.append(due);
         if (todo.completion_history.length) {
@@ -542,7 +731,8 @@ export class TodoView {
         if (!todo.isCompleted() && key < today) due.classList.add("is-overdue");
         if (!todo.isCompleted() && key === today) due.classList.add("is-today");
         const fields = splitDue(todo.due);
-        due.textContent = `${todo.isRecurring() ? "↻ " : ""}${key}${fields.time ? ` ${fields.time}` : ""}`;
+        if (todo.isRecurring()) due.append(createMaterialIcon("repeat", "app-icon todo-recurrence-icon"));
+        due.append(document.createTextNode(`${key}${fields.time ? ` ${fields.time}` : ""}`));
         if (todo.recurrence) due.title = todo.recurrence.describe();
         return due;
     }
@@ -583,6 +773,14 @@ export class TodoView {
     handleListClick(event) {
         const target = event.target;
         if (!(target instanceof Element)) return;
+        const addButton = target.closest(".todo-group-add");
+        if (addButton instanceof HTMLButtonElement) {
+            this.openCreateDialog({
+                projectKey: addButton.dataset.todoAddProject || null,
+                sectionKey: addButton.dataset.todoAddSection || null,
+            });
+            return;
+        }
         const row = target.closest(".todo-row");
         if (!(row instanceof HTMLElement)) return;
         const id = row.dataset.todoId || "";
@@ -611,6 +809,7 @@ export class TodoView {
      * @returns {void}
      */
     handleSearchKeydown(event) {
+        if (!this.active) return;
         if (event.key === "ArrowDown") {
             event.preventDefault();
             this.listEl.focus();
@@ -618,8 +817,9 @@ export class TodoView {
             this.selectTodo(this.selectedTodoId);
         } else if (event.key === "Escape") {
             event.preventDefault();
-            if (this.searchInput.value) {
+            if (this.searchQuery) {
                 this.searchInput.value = "";
+                this.searchQuery = "";
                 this.render();
             } else {
                 this.listEl.focus();
@@ -713,20 +913,22 @@ export class TodoView {
 
     /**
      * Opens a blank editor with sensible defaults derived from the active project filter.
+     * Group-level add buttons may provide an exact project/section assignment.
+     * @param {{projectKey: string | null, sectionKey: string | null} | undefined} [selectedAssignment]
      * @returns {void}
      */
-    openCreateDialog() {
+    openCreateDialog(selectedAssignment = undefined) {
         if (this.busy || this.saveInFlight) return;
         this.editingTodoId = null;
         this.dialogTitleEl.textContent = "Add TODO";
         this.dialogMetaEl.textContent = "New task";
         this.contentInput.value = "";
         this.descriptionInput.value = "";
-        this.populateProjectControls({ projectKey: null, sectionKey: null });
-        const filteredProject = this.projectFilterSelect.value;
-        this.assignmentInput.value = filteredProject !== "*"
-            ? this.projectStore.getAssignmentLabel(filteredProject, null)
-            : "";
+        const defaultAssignment = selectedAssignment || {
+            projectKey: this.projectFilterKey !== "*" ? this.projectFilterKey || null : null,
+            sectionKey: null,
+        };
+        this.populateProjectControls(defaultAssignment);
         this.dueDateInput.value = "";
         this.dueTimeInput.value = "";
         this.recurrenceInput.value = "";
@@ -1023,14 +1225,6 @@ export class TodoView {
      */
     updateSaveState() {
         const status = this.saveInFlight ? "Saving…" : this.dirty ? "Changed" : "Saved";
-        if (this.saveInFlight) {
-            this.saveBtn.textContent = "Saving…";
-        } else if (this.dirty) {
-            this.saveBtn.textContent = "Save changes";
-        } else {
-            this.saveBtn.textContent = "Saved";
-        }
-        this.saveBtn.disabled = this.busy || this.saveInFlight || !this.dirty;
         this.viewEl.classList.toggle("is-dirty", this.dirty);
         if (this.active) {
             this.editorBadgeEl.classList.toggle("is-dirty", this.dirty);

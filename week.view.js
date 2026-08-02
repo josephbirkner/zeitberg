@@ -1,6 +1,7 @@
 import {
     addIsoDays,
     cloneJson,
+    createMaterialIcon,
     formatDuration,
     parseHexColor,
     hhmmToMinutes,
@@ -48,6 +49,19 @@ export function calculateVisibleDayCount(viewportWidth) {
     const timeAxisWidth = width <= 760 ? 48 : 56;
     const availableDayWidth = Math.max(0, width - timeAxisWidth);
     return Math.max(1, Math.min(7, Math.floor(availableDayWidth / MIN_DAY_COLUMN_WIDTH)));
+}
+
+/**
+ * Formats a tracked duration as compact decimal hours for the week-corner summary.
+ * The value is rounded to one decimal place while whole-hour totals omit the redundant decimal suffix.
+ * @param {number} seconds
+ * @returns {string}
+ */
+export function formatTrackedHours(seconds) {
+    const numericSeconds = Number(seconds);
+    if (!Number.isFinite(numericSeconds) || numericSeconds <= 0) return "0h";
+    const roundedHours = Math.round((numericSeconds / 3600) * 10) / 10;
+    return `${roundedHours.toFixed(1).replace(/\.0$/, "")}h`;
 }
 
 /**
@@ -202,7 +216,6 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {Object} elements
  * @property {HTMLElement} elements.weekViewSection
  * @property {HTMLElement} elements.weekControls
- * @property {HTMLElement} elements.weekLabel
  * @property {HTMLElement} elements.weekBillable
  * @property {HTMLButtonElement} elements.weekReqBtn
  * @property {HTMLElement} elements.weekScroll
@@ -263,7 +276,6 @@ export class WeekView {
 
         this.weekViewSection = options.elements.weekViewSection;
         this.weekControlsEl = options.elements.weekControls;
-        this.weekLabelEl = options.elements.weekLabel;
         this.weekBillableEl = options.elements.weekBillable;
         this.weekReqBtn = options.elements.weekReqBtn;
         this.weekScrollEl = options.elements.weekScroll;
@@ -554,7 +566,6 @@ export class WeekView {
      */
     reset() {
         this.weekScrollEl.innerHTML = "";
-        this.weekLabelEl.textContent = "";
         if (this.weekBillableEl) {
             this.weekBillableEl.replaceChildren();
         }
@@ -1210,6 +1221,12 @@ export class WeekView {
 
         const dayKeys = this.weekDom.dayKeys[this.focusedDayIndex] || [];
         const selectedKey = dayKeys.length ? dayKeys[this.focusedEntryIndexByDay[this.focusedDayIndex] || 0] : null;
+        for (let i = 0; i < this.weekDom.dayColEls.length; i++) {
+            this.weekDom.dayColEls[i].classList.toggle(
+                "has-selected-entry",
+                i === this.focusedDayIndex && Boolean(selectedKey),
+            );
+        }
         this.selectedSegKey = selectedKey || null;
         this.selectedEntryId = null;
         if (selectedKey && typeof selectedKey === "string") {
@@ -1343,7 +1360,6 @@ export class WeekView {
         const weekStart = this.appState.weekStart;
         const hasProjectList = Boolean(this.store.getProjectList());
         if (!weekStart) {
-            this.weekLabelEl.textContent = "";
             if (this.weekBillableEl) {
                 this.weekBillableEl.textContent = "";
             }
@@ -1355,15 +1371,24 @@ export class WeekView {
 
         const days = Array.from({ length: 7 }, (_, i) => addIsoDays(weekStart, i));
         const today = this.timeContext.formatDate(new Date());
-        const { isoYear, week } = isoWeekInfo(weekStart);
-        this.weekLabelEl.textContent = `${isoYear}-W${String(week).padStart(2, "0")}`;
+        const { week } = isoWeekInfo(weekStart);
         this.updateWeekSummary(weekStart);
 
         const gridEl = document.createElement("div");
         gridEl.className = "week-grid";
 
         const timeHeader = document.createElement("div");
-        timeHeader.className = "wg-header";
+        timeHeader.className = "wg-header wg-week-summary";
+        const weekNumberEl = document.createElement("div");
+        weekNumberEl.className = "wg-week-number";
+        weekNumberEl.textContent = `W${String(week).padStart(2, "0")}`;
+        const trackedSeconds = this.store.getWeekTrackedSeconds(weekStart);
+        const weekTrackedEl = document.createElement("div");
+        weekTrackedEl.className = "wg-week-tracked";
+        weekTrackedEl.textContent = formatTrackedHours(trackedSeconds);
+        timeHeader.title = `${formatDuration(trackedSeconds)} tracked in week ${week}`;
+        timeHeader.setAttribute("aria-label", `Week ${week}, ${formatDuration(trackedSeconds)} tracked`);
+        timeHeader.append(weekNumberEl, weekTrackedEl);
         gridEl.append(timeHeader);
 
         const dayHeaderEls = [];
@@ -1552,6 +1577,13 @@ export class WeekView {
                     this.applyWeekFocusAndSelection();
                     this.scrollWeekFocusIntoView();
                     this.weekScrollEl.focus();
+                });
+                el.addEventListener("dblclick", (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    if (this.editMode !== "normal" || this.busy || this.saveInFlight) return;
+                    this.selectRenderedSegment(dayIdx, seg.key);
+                    this.openEntryDialog(Number(entry.id));
                 });
 
                 dayColEls[dayIdx].append(el);
@@ -3480,7 +3512,12 @@ export class WeekView {
         }
 
         const summary = this.getWeekSummaryData(weekStart);
-        const direction = summary.weekDeltaSeconds > 0 ? "↑" : summary.weekDeltaSeconds < 0 ? "↓" : "→";
+        const directionIcon =
+            summary.weekDeltaSeconds > 0
+                ? "trending_up"
+                : summary.weekDeltaSeconds < 0
+                  ? "trending_down"
+                  : "trending_flat";
         const tone = summary.weekDeltaSeconds > 0 ? "is-positive" : summary.weekDeltaSeconds < 0 ? "is-negative" : "is-neutral";
 
         const totalEl = document.createElement("span");
@@ -3488,7 +3525,7 @@ export class WeekView {
         totalEl.textContent = `€ ${this.formatSignedDuration(summary.accumulatedSeconds)}`;
         const directionEl = document.createElement("span");
         directionEl.className = `overtime-direction ${tone}`;
-        directionEl.textContent = direction;
+        directionEl.append(createMaterialIcon(directionIcon, "app-icon overtime-direction-icon"));
         directionEl.setAttribute("aria-hidden", "true");
         const deltaEl = document.createElement("span");
         deltaEl.className = `overtime-week ${tone}`;

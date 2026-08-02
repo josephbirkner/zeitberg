@@ -18,6 +18,10 @@ import {
 } from "./utils.js";
 import { Manifest, ProjectList, TodoList, WeekRequirements } from "./model.js";
 
+const MIN_APP_ZOOM = 0.8;
+const MAX_APP_ZOOM = 1.5;
+const APP_ZOOM_STEP = 0.1;
+
 /**
  * @typedef {Object} ProjectDialogOptions
  * @property {import("./store.js").EntryStore} store
@@ -464,6 +468,8 @@ class App {
         this.todoStore = new TodoStore(this.store);
         this.chunkCache = new ChunkCache();
         this.draftJournal = new DraftJournal();
+        this.repositorySummary = "";
+        this.todoSummary = "";
 
         this.dataSource = this.isLocalMode ? new LocalDataSource() : new GitHubDataSource(this.config, this.token);
 
@@ -474,13 +480,15 @@ class App {
         this.loginErrorEl = getRequiredElement("loginError", HTMLElement);
         this.clearSavedBtn = getRequiredElement("clearSavedBtn", HTMLButtonElement);
 
+        this.sidebarEl = getRequiredElement("appSidebar", HTMLElement);
         this.topbarEl = getRequiredElement("topbar", HTMLElement);
-        this.appMenuRootEl = getRequiredElement("appMenuRoot", HTMLElement);
-        this.menuBtn = getRequiredElement("menuBtn", HTMLButtonElement);
-        this.appMenuPanelEl = getRequiredElement("appMenuPanel", HTMLElement);
         this.menuWeekBtn = getRequiredElement("menuWeekBtn", HTMLButtonElement);
         this.menuTodoBtn = getRequiredElement("menuTodoBtn", HTMLButtonElement);
         this.menuSearchBtn = getRequiredElement("menuSearchBtn", HTMLButtonElement);
+        this.appZoomOutBtn = getRequiredElement("appZoomOutBtn", HTMLButtonElement);
+        this.appZoomResetBtn = getRequiredElement("appZoomResetBtn", HTMLButtonElement);
+        this.appZoomLabelEl = getRequiredElement("appZoomLabel", HTMLElement);
+        this.appZoomInBtn = getRequiredElement("appZoomInBtn", HTMLButtonElement);
         this.weekControlsEl = getRequiredElement("weekControls", HTMLElement);
         this.projectsBtn = getRequiredElement("projectsBtn", HTMLButtonElement);
 
@@ -497,7 +505,6 @@ class App {
         this.dataErrorEl = getRequiredElement("dataError", HTMLElement);
 
         this.weekViewSection = getRequiredElement("weekViewSection", HTMLElement);
-        this.weekLabelEl = getRequiredElement("weekLabel", HTMLElement);
         this.weekBillableEl = getRequiredElement("weekBillable", HTMLElement);
         this.weekReqBtn = getRequiredElement("weekReqBtn", HTMLButtonElement);
         this.weekScrollEl = getRequiredElement("weekScroll", HTMLElement);
@@ -541,6 +548,8 @@ class App {
         this.weekReqComment = getRequiredElement("weekReqComment", HTMLTextAreaElement);
 
         this.searchViewEl = getRequiredElement("searchView", HTMLElement);
+        this.searchFiltersPanelEl = getRequiredElement("searchFiltersPanel", HTMLDetailsElement);
+        this.globalSearchEl = getRequiredElement("globalSearch", HTMLElement);
         this.searchInput = getRequiredElement("searchInput", HTMLInputElement);
         this.projectSelect = getRequiredElement("projectSelect", HTMLSelectElement);
         this.fromDateInput = getRequiredElement("fromDate", HTMLInputElement);
@@ -552,12 +561,11 @@ class App {
 
         this.todoViewEl = getRequiredElement("todoView", HTMLElement);
         this.todoListEl = getRequiredElement("todoList", HTMLElement);
+        this.todoTopbarControlsEl = getRequiredElement("todoTopbarControls", HTMLElement);
         this.todoAddBtn = getRequiredElement("todoAddBtn", HTMLButtonElement);
-        this.todoSaveBtn = getRequiredElement("todoSaveBtn", HTMLButtonElement);
-        this.todoSearchInput = getRequiredElement("todoSearch", HTMLInputElement);
-        this.todoFilterSelect = getRequiredElement("todoFilter", HTMLSelectElement);
-        this.todoProjectFilterSelect = getRequiredElement("todoProjectFilter", HTMLSelectElement);
-        this.todoStatsEl = getRequiredElement("todoStats", HTMLElement);
+        this.todoCurrentFilterBtn = getRequiredElement("todoCurrentFilterBtn", HTMLButtonElement);
+        this.todoOpenFilterBtn = getRequiredElement("todoOpenFilterBtn", HTMLButtonElement);
+        this.todoProjectFiltersEl = getRequiredElement("todoProjectFilters", HTMLElement);
         this.todoDialog = getRequiredElement("todoDialog", HTMLDialogElement);
         this.todoForm = getRequiredElement("todoForm", HTMLFormElement);
         this.todoDialogTitleEl = getRequiredElement("todoDialogTitle", HTMLElement);
@@ -591,7 +599,6 @@ class App {
             elements: {
                 weekViewSection: this.weekViewSection,
                 weekControls: this.weekControlsEl,
-                weekLabel: this.weekLabelEl,
                 weekBillable: this.weekBillableEl,
                 weekReqBtn: this.weekReqBtn,
                 weekScroll: this.weekScrollEl,
@@ -664,11 +671,10 @@ class App {
                 todoView: this.todoViewEl,
                 todoList: this.todoListEl,
                 todoAddBtn: this.todoAddBtn,
-                todoSaveBtn: this.todoSaveBtn,
-                todoSearch: this.todoSearchInput,
-                todoFilter: this.todoFilterSelect,
-                todoProjectFilter: this.todoProjectFilterSelect,
-                todoStats: this.todoStatsEl,
+                searchInput: this.searchInput,
+                todoCurrentFilterBtn: this.todoCurrentFilterBtn,
+                todoOpenFilterBtn: this.todoOpenFilterBtn,
+                todoProjectFilters: this.todoProjectFiltersEl,
                 todoDialog: this.todoDialog,
                 todoForm: this.todoForm,
                 todoDialogTitle: this.todoDialogTitleEl,
@@ -689,6 +695,10 @@ class App {
             onToast: (message, timeout, tone) => this.toast(message, timeout, tone),
             onBusy: (busy) => this.setBusy(busy),
             onSaved: () => this.refreshRepoLabel(),
+            onStatsChanged: (summary) => {
+                this.todoSummary = summary;
+                this.refreshDataBadge();
+            },
         });
 
         this.projectDialog = new ProjectDialog({
@@ -709,6 +719,52 @@ class App {
 
         this.toastTimer = 0;
         this.resizeRaf = 0;
+        this.uiZoom = this.normalizeAppZoom(this.config.uiZoom);
+        this.setAppZoom(this.uiZoom, false);
+        this.searchFiltersNarrow = window.innerWidth <= 760;
+        this.searchFiltersPanelEl.open = !this.searchFiltersNarrow;
+    }
+
+    /**
+     * Clamps an arbitrary persisted value to the supported application zoom range.
+     * Rounding to tenths keeps button stepping stable despite floating-point arithmetic.
+     * @param {unknown} value
+     * @returns {number}
+     */
+    normalizeAppZoom(value) {
+        const parsed = Number(value);
+        const finite = Number.isFinite(parsed) ? parsed : 1;
+        return Math.round(Math.max(MIN_APP_ZOOM, Math.min(MAX_APP_ZOOM, finite)) * 10) / 10;
+    }
+
+    /**
+     * Applies a whole-application visual zoom and optionally persists it with the repository configuration.
+     * Browsers do not expose their native page-zoom setting to page scripts, so CSS zoom provides the equivalent in-app control.
+     * @param {number} value
+     * @param {boolean} [shouldPersist]
+     * @returns {void}
+     */
+    setAppZoom(value, shouldPersist = true) {
+        this.uiZoom = this.normalizeAppZoom(value);
+        document.body.style.setProperty("zoom", String(this.uiZoom));
+        this.appZoomLabelEl.textContent = `${Math.round(this.uiZoom * 100)}%`;
+        this.appZoomResetBtn.title = `Reset app zoom (${Math.round(this.uiZoom * 100)}%)`;
+        this.appZoomOutBtn.disabled = this.uiZoom <= MIN_APP_ZOOM;
+        this.appZoomInBtn.disabled = this.uiZoom >= MAX_APP_ZOOM;
+        this.config = { ...this.config, uiZoom: this.uiZoom };
+        this.state.setConfig(this.config);
+        if (shouldPersist) this.configService.saveConfig(this.config);
+        window.requestAnimationFrame(() => this.weekView.handleResize());
+    }
+
+    /**
+     * Moves the application zoom by one ten-percent step in the requested direction.
+     * @param {number} direction Negative zooms out; positive zooms in.
+     * @returns {void}
+     */
+    nudgeAppZoom(direction) {
+        const step = direction < 0 ? -APP_ZOOM_STEP : APP_ZOOM_STEP;
+        this.setAppZoom(this.uiZoom + step);
     }
 
     /**
@@ -737,47 +793,32 @@ class App {
 
         this.loginForm.addEventListener("submit", (ev) => this.handleLoginSubmit(ev));
         this.clearSavedBtn.addEventListener("click", () => this.handleClearSaved());
-        this.menuBtn.addEventListener("click", (ev) => {
-            ev.stopPropagation();
-            this.setMenuOpen(this.appMenuPanelEl.hidden);
-        });
-        this.appMenuPanelEl.addEventListener("keydown", (ev) => this.handleMenuKeydown(ev));
-        this.appMenuRootEl.addEventListener("focusout", () => {
-            window.setTimeout(() => {
-                if (!this.appMenuRootEl.contains(document.activeElement)) this.closeMenu();
-            }, 0);
-        });
-        this.menuWeekBtn.addEventListener("click", () => {
-            this.setTab("week");
-            this.closeMenu();
-        });
-        this.menuTodoBtn.addEventListener("click", () => {
-            this.setTab("todos");
-            this.closeMenu();
-        });
+        this.menuWeekBtn.addEventListener("click", () => this.setTab("week"));
+        this.menuTodoBtn.addEventListener("click", () => this.setTab("todos"));
         this.menuSearchBtn.addEventListener("click", () => {
             this.setTab("search");
-            this.closeMenu();
             queueMicrotask(() => this.searchInput.focus());
         });
-        this.projectsBtn.addEventListener("click", () => {
-            this.closeMenu();
-            this.projectDialog.open();
-        });
+        this.appZoomOutBtn.addEventListener("click", () => this.nudgeAppZoom(-1));
+        this.appZoomResetBtn.addEventListener("click", () => this.setAppZoom(1));
+        this.appZoomInBtn.addEventListener("click", () => this.nudgeAppZoom(1));
+        this.projectsBtn.addEventListener("click", () => this.projectDialog.open());
         this.logoutBtn.addEventListener("click", () => this.logout());
-        this.reloadDataBtn.addEventListener("click", () => {
-            this.closeMenu();
-            void this.reloadData();
+        this.reloadDataBtn.addEventListener("click", () => void this.reloadData());
+        this.searchInput.addEventListener("input", () => {
+            if (this.appSection.hidden || this.state.activeTab === "search" || this.state.activeTab === "todos") return;
+            this.searchView.setSearchQuery(this.searchInput.value);
+            if (this.searchInput.value.trim()) this.setTab("search");
         });
         this.loadingRetryBtn.addEventListener("click", () => void this.reloadData());
         this.loadingLogoutBtn.addEventListener("click", () => this.logout());
         this.editorBadgeEl.addEventListener("click", () => this.saveActiveView());
 
         document.addEventListener("keydown", (ev) => this.handleGlobalKeydown(ev));
-        document.addEventListener("click", (ev) => this.handleDocumentClick(ev));
         window.addEventListener("resize", () => this.handleResize());
 
         this.setProgress(0, 1, "");
+        setVisible(this.sidebarEl, false);
         setVisible(this.topbarEl, false);
         setVisible(this.loadingSection, false);
 
@@ -808,86 +849,13 @@ class App {
     }
 
     /**
-     * Opens or closes the application menu and synchronizes accessibility state.
-     * The menu is anchored to the top-left trigger and is unavailable outside the initialized application screen.
-     * @param {boolean} isOpen
-     * @returns {void}
-     */
-    setMenuOpen(isOpen) {
-        const open = Boolean(isOpen) && !this.topbarEl.hidden;
-        setVisible(this.appMenuPanelEl, open);
-        this.menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
-        this.menuBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
-        if (open) {
-            const activeItem =
-                this.state.activeTab === "search"
-                    ? this.menuSearchBtn
-                    : this.state.activeTab === "todos"
-                      ? this.menuTodoBtn
-                      : this.menuWeekBtn;
-            queueMicrotask(() => activeItem.focus());
-        }
-    }
-
-    /**
-     * Closes the application menu without changing the active view.
-     * This is shared by menu actions, outside clicks, Escape handling, and screen transitions.
-     * @returns {void}
-     */
-    closeMenu() {
-        this.setMenuOpen(false);
-    }
-
-    /**
-     * Dismisses the application menu when a pointer action lands outside it.
-     * Keeping this behavior in App avoids global event knowledge inside individual views.
-     * @param {MouseEvent} ev
-     * @returns {void}
-     */
-    handleDocumentClick(ev) {
-        if (this.appMenuPanelEl.hidden) return;
-        const target = ev.target;
-        if (target instanceof Node && this.appMenuRootEl.contains(target)) return;
-        this.closeMenu();
-    }
-
-    /**
-     * Moves keyboard focus through visible menu commands with arrow, Home, and End keys.
-     * Enter and Space retain native button behavior, while Escape is handled by the global shortcut dispatcher.
-     * @param {KeyboardEvent} ev
-     * @returns {void}
-     */
-    handleMenuKeydown(ev) {
-        const supportedKeys = new Set(["ArrowDown", "ArrowUp", "Home", "End"]);
-        if (!supportedKeys.has(ev.key)) return;
-        const items = Array.from(this.appMenuPanelEl.querySelectorAll("button[role='menuitem']")).filter(
-            (item) => item instanceof HTMLButtonElement && !item.hidden && !item.disabled,
-        );
-        if (!items.length) return;
-
-        ev.preventDefault();
-        ev.stopPropagation();
-        const activeIndex = items.indexOf(document.activeElement);
-        let nextIndex = 0;
-        if (ev.key === "End") {
-            nextIndex = items.length - 1;
-        } else if (ev.key === "ArrowDown") {
-            nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % items.length;
-        } else if (ev.key === "ArrowUp") {
-            nextIndex = activeIndex < 0 ? items.length - 1 : (activeIndex - 1 + items.length) % items.length;
-        }
-        const nextItem = items[nextIndex];
-        if (nextItem instanceof HTMLButtonElement) nextItem.focus();
-    }
-
-    /**
      * Shows the login form and hides both initialized and loading application surfaces.
      * This is the stable unauthenticated state used at startup, after connection failures, and after logout.
      * @returns {void}
      */
     showLoginScreen() {
-        this.closeMenu();
         document.body.classList.remove("app-ready");
+        setVisible(this.sidebarEl, false);
         setVisible(this.topbarEl, false);
         setVisible(this.loadingSection, false);
         setVisible(this.appSection, false);
@@ -902,8 +870,8 @@ class App {
      * @returns {void}
      */
     showLoadingScreen(label) {
-        this.closeMenu();
         document.body.classList.remove("app-ready");
+        setVisible(this.sidebarEl, false);
         setVisible(this.topbarEl, false);
         setVisible(this.loginSection, false);
         setVisible(this.appSection, false);
@@ -924,6 +892,7 @@ class App {
         document.body.classList.add("app-ready");
         setVisible(this.loginSection, false);
         setVisible(this.loadingSection, false);
+        setVisible(this.sidebarEl, true);
         setVisible(this.topbarEl, true);
         setVisible(this.appSection, true);
         this.loadingSection.setAttribute("aria-busy", "false");
@@ -952,14 +921,6 @@ class App {
      * @returns {void}
      */
     handleGlobalKeydown(ev) {
-        if (!this.appMenuPanelEl.hidden) {
-            if (ev.key === "Escape") {
-                ev.preventDefault();
-                this.closeMenu();
-                this.menuBtn.focus();
-            }
-            return;
-        }
         if (document.querySelector("dialog[open]")) {
             if ((ev.ctrlKey || ev.metaKey) && String(ev.key || "").toLowerCase() === "s") {
                 ev.preventDefault();
@@ -972,7 +933,7 @@ class App {
 
             if (keyLower === "k") {
                 ev.preventDefault();
-                this.setTab("search");
+                if (this.state.activeTab !== "todos") this.setTab("search");
                 queueMicrotask(() => {
                     try {
                         this.searchInput.focus();
@@ -1038,6 +999,11 @@ class App {
         if (this.resizeRaf) return;
         this.resizeRaf = window.requestAnimationFrame(() => {
             this.resizeRaf = 0;
+            const searchFiltersNarrow = window.innerWidth <= 760;
+            if (searchFiltersNarrow !== this.searchFiltersNarrow) {
+                this.searchFiltersNarrow = searchFiltersNarrow;
+                this.searchFiltersPanelEl.open = !searchFiltersNarrow;
+            }
             this.weekView.handleResize();
         });
     }
@@ -1088,6 +1054,7 @@ class App {
         this.chunkCache.clearAll();
         this.config = { ...DEFAULT_CONFIG };
         this.state.setConfig(this.config);
+        this.setAppZoom(this.config.uiZoom, false);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.ownerInput.value = this.config.owner;
@@ -1106,6 +1073,7 @@ class App {
      */
     setAuthStatus(text) {
         this.authStatusEl.textContent = text;
+        this.authStatusEl.title = text;
     }
 
     /**
@@ -1158,7 +1126,6 @@ class App {
         this.logoutBtn.disabled = isBusy;
         this.reloadDataBtn.disabled = isBusy;
         this.projectsBtn.disabled = isBusy;
-        this.menuBtn.disabled = isBusy;
         this.menuWeekBtn.disabled = isBusy;
         this.menuTodoBtn.disabled = isBusy;
         this.menuSearchBtn.disabled = isBusy;
@@ -1209,7 +1176,14 @@ class App {
      */
     setTab(tab) {
         const next = tab === "search" || tab === "todos" ? tab : "week";
+        const searchesTodos = next === "todos";
+        const searchQuery = searchesTodos ? this.todoView.getSearchQuery() : this.searchView.getSearchQuery();
+        this.searchInput.value = searchQuery;
+        this.searchInput.placeholder = searchesTodos ? "Search TODOs…" : "Search time entries…";
+        this.searchInput.setAttribute("aria-label", searchesTodos ? "Search TODOs" : "Search time entries");
+        this.globalSearchEl.title = searchesTodos ? "Search TODOs (Ctrl+K)" : "Search time entries (Ctrl+K)";
         this.state.setActiveTab(next);
+        this.topbarEl.dataset.activeTab = next;
         for (const [button, isCurrent] of [
             [this.menuWeekBtn, next === "week"],
             [this.menuTodoBtn, next === "todos"],
@@ -1223,7 +1197,9 @@ class App {
         this.todoView.setActive(next === "todos");
         this.searchView.setActive(next === "search");
         setVisible(this.weekControlsEl, next === "week" && !this.topbarEl.hidden);
+        setVisible(this.todoTopbarControlsEl, next === "todos" && !this.topbarEl.hidden);
         setVisible(this.editorBadgeEl, next !== "search" && !this.topbarEl.hidden);
+        this.refreshDataBadge();
     }
 
     /**
@@ -1270,7 +1246,8 @@ class App {
     refreshRepoLabel() {
         const manifest = this.store.getManifest();
         if (!manifest) {
-            this.repoLabelEl.textContent = "";
+            this.repositorySummary = "";
+            this.refreshDataBadge();
             return;
         }
 
@@ -1283,10 +1260,20 @@ class App {
         if (manifest.generated_at) totals.push(`manifest @ ${manifest.generated_at}`);
 
         if (this.isLocalMode) {
-            this.repoLabelEl.textContent = `Local data • ${totals.join(" • ")}`;
+            this.repositorySummary = `Local data • ${totals.join(" • ")}`;
         } else {
-            this.repoLabelEl.textContent = `${this.config.owner}/${this.config.repo}@${this.config.ref} • ${totals.join(" • ")}`;
+            this.repositorySummary = `${this.config.owner}/${this.config.repo}@${this.config.ref} • ${totals.join(" • ")}`;
         }
+        this.refreshDataBadge();
+    }
+
+    /**
+     * Chooses the content of the shared bottom-right overlay for the active view.
+     * TODO mode shows task counts; Week and Search retain repository/manifest diagnostics.
+     * @returns {void}
+     */
+    refreshDataBadge() {
+        this.repoLabelEl.textContent = this.state.activeTab === "todos" ? this.todoSummary : this.repositorySummary;
     }
 
     /**
@@ -1543,11 +1530,15 @@ class App {
         this.weekView.reset();
         this.todoView.reset();
         this.searchView.reset();
+        this.searchInput.value = "";
         this.setProgress(0, 1, "");
         this.setAuthStatus("Not logged in");
-        this.repoLabelEl.textContent = "";
+        this.repositorySummary = "";
+        this.todoSummary = "";
+        this.refreshDataBadge();
         this.projectDialog.close();
         setVisible(this.weekControlsEl, false);
+        setVisible(this.todoTopbarControlsEl, false);
         setVisible(this.reloadDataBtn, false);
         setVisible(this.logoutBtn, false);
         setVisible(this.projectsBtn, false);

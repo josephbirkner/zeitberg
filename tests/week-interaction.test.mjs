@@ -6,6 +6,7 @@ import {
     calculatePointerEditTimes,
     calculateVisibleDayCount,
     clampDayWindowStart,
+    formatTrackedHours,
 } from "../docs/week.view.js";
 
 const MINUTE_MS = 60_000;
@@ -25,6 +26,12 @@ test("visible day count fits readable columns to the measured timeline width", (
     assert.equal(calculateVisibleDayCount(760), 5);
     assert.equal(calculateVisibleDayCount(1024), 7);
     assert.equal(calculateVisibleDayCount(1200), 7);
+});
+
+test("tracked week totals use compact decimal hours", () => {
+    assert.equal(formatTrackedHours(0), "0h");
+    assert.equal(formatTrackedHours(40 * 3600), "40h");
+    assert.equal(formatTrackedHours(120.5 * 3600), "120.5h");
 });
 
 test("day gaps merge occupied ranges before finding free time", () => {

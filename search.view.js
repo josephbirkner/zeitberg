@@ -18,8 +18,8 @@ import { formatDuration, safeText, setVisible } from "./utils.js";
  */
 
 /**
- * Renders the search/browse table.
- * Provides filtering, sorting, and click-through to the week view.
+ * Renders search results as a desktop table that becomes touch-friendly cards on narrow viewports.
+ * Provides filtering, sorting, and click-through to the week view from one shared result structure.
  */
 export class SearchView {
     /**
@@ -42,6 +42,8 @@ export class SearchView {
         this.entriesTbody = options.elements.entriesTbody;
         this.onJumpToEntry = options.onJumpToEntry;
 
+        this.active = false;
+        this.query = "";
         this.allEntries = [];
         this.searchDirty = false;
 
@@ -54,8 +56,13 @@ export class SearchView {
      * @returns {void}
      */
     bindEvents() {
+        this.searchInput.addEventListener("input", () => {
+            if (!this.active) return;
+            this.query = this.searchInput.value;
+            this.applyFiltersAndRender();
+        });
         const onChange = () => this.applyFiltersAndRender();
-        for (const el of [this.searchInput, this.projectSelect, this.fromDateInput, this.toDateInput, this.maxRowsInput, this.sortSelect]) {
+        for (const el of [this.projectSelect, this.fromDateInput, this.toDateInput, this.maxRowsInput, this.sortSelect]) {
             el.addEventListener("input", onChange);
             if (el instanceof HTMLSelectElement) el.addEventListener("change", onChange);
         }
@@ -68,10 +75,33 @@ export class SearchView {
      * @returns {void}
      */
     setActive(isActive) {
-        setVisible(this.searchViewEl, isActive);
-        if (isActive) {
+        this.active = Boolean(isActive);
+        setVisible(this.searchViewEl, this.active);
+        if (this.active) {
             queueMicrotask(() => this.applyFiltersAndRender());
         }
+    }
+
+    /**
+     * Returns the time-entry query independently of the shared top-bar input's current view.
+     * App uses this value when switching back from TODO search so each data type retains its own query.
+     * @returns {string}
+     */
+    getSearchQuery() {
+        return this.query;
+    }
+
+    /**
+     * Replaces the time-entry query, optionally refreshing results when Search is already visible.
+     * This is primarily used when typing into the shared search field from Week view.
+     * @param {string} value
+     * @param {boolean} [shouldRender]
+     * @returns {void}
+     */
+    setSearchQuery(value, shouldRender = false) {
+        this.query = String(value || "");
+        if (this.active) this.searchInput.value = this.query;
+        if (shouldRender && this.active) this.applyFiltersAndRender();
     }
 
     /**
@@ -80,6 +110,7 @@ export class SearchView {
      * @returns {void}
      */
     reset() {
+        this.query = "";
         this.searchDirty = false;
         this.allEntries = [];
         this.entriesTbody.innerHTML = "";
@@ -148,7 +179,7 @@ export class SearchView {
             this.searchDirty = false;
         }
 
-        const query = this.searchInput.value.trim().toLowerCase();
+        const query = this.query.trim().toLowerCase();
         const project = this.projectSelect.value;
         const from = this.fromDateInput.value ? this.fromDateInput.value : null;
         const to = this.toDateInput.value ? this.toDateInput.value : null;
@@ -197,24 +228,44 @@ export class SearchView {
         const frag = document.createDocumentFragment();
         for (const entry of shown) {
             const tr = document.createElement("tr");
-            tr.classList.add("row-link");
+            tr.classList.add("row-link", "search-result-card");
             tr.title = "Open this entry in Week view";
+            tr.tabIndex = 0;
             tr.addEventListener("click", () => this.onJumpToEntry(entry));
+            tr.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                this.onJumpToEntry(entry);
+            });
 
             const tdDate = document.createElement("td");
+            tdDate.className = "search-result-cell search-result-date";
+            tdDate.dataset.label = "Date";
             tdDate.textContent = this.timeContext.formatDate(entry.startDate);
             const tdStart = document.createElement("td");
+            tdStart.className = "search-result-cell search-result-start";
+            tdStart.dataset.label = "Start";
             tdStart.textContent = this.timeContext.formatTime(entry.startDate);
             const tdEnd = document.createElement("td");
+            tdEnd.className = "search-result-cell search-result-end";
+            tdEnd.dataset.label = "End";
             tdEnd.textContent = entry.endDate ? this.timeContext.formatTime(entry.endDate) : "—";
             const tdDur = document.createElement("td");
+            tdDur.className = "search-result-cell search-result-duration";
+            tdDur.dataset.label = "Duration";
             tdDur.textContent = formatDuration(entry.durationSeconds);
 
             const tdProject = document.createElement("td");
+            tdProject.className = "search-result-cell search-result-project";
+            tdProject.dataset.label = "Project";
             tdProject.textContent = this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) || "No project";
             const tdDesc = document.createElement("td");
+            tdDesc.className = "search-result-cell search-result-description";
+            tdDesc.dataset.label = "Description";
             tdDesc.textContent = safeText(entry.description);
             const tdBillable = document.createElement("td");
+            tdBillable.className = "search-result-cell search-result-billable";
+            tdBillable.dataset.label = "Billable";
             tdBillable.textContent = entry.billable === true ? "Yes" : entry.billable === false ? "No" : "—";
 
             tr.append(tdDate, tdStart, tdEnd, tdDur, tdProject, tdDesc, tdBillable);

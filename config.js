@@ -5,6 +5,7 @@
  * @property {string} repo
  * @property {string} ref
  * @property {string} timezone
+ * @property {number} uiZoom
  */
 
 export const DEFAULT_CONFIG = {
@@ -12,6 +13,7 @@ export const DEFAULT_CONFIG = {
     repo: "timetracking",
     ref: "main",
     timezone: "Europe/Berlin",
+    uiZoom: 1,
 };
 
 const STORAGE_KEYS = {

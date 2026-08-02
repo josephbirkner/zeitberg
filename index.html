@@ -7,50 +7,78 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <header id="topbar" class="topbar" hidden>
-      <div id="appMenuRoot" class="app-menu">
-        <button
-          id="menuBtn"
-          class="btn btn-secondary menu-trigger"
-          type="button"
-          aria-label="Open menu"
-          aria-haspopup="menu"
-          aria-expanded="false"
-        >
-          <span class="menu-icon" aria-hidden="true"></span>
+    <aside id="appSidebar" class="app-sidebar" aria-label="Application navigation" hidden>
+      <nav class="sidebar-nav" aria-label="Views">
+        <button id="menuWeekBtn" class="sidebar-button" type="button" title="Week (Ctrl+W)" aria-label="Week view">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#calendar_view_week"></use></svg>
         </button>
-        <div id="appMenuPanel" class="app-menu-panel" role="menu" hidden>
-          <button id="menuWeekBtn" class="app-menu-item" type="button" role="menuitem">
-            <span>Week</span><span class="menu-shortcut">Ctrl+W</span>
+        <button id="menuTodoBtn" class="sidebar-button" type="button" title="TODOs (Ctrl+T)" aria-label="TODO view">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#checklist"></use></svg>
+        </button>
+        <button id="menuSearchBtn" class="sidebar-button" type="button" title="Search (Ctrl+K)" aria-label="Time-entry search">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#search"></use></svg>
+        </button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-tools">
+        <div class="sidebar-zoom" role="group" aria-label="Application zoom">
+          <button id="appZoomOutBtn" class="sidebar-button" type="button" title="Zoom app out" aria-label="Zoom app out">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_out"></use></svg>
           </button>
-          <button id="menuTodoBtn" class="app-menu-item" type="button" role="menuitem">
-            <span>TODOs</span><span class="menu-shortcut">Ctrl+T</span>
+          <button id="appZoomResetBtn" class="sidebar-button sidebar-zoom-reset" type="button" title="Reset app zoom" aria-label="Reset app zoom">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#restart_alt"></use></svg>
+            <span id="appZoomLabel" class="sidebar-zoom-label" aria-live="polite">100%</span>
           </button>
-          <button id="menuSearchBtn" class="app-menu-item" type="button" role="menuitem">
-            <span>Search</span><span class="menu-shortcut">Ctrl+K</span>
+          <button id="appZoomInBtn" class="sidebar-button" type="button" title="Zoom app in" aria-label="Zoom app in">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_in"></use></svg>
           </button>
-          <div class="app-menu-separator" role="separator"></div>
-          <button id="projectsBtn" class="app-menu-item" type="button" role="menuitem" hidden>Projects</button>
-          <button id="reloadDataBtn" class="app-menu-item" type="button" role="menuitem" hidden>Reload data</button>
-          <div class="app-menu-separator" role="separator"></div>
-          <div id="authStatus" class="app-menu-status" aria-live="polite"></div>
-          <button id="logoutBtn" class="app-menu-item app-menu-danger" type="button" role="menuitem" hidden>Logout</button>
+        </div>
+        <button id="projectsBtn" class="sidebar-button" type="button" title="Projects" aria-label="Manage projects" hidden>
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#account_tree"></use></svg>
+        </button>
+        <button id="reloadDataBtn" class="sidebar-button" type="button" title="Reload data" aria-label="Reload data" hidden>
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#refresh"></use></svg>
+        </button>
+        <div id="authStatus" class="sidebar-status" aria-live="polite"></div>
+        <button id="logoutBtn" class="sidebar-button sidebar-danger" type="button" title="Logout" aria-label="Logout" hidden>
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#logout"></use></svg>
+        </button>
+      </div>
+    </aside>
+
+    <header id="topbar" class="topbar" hidden>
+      <label id="globalSearch" class="global-search" title="Search time entries (Ctrl+K)">
+        <svg class="app-icon global-search-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#search"></use></svg>
+        <input id="searchInput" type="search" placeholder="Search time entries…" autocomplete="off" aria-label="Search time entries" />
+      </label>
+
+      <div id="todoTopbarControls" class="todo-topbar-controls" hidden>
+        <button id="todoAddBtn" class="btn btn-secondary btn-icon" type="button" title="Add TODO (A)" aria-label="Add TODO">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
+        </button>
+        <div class="todo-view-toggles" role="group" aria-label="TODO view filters">
+          <button id="todoCurrentFilterBtn" class="btn btn-secondary btn-icon" type="button" title="Show current and overdue only" aria-label="Show current and overdue only" aria-pressed="true">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#schedule"></use></svg>
+          </button>
+          <button id="todoOpenFilterBtn" class="btn btn-secondary btn-icon" type="button" title="Show open only" aria-label="Show open only" aria-pressed="true">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#check_circle"></use></svg>
+          </button>
         </div>
       </div>
 
       <div id="weekControls" class="week-controls" hidden>
         <div class="week-navigation">
           <button id="prevWeekBtn" class="btn btn-secondary btn-icon" type="button" title="Previous days / week (PageUp)" aria-label="Previous days or week">
-            ◀
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#arrow_back"></use></svg>
           </button>
           <button id="nextWeekBtn" class="btn btn-secondary btn-icon" type="button" title="Next days / week (PageDown)" aria-label="Next days or week">
-            ▶
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#arrow_forward"></use></svg>
           </button>
           <button id="latestWeekBtn" class="btn btn-secondary" type="button">Latest</button>
         </div>
 
-        <div id="weekLabel" class="week-label" aria-live="polite"></div>
         <button id="weekReqBtn" class="week-summary" type="button" title="Edit required hours">
+          <svg class="app-icon week-summary-compact-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#timer_arrow_up"></use></svg>
           <span id="weekBillable" aria-live="polite"></span>
         </button>
 
@@ -58,27 +86,33 @@
 
         <div class="week-editor-actions" role="group" aria-label="Week editor actions">
           <button id="weekNormalBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Normal mode (Escape)" aria-label="Normal mode">
-            ↖
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#arrow_selector_tool"></use></svg>
           </button>
           <button id="weekAddBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Add mode (A)" aria-label="Add mode">
-            ＋
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
           </button>
           <button id="weekSplitBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Split mode (S)" aria-label="Split selected entry">
-            ⑂
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#call_split"></use></svg>
           </button>
           <span class="week-action-separator week-mode-action" aria-hidden="true"></span>
+        </div>
+
+        <div class="week-history-actions" role="group" aria-label="Undo and redo">
           <button id="weekUndoBtn" class="btn btn-secondary btn-icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo">
-            ↶
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#undo"></use></svg>
           </button>
           <button id="weekRedoBtn" class="btn btn-secondary btn-icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo">
-            ↷
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#redo"></use></svg>
           </button>
-          <span class="week-action-separator" aria-hidden="true"></span>
+        </div>
+
+        <span class="week-action-separator week-zoom-separator" aria-hidden="true"></span>
+        <div class="week-zoom-actions" role="group" aria-label="Timeline zoom">
           <button id="weekZoomOutBtn" class="btn btn-secondary btn-icon zoom-action" type="button" title="Zoom out (Ctrl+[ or Ctrl+-)" aria-label="Zoom out">
-            −
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_out"></use></svg>
           </button>
           <button id="weekZoomInBtn" class="btn btn-secondary btn-icon zoom-action" type="button" title="Zoom in (Ctrl+] or Ctrl++)" aria-label="Zoom in">
-            ＋
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_in"></use></svg>
           </button>
         </div>
 
@@ -158,74 +192,47 @@
 
         <section id="todoView" class="todo-view" hidden>
           <div class="todo-toolbar">
-            <div class="todo-toolbar-actions">
-              <button id="todoAddBtn" class="btn" type="button" title="A">Add TODO</button>
-              <button id="todoSaveBtn" class="btn btn-secondary" type="button" title="Ctrl+S">Saved</button>
-            </div>
-            <label class="todo-toolbar-field todo-search-field">
-              <span>Search</span>
-              <input id="todoSearch" type="search" placeholder="Search TODOs…" autocomplete="off" />
-            </label>
-            <label class="todo-toolbar-field">
-              <span>View</span>
-              <select id="todoFilter">
-                <option value="open">Open</option>
-                <option value="today">Today + overdue</option>
-                <option value="upcoming">Upcoming</option>
-                <option value="completed">Completed</option>
-                <option value="all">All</option>
-              </select>
-            </label>
-            <label class="todo-toolbar-field">
-              <span>Project</span>
-              <select id="todoProjectFilter"></select>
-            </label>
-            <div id="todoStats" class="todo-stats muted" aria-live="polite"></div>
+            <div id="todoProjectFilters" class="todo-project-filters" role="toolbar" aria-label="Filter TODOs by project"></div>
           </div>
           <div id="todoList" class="todo-list" role="listbox" tabindex="0" aria-label="TODOs"></div>
         </section>
 
         <div id="searchView" class="stack" hidden>
-          <section class="card">
-            <div class="row wrap">
-              <h2 class="tight">Browse &amp; Search</h2>
-              <div id="stats" class="stats muted"></div>
-            </div>
-
-            <div class="filters grid">
-              <label>
-                <span>Search</span>
-                <input id="searchInput" type="search" placeholder="description, project…" />
-              </label>
-              <label>
-                <span>Project</span>
-                <select id="projectSelect"></select>
-              </label>
-              <label>
-                <span>From (CET)</span>
-                <input id="fromDate" type="date" />
-              </label>
-              <label>
-                <span>To (CET)</span>
-                <input id="toDate" type="date" />
-              </label>
-              <label>
-                <span>Max rows</span>
-                <input id="maxRows" type="number" min="50" step="50" value="500" />
-              </label>
-              <label>
-                <span>Sort</span>
-                <select id="sortSelect">
-                  <option value="desc">Newest first</option>
-                  <option value="asc">Oldest first</option>
-                </select>
-              </label>
-            </div>
+          <section class="card search-controls-card">
+            <div id="stats" class="stats muted"></div>
+            <details id="searchFiltersPanel" class="search-filters-panel" open>
+              <summary>Filters</summary>
+              <div class="filters grid">
+                <label>
+                  <span>Project</span>
+                  <select id="projectSelect"></select>
+                </label>
+                <label>
+                  <span>From (CET)</span>
+                  <input id="fromDate" type="date" />
+                </label>
+                <label>
+                  <span>To (CET)</span>
+                  <input id="toDate" type="date" />
+                </label>
+                <label>
+                  <span>Max rows</span>
+                  <input id="maxRows" type="number" min="50" step="50" value="500" />
+                </label>
+                <label>
+                  <span>Sort</span>
+                  <select id="sortSelect">
+                    <option value="desc">Newest first</option>
+                    <option value="asc">Oldest first</option>
+                  </select>
+                </label>
+              </div>
+            </details>
           </section>
 
-          <section class="card">
-            <div class="table-wrap">
-              <table class="table" aria-label="Entries">
+          <section class="card search-results-card">
+            <div class="table-wrap search-results-wrap">
+              <table class="table search-results-table" aria-label="Entries">
                 <thead>
 	                  <tr>
 	                    <th>Date</th>
@@ -252,7 +259,7 @@
       <form id="entryForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
           <div class="dialog-title">Edit Entry</div>
-          <button id="entryCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">✕</button>
+          <button id="entryCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div id="entryMeta" class="dialog-meta muted"></div>
@@ -280,7 +287,7 @@
       <form id="todoForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
           <div id="todoDialogTitle" class="dialog-title">Edit TODO</div>
-          <button id="todoCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">✕</button>
+          <button id="todoCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div id="todoDialogMeta" class="dialog-meta muted"></div>
@@ -336,7 +343,7 @@
       <form id="projectsForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
           <div class="dialog-title">Projects</div>
-          <button id="projectsCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">✕</button>
+          <button id="projectsCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div class="projects-toolbar row">
@@ -356,7 +363,7 @@
       <form id="weekReqForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
           <div class="dialog-title">Week Requirements</div>
-          <button id="weekReqCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">✕</button>
+          <button id="weekReqCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div id="weekReqMeta" class="dialog-meta muted"></div>

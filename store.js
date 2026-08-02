@@ -953,6 +953,24 @@ export class EntryStore {
     }
 
     /**
+     * Returns all tracked seconds that fall within a displayed week.
+     * Summing the clipped day segments counts overnight entries on the correct days and includes both billable and non-billable work.
+     * @param {string} weekStart
+     * @returns {number}
+     */
+    getWeekTrackedSeconds(weekStart) {
+        if (!weekStart) return 0;
+        const segments = this.getWeekSegmentsIndex(weekStart);
+        let trackedSeconds = 0;
+        for (const list of segments.values()) {
+            for (const segment of list) {
+                trackedSeconds += Math.max(0, Math.round((segment.endMinutes - segment.startMinutes) * 60));
+            }
+        }
+        return trackedSeconds;
+    }
+
+    /**
      * Returns billable seconds for a week from segmented data.
      * Only billable entries are counted toward week balance.
      * @param {string} weekStart

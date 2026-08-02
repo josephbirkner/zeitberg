@@ -29,6 +29,26 @@ export function setVisible(el, isVisible) {
     el.hidden = !isVisible;
 }
 
+const MATERIAL_SYMBOL_SPRITE_URL = new URL("./icons/material-symbols.svg", import.meta.url).href;
+
+/**
+ * Creates an accessible, decorative SVG instance from the locally vendored Material Symbols sprite.
+ * The surrounding button or text element remains responsible for its human-readable label.
+ * @param {string} name Material Symbol identifier present in the local sprite.
+ * @param {string} [className] Space-separated CSS classes applied to the SVG element.
+ * @returns {SVGSVGElement}
+ */
+export function createMaterialIcon(name, className = "app-icon") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", className);
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", `${MATERIAL_SYMBOL_SPRITE_URL}#${name}`);
+    svg.append(use);
+    return svg;
+}
+
 /**
  * Converts a value to a string, preserving empty strings.
  * Normalizes nullish values to an empty string for text content.
