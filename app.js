@@ -532,6 +532,7 @@ class App {
         this.entryDialog = getRequiredElement("entryDialog", HTMLDialogElement);
         this.entryForm = getRequiredElement("entryForm", HTMLFormElement);
         this.entryCloseBtn = getRequiredElement("entryCloseBtn", HTMLButtonElement);
+        this.entryDeleteBtn = getRequiredElement("entryDeleteBtn", HTMLButtonElement);
         this.entryCancelBtn = getRequiredElement("entryCancelBtn", HTMLButtonElement);
         this.entryMetaEl = getRequiredElement("entryMeta", HTMLElement);
         this.entryAssignmentInput = getRequiredElement("entryAssignment", HTMLInputElement);
@@ -634,6 +635,7 @@ class App {
                 entryDialog: this.entryDialog,
                 entryForm: this.entryForm,
                 entryCloseBtn: this.entryCloseBtn,
+                entryDeleteBtn: this.entryDeleteBtn,
                 entryCancelBtn: this.entryCancelBtn,
                 entryMeta: this.entryMetaEl,
                 entryAssignment: this.entryAssignmentInput,

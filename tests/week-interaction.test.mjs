@@ -9,6 +9,7 @@ import {
     calculateVisibleDayCount,
     clampDayWindowStart,
     formatTrackedHours,
+    isMatchingEntryDoubleTap,
 } from "../docs/week.view.js";
 
 const MINUTE_MS = 60_000;
@@ -70,6 +71,26 @@ test("edge-gap buttons clamp into the visible part of their gap", () => {
     assert.equal(calculateVisibleGapButtonMinute(17 * 60, 24 * 60, 20.5 * 60, 12 * 60, 18 * 60, 15), 18 * 60 - 15);
     assert.equal(calculateVisibleGapButtonMinute(10 * 60, 11 * 60, 10.5 * 60, 8 * 60, 12 * 60, 15), 10.5 * 60);
     assert.equal(calculateVisibleGapButtonMinute(0, 9 * 60, 4.5 * 60, 10 * 60, 12 * 60, 15), 4.5 * 60);
+});
+
+test("double taps require the same nearby entry segment within the time limit", () => {
+    const first = { entryId: 7, segmentKey: "7@2026-08-03", at: 1000, x: 120, y: 240 };
+    assert.equal(
+        isMatchingEntryDoubleTap(first, { entryId: 7, segmentKey: "7@2026-08-03", at: 1300, x: 130, y: 250 }),
+        true,
+    );
+    assert.equal(
+        isMatchingEntryDoubleTap(first, { entryId: 8, segmentKey: "8@2026-08-03", at: 1300, x: 130, y: 250 }),
+        false,
+    );
+    assert.equal(
+        isMatchingEntryDoubleTap(first, { entryId: 7, segmentKey: "7@2026-08-03", at: 1600, x: 120, y: 240 }),
+        false,
+    );
+    assert.equal(
+        isMatchingEntryDoubleTap(first, { entryId: 7, segmentKey: "7@2026-08-03", at: 1300, x: 180, y: 240 }),
+        false,
+    );
 });
 
 test("pointer edits snap to 15 minutes and respect minimum duration", () => {

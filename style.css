@@ -665,6 +665,19 @@ button:disabled {
   font-weight: 600;
 }
 
+.btn-danger {
+  border-color: rgba(255, 77, 109, 0.65);
+  background: rgba(255, 77, 109, 0.14);
+  color: rgba(255, 176, 189, 1);
+}
+
+.btn-danger:hover,
+.btn-danger:focus-visible {
+  outline: none;
+  border-color: rgba(255, 77, 109, 0.95);
+  background: rgba(255, 77, 109, 0.24);
+}
+
 .error {
   margin: 10px 0 0;
   padding: 12px;
@@ -1404,6 +1417,7 @@ progress {
   overflow: hidden;
   cursor: pointer;
   pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .entry-block.is-selected .entry-content {
@@ -1452,6 +1466,7 @@ progress {
   cursor: pointer;
   display: none;
   place-items: center;
+  touch-action: manipulation;
 }
 
 .entry-control svg,
@@ -1486,7 +1501,7 @@ progress {
   position: absolute;
   left: calc(100% + 5px);
   top: 50%;
-  z-index: 8;
+  z-index: 12;
   display: none;
   flex-direction: column;
   gap: 4px;
@@ -1756,6 +1771,10 @@ body.is-entry-moving * {
 .dialog-actions {
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.dialog-delete-action {
+  margin-right: auto;
 }
 
 .projects-toolbar {

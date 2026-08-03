@@ -22,6 +22,9 @@ const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
 const DEFAULT_GAP_ENTRY_MINUTES = 60;
 const GAP_BUTTON_VIEWPORT_MARGIN_PX = 18;
 const MIN_DAY_COLUMN_WIDTH = 136;
+const ENTRY_DOUBLE_TAP_MAX_DELAY_MS = 450;
+const ENTRY_DOUBLE_TAP_MAX_DISTANCE_PX = 28;
+const ENTRY_TAP_MOVE_TOLERANCE_PX = 10;
 
 const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DESC_SUGGEST_MIN_CHARS = 2;
@@ -159,6 +162,30 @@ export function calculateVisibleGapButtonMinute(
         return (intersectionStart + intersectionEnd) / 2;
     }
     return Math.max(intersectionStart + margin, Math.min(intersectionEnd - margin, preferred));
+}
+
+/**
+ * Determines whether two touch taps form one double-tap on the same rendered entry segment.
+ * Both elapsed time and screen-space distance are bounded so quick taps on neighboring entries do not open the wrong editor.
+ * @param {{entryId: number, segmentKey: string, at: number, x: number, y: number} | null} previousTap
+ * @param {{entryId: number, segmentKey: string, at: number, x: number, y: number}} currentTap
+ * @param {number} [maxDelayMs]
+ * @param {number} [maxDistancePx]
+ * @returns {boolean}
+ */
+export function isMatchingEntryDoubleTap(
+    previousTap,
+    currentTap,
+    maxDelayMs = ENTRY_DOUBLE_TAP_MAX_DELAY_MS,
+    maxDistancePx = ENTRY_DOUBLE_TAP_MAX_DISTANCE_PX,
+) {
+    if (!previousTap || previousTap.entryId !== currentTap.entryId || previousTap.segmentKey !== currentTap.segmentKey) {
+        return false;
+    }
+    const elapsed = currentTap.at - previousTap.at;
+    if (elapsed < 0 || elapsed > Math.max(0, Number(maxDelayMs) || 0)) return false;
+    const distance = Math.hypot(currentTap.x - previousTap.x, currentTap.y - previousTap.y);
+    return distance <= Math.max(0, Number(maxDistancePx) || 0);
 }
 
 /**
@@ -301,6 +328,7 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {HTMLDialogElement} elements.entryDialog
  * @property {HTMLFormElement} elements.entryForm
  * @property {HTMLButtonElement} elements.entryCloseBtn
+ * @property {HTMLButtonElement} elements.entryDeleteBtn
  * @property {HTMLButtonElement} elements.entryCancelBtn
  * @property {HTMLElement} elements.entryMeta
  * @property {HTMLInputElement} elements.entryAssignment
@@ -363,6 +391,7 @@ export class WeekView {
         this.entryDialog = options.elements.entryDialog;
         this.entryForm = options.elements.entryForm;
         this.entryCloseBtn = options.elements.entryCloseBtn;
+        this.entryDeleteBtn = options.elements.entryDeleteBtn;
         this.entryCancelBtn = options.elements.entryCancelBtn;
         this.entryMetaEl = options.elements.entryMeta;
         this.entryAssignmentInput = options.elements.entryAssignment;
@@ -413,6 +442,8 @@ export class WeekView {
         this.pinchZoom = null;
         this.suppressEntryClickUntil = 0;
         this.gapPositionRaf = 0;
+        /** @type {{entryId: number, segmentKey: string, at: number, x: number, y: number} | null} */
+        this.lastEntryTap = null;
 
         this.undoStack = [];
         this.redoStack = [];
@@ -449,6 +480,7 @@ export class WeekView {
         this.zoomInput.disabled = this.busy;
         this.weekReqBtn.disabled = this.busy;
         this.entryAssignmentInput.disabled = this.busy;
+        this.entryDeleteBtn.disabled = this.busy;
         for (const button of this.weekScrollEl.querySelectorAll(".entry-control, .entry-resize-handle, .entry-gap-add")) {
             if (button instanceof HTMLButtonElement) button.disabled = this.busy;
         }
@@ -574,6 +606,7 @@ export class WeekView {
         this.weekReqForm.addEventListener("submit", (ev) => this.handleWeekRequirementsSubmit(ev));
 
         this.entryCloseBtn.addEventListener("click", () => this.closeEntryDialog());
+        this.entryDeleteBtn.addEventListener("click", () => this.handleEntryDialogDelete());
         this.entryCancelBtn.addEventListener("click", () => this.closeEntryDialog());
         this.entryDialog.addEventListener("cancel", (ev) => {
             ev.preventDefault();
@@ -649,6 +682,7 @@ export class WeekView {
         this.dayWindowStart = clampDayWindowStart(0, this.getVisibleDayCount());
         this.pointerEdit = null;
         this.pinchZoom = null;
+        this.lastEntryTap = null;
         if (this.gapPositionRaf) {
             window.cancelAnimationFrame(this.gapPositionRaf);
             this.gapPositionRaf = 0;
@@ -2046,9 +2080,13 @@ export class WeekView {
         }
         this.pointerEdit = {
             pointerId: ev.pointerId,
+            pointerType: ev.pointerType,
             kind,
             entryId,
+            segmentKey: sourceEntryEl.dataset.key || "",
+            startClientX: ev.clientX,
             startClientY: ev.clientY,
+            maxPointerTravel: 0,
             originalStartMs: entry.startDate.getTime(),
             originalEndMs: entry.endDate.getTime(),
             candidateStartMs: entry.startDate.getTime(),
@@ -2070,6 +2108,10 @@ export class WeekView {
         const gesture = this.pointerEdit;
         if (!gesture || ev.pointerId !== gesture.pointerId || !this.weekDom?.metrics) return;
         ev.preventDefault();
+        gesture.maxPointerTravel = Math.max(
+            gesture.maxPointerTravel,
+            Math.hypot(ev.clientX - gesture.startClientX, ev.clientY - gesture.startClientY),
+        );
         const deltaMinutes = (ev.clientY - gesture.startClientY) / this.weekDom.metrics.pxPerMinute;
         const candidate = calculatePointerEditTimes(
             gesture.kind,
@@ -2119,6 +2161,36 @@ export class WeekView {
     }
 
     /**
+     * Records a completed touch/pen tap and opens the editor when it completes a nearby second tap on the same segment.
+     * Mouse users continue through the native dblclick path, while suppressing the compatibility click after a recognized touch double-tap prevents focus from returning behind the modal dialog.
+     * @param {{pointerType: string, entryId: number, segmentKey: string, sourceEntryEl: HTMLElement}} gesture
+     * @param {PointerEvent} ev
+     * @returns {boolean} Whether the entry editor was opened.
+     */
+    handleEntryTap(gesture, ev) {
+        const pointerType = gesture.pointerType || ev.pointerType;
+        if (pointerType === "mouse") return false;
+        const currentTap = {
+            entryId: gesture.entryId,
+            segmentKey: gesture.segmentKey,
+            at: performance.now(),
+            x: ev.clientX,
+            y: ev.clientY,
+        };
+        const isDoubleTap = isMatchingEntryDoubleTap(this.lastEntryTap, currentTap);
+        this.lastEntryTap = isDoubleTap ? null : currentTap;
+        if (!isDoubleTap || this.editMode !== "normal" || this.busy || this.saveInFlight) return false;
+
+        this.suppressEntryClickUntil = performance.now() + 500;
+        const dayIdx = Number.parseInt(gesture.sourceEntryEl.dataset.dayIdx || "-1", 10);
+        if (dayIdx >= 0 && gesture.segmentKey) {
+            this.selectRenderedSegment(dayIdx, gesture.segmentKey);
+        }
+        this.openEntryDialog(gesture.entryId);
+        return this.entryDialog.open;
+    }
+
+    /**
      * Commits an active pointer gesture as one editor transaction.
      * Neighbor compression/movement, dirty tracking, durable drafts, and undo history are delegated to the existing edit pipeline.
      * @param {PointerEvent} ev
@@ -2135,9 +2207,13 @@ export class WeekView {
             gesture.candidateEndMs === gesture.originalEndMs
         ) {
             this.restoreEntryPointerPreview(gesture.entryId);
-            this.focusTimeline();
+            const isEntryTap = gesture.kind === "move" && gesture.maxPointerTravel <= ENTRY_TAP_MOVE_TOLERANCE_PX;
+            const openedEditor = isEntryTap ? this.handleEntryTap(gesture, ev) : false;
+            if (!isEntryTap) this.lastEntryTap = null;
+            if (!openedEditor) this.focusTimeline();
             return;
         }
+        this.lastEntryTap = null;
         this.suppressEntryClickUntil = performance.now() + 500;
         this.setSelectedEntryTimes(
             gesture.candidateStartMs,
@@ -4088,6 +4164,19 @@ export class WeekView {
     }
 
     /**
+     * Deletes the entry currently shown in the editor and closes the dialog after the undoable transaction succeeds.
+     * No confirmation is shown because the normal week undo stack retains the complete deleted entry snapshot.
+     * @returns {void}
+     */
+    handleEntryDialogDelete() {
+        const entryId = this.dialogEntryId;
+        if (!entryId) return;
+        if (this.deleteEntryById(entryId)) {
+            this.closeEntryDialog();
+        }
+    }
+
+    /**
      * Builds the entry editor's single searchable project/section combobox.
      * Active root projects and sections share one flat list; an archived assignment remains visible only for the entry already using it.
      * @param {{projectKey?: string | null, sectionKey?: string | null}} options
@@ -4148,6 +4237,7 @@ export class WeekView {
             return;
         }
 
+        this.lastEntryTap = null;
         this.dialogEntryId = id;
         this.populateAssignmentCombobox({
             projectKey: entry.projectKey,
@@ -4245,15 +4335,23 @@ export class WeekView {
     }
 
     /**
-     * Deletes the currently selected entry from the week.
-     * Part of the week view interaction flow.
-     * @returns {void}
+     * Deletes one entry through the shared undoable week-edit pipeline.
+     * Both the selected-entry command and the modal editor use this path so dirty tracking, drafts, and undo history remain identical.
+     * @param {number} entryId
+     * @returns {boolean} Whether the entry was removed from the store.
      */
-    deleteSelectedEntry() {
-        const entryId = this.selectedEntryId;
-        if (!entryId) return;
+    deleteEntryById(entryId) {
+        const id = Number(entryId);
+        if (!Number.isFinite(id)) return false;
+        if (this.busy || this.saveInFlight) {
+            this.onToast("Saving in progress…");
+            return false;
+        }
         const weekStart = this.appState.weekStart;
-        if (!weekStart) return;
+        if (!weekStart) return false;
+        const entry = this.store.getEntryById(id);
+        if (!entry || entry.weekStart !== weekStart) return false;
+        this.lastEntryTap = null;
 
         this.applyWeekEdit({
             weekStart,
@@ -4261,9 +4359,21 @@ export class WeekView {
             focusAfter: null,
             getAfterRaw: () => {
                 const raws = this.store.snapshotWeekRaw(weekStart);
-                return raws.filter((raw) => Number(raw?.id) !== entryId);
+                return raws.filter((raw) => Number(raw?.id) !== id);
             },
         });
+        return !this.store.getEntryById(id);
+    }
+
+    /**
+     * Deletes the currently selected entry from the week.
+     * Part of the week view interaction flow.
+     * @returns {void}
+     */
+    deleteSelectedEntry() {
+        const entryId = this.selectedEntryId;
+        if (!entryId) return;
+        this.deleteEntryById(entryId);
     }
 
     /**
