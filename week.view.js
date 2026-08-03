@@ -19,7 +19,8 @@ import {
 
 const MIN_ENTRY_MINUTES = 15;
 const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
-const MAX_GAP_ENTRY_MINUTES = 8 * 60;
+const DEFAULT_GAP_ENTRY_MINUTES = 60;
+const GAP_BUTTON_VIEWPORT_MARGIN_PX = 18;
 const MIN_DAY_COLUMN_WIDTH = 136;
 
 const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -101,6 +102,63 @@ export function buildDayGaps(segments) {
         gaps.push({ startMinutes: cursor, endMinutes: 1440 });
     }
     return gaps;
+}
+
+/**
+ * Chooses the default one-hour interval created by a gap button.
+ * Leading gaps are anchored immediately before the day's first entry, while internal and trailing gaps begin immediately after the preceding entry; gaps shorter than one hour are used in full.
+ * @param {number} gapStartMinutes Inclusive start of the free range in local minutes after midnight.
+ * @param {number} gapEndMinutes Exclusive end of the free range in local minutes after midnight.
+ * @returns {{startMinutes: number, endMinutes: number}}
+ */
+export function calculateDefaultGapEntryRange(gapStartMinutes, gapEndMinutes) {
+    const gapStart = Math.max(0, Math.min(1440, Number(gapStartMinutes) || 0));
+    const gapEnd = Math.max(gapStart, Math.min(1440, Number(gapEndMinutes) || 0));
+    if (gapStart === 0 && gapEnd < 1440) {
+        return {
+            startMinutes: Math.max(gapStart, gapEnd - DEFAULT_GAP_ENTRY_MINUTES),
+            endMinutes: gapEnd,
+        };
+    }
+    return {
+        startMinutes: gapStart,
+        endMinutes: Math.min(gapEnd, gapStart + DEFAULT_GAP_ENTRY_MINUTES),
+    };
+}
+
+/**
+ * Keeps an edge-gap button inside the visible portion of its free range.
+ * The preferred midpoint remains stable while visible and otherwise clamps just inside the viewport, avoiding distracting movement for ordinary internal-gap controls.
+ * @param {number} gapStartMinutes Inclusive start of the full free range.
+ * @param {number} gapEndMinutes Exclusive end of the full free range.
+ * @param {number} preferredMinutes Normal button position, usually the full gap midpoint.
+ * @param {number} visibleStartMinutes First timeline minute visible below the sticky header.
+ * @param {number} visibleEndMinutes Last timeline minute visible above the viewport bottom.
+ * @param {number} marginMinutes Inset that keeps the complete circular button visible when space permits.
+ * @returns {number}
+ */
+export function calculateVisibleGapButtonMinute(
+    gapStartMinutes,
+    gapEndMinutes,
+    preferredMinutes,
+    visibleStartMinutes,
+    visibleEndMinutes,
+    marginMinutes = 0,
+) {
+    const gapStart = Math.max(0, Math.min(1440, Number(gapStartMinutes) || 0));
+    const gapEnd = Math.max(gapStart, Math.min(1440, Number(gapEndMinutes) || 0));
+    const preferred = Math.max(gapStart, Math.min(gapEnd, Number(preferredMinutes) || gapStart));
+    const visibleStart = Math.max(0, Math.min(1440, Number(visibleStartMinutes) || 0));
+    const visibleEnd = Math.max(visibleStart, Math.min(1440, Number(visibleEndMinutes) || 0));
+    const intersectionStart = Math.max(gapStart, visibleStart);
+    const intersectionEnd = Math.min(gapEnd, visibleEnd);
+    if (intersectionEnd <= intersectionStart) return preferred;
+
+    const margin = Math.max(0, Number(marginMinutes) || 0);
+    if (intersectionEnd - intersectionStart < margin * 2) {
+        return (intersectionStart + intersectionEnd) / 2;
+    }
+    return Math.max(intersectionStart + margin, Math.min(intersectionEnd - margin, preferred));
 }
 
 /**
@@ -354,6 +412,7 @@ export class WeekView {
         /** @type {{distance: number, zoom: number} | null} */
         this.pinchZoom = null;
         this.suppressEntryClickUntil = 0;
+        this.gapPositionRaf = 0;
 
         this.undoStack = [];
         this.redoStack = [];
@@ -475,6 +534,7 @@ export class WeekView {
         this.weekScrollEl.addEventListener("touchmove", (ev) => this.handlePinchMove(ev), { passive: false });
         this.weekScrollEl.addEventListener("touchend", (ev) => this.handlePinchEnd(ev));
         this.weekScrollEl.addEventListener("touchcancel", (ev) => this.handlePinchEnd(ev));
+        this.weekScrollEl.addEventListener("scroll", () => this.scheduleGapButtonReposition(), { passive: true });
         this.weekReqBtn.addEventListener("click", () => this.openWeekRequirementsDialog());
         this.weekNormalBtn.addEventListener("click", () => {
             this.setEditMode("normal");
@@ -589,6 +649,10 @@ export class WeekView {
         this.dayWindowStart = clampDayWindowStart(0, this.getVisibleDayCount());
         this.pointerEdit = null;
         this.pinchZoom = null;
+        if (this.gapPositionRaf) {
+            window.cancelAnimationFrame(this.gapPositionRaf);
+            this.gapPositionRaf = 0;
+        }
         document.body.classList.remove("is-entry-dragging");
         document.body.classList.remove("is-entry-moving");
         this.setEditMode("normal");
@@ -852,6 +916,7 @@ export class WeekView {
         if (newMetrics && anchorMinutes !== null) {
             const nextScrollTop = newMetrics.headerHeight + anchorMinutes * newMetrics.pxPerMinute - localAnchorY;
             this.weekScrollEl.scrollTop = Math.max(0, nextScrollTop);
+            this.updateGapButtonPositions(newMetrics);
         }
         this.updateTopbarActions();
     }
@@ -1317,6 +1382,54 @@ export class WeekView {
     }
 
     /**
+     * Coalesces high-frequency timeline scroll events into one edge-gap positioning pass per animation frame.
+     * Only lightweight style updates occur in that pass, so scrolling remains smooth even in weeks with many entries.
+     * @returns {void}
+     */
+    scheduleGapButtonReposition() {
+        if (this.gapPositionRaf) return;
+        this.gapPositionRaf = window.requestAnimationFrame(() => {
+            this.gapPositionRaf = 0;
+            this.updateGapButtonPositions(undefined, true);
+        });
+    }
+
+    /**
+     * Positions every gap control at its preferred midpoint and pins leading/trailing controls inside the visible portion of their gap.
+     * Internal gaps deliberately retain a fixed midpoint, while edge controls account for the sticky header and current timeline zoom.
+     * @param {{baseHeight: number, headerHeight: number, timelineHeight: number, pxPerMinute: number} | null} [metrics]
+     * @param {boolean} [pinnedOnly] Whether to skip fixed internal controls during scroll-only updates.
+     * @returns {void}
+     */
+    updateGapButtonPositions(metrics = this.weekDom?.metrics || null, pinnedOnly = false) {
+        if (!this.weekDom || !metrics || metrics.pxPerMinute <= 0) return;
+        const visibleStartMinutes = Math.max(0, this.weekScrollEl.scrollTop / metrics.pxPerMinute);
+        const visibleEndMinutes = Math.min(
+            1440,
+            (this.weekScrollEl.scrollTop + metrics.baseHeight) / metrics.pxPerMinute,
+        );
+        const marginMinutes = GAP_BUTTON_VIEWPORT_MARGIN_PX / metrics.pxPerMinute;
+
+        for (const button of this.weekDom.gapButtonEls || []) {
+            const midpoint = Number.parseFloat(button.dataset.midpoint || "0");
+            const pinToViewport = button.dataset.pinToViewport === "true";
+            if (pinnedOnly && !pinToViewport) continue;
+            let buttonMinutes = midpoint;
+            if (pinToViewport) {
+                buttonMinutes = calculateVisibleGapButtonMinute(
+                    Number.parseFloat(button.dataset.gapStart || "0"),
+                    Number.parseFloat(button.dataset.gapEnd || "1440"),
+                    midpoint,
+                    visibleStartMinutes,
+                    visibleEndMinutes,
+                    marginMinutes,
+                );
+            }
+            button.style.top = `${buttonMinutes * metrics.pxPerMinute}px`;
+        }
+    }
+
+    /**
      * Repositions entry blocks after zoom or resize changes.
      * Part of the week view interaction flow.
      * @returns {void}
@@ -1338,10 +1451,7 @@ export class WeekView {
             el.style.height = `${heightPx}px`;
         }
 
-        for (const button of this.weekDom.gapButtonEls || []) {
-            const midpoint = Number.parseFloat(button.dataset.midpoint || "0");
-            button.style.top = `${midpoint * metrics.pxPerMinute}px`;
-        }
+        this.updateGapButtonPositions(metrics);
 
         this.updateCursorLine();
         this.updateAddDraftPreview();
@@ -1600,6 +1710,7 @@ export class WeekView {
 
         this.weekScrollEl.scrollTop = prevScrollTop;
         this.weekScrollEl.scrollLeft = prevScrollLeft;
+        this.updateGapButtonPositions();
         this.applyDayWindow();
         this.applyWeekFocusAndSelection();
         this.updateCursorLine();
@@ -1763,7 +1874,8 @@ export class WeekView {
 
     /**
      * Adds subtle buttons for every free range in a day.
-     * An entirely empty day receives one central control that creates the requested 08:00–16:00 default.
+     * An entirely empty day receives one central control for an 08:00–09:00 entry; other controls create one hour adjacent to an existing entry, or the complete gap when it is shorter.
+     * Leading and trailing gap controls carry their full free-range bounds so scrolling can keep them inside the visible part of long edge gaps.
      * @param {number} dayIdx
      * @param {string} dayStr
      * @param {Array<import("./store.js").Segment>} segments
@@ -1773,23 +1885,44 @@ export class WeekView {
     appendGapButtons(dayIdx, dayStr, segments, output) {
         if (!this.weekDom) return;
         const gaps = buildDayGaps(segments);
-        const ranges = segments.length === 0 ? [{ startMinutes: 8 * 60, endMinutes: 16 * 60, midpoint: 12 * 60, empty: true }] : gaps.map(
-            (gap) => ({
-                startMinutes: gap.startMinutes,
-                endMinutes: Math.min(gap.endMinutes, gap.startMinutes + MAX_GAP_ENTRY_MINUTES),
-                midpoint: (gap.startMinutes + gap.endMinutes) / 2,
-                empty: false,
-            }),
-        );
+        const ranges =
+            segments.length === 0
+                ? [
+                      {
+                          gapStartMinutes: 0,
+                          gapEndMinutes: 1440,
+                          startMinutes: 8 * 60,
+                          endMinutes: 9 * 60,
+                          midpoint: 12 * 60,
+                          empty: true,
+                          pinToViewport: false,
+                      },
+                  ]
+                : gaps.map((gap) => {
+                      const entryRange = calculateDefaultGapEntryRange(gap.startMinutes, gap.endMinutes);
+                      return {
+                          gapStartMinutes: gap.startMinutes,
+                          gapEndMinutes: gap.endMinutes,
+                          startMinutes: entryRange.startMinutes,
+                          endMinutes: entryRange.endMinutes,
+                          midpoint: (gap.startMinutes + gap.endMinutes) / 2,
+                          empty: false,
+                          pinToViewport: gap.startMinutes === 0 || gap.endMinutes === 1440,
+                      };
+                  });
 
         for (const range of ranges) {
             if (range.endMinutes - range.startMinutes < MIN_ENTRY_MINUTES) continue;
+            const intervalLabel = `${minutesToHHMM(range.startMinutes)}–${minutesToHHMM(range.endMinutes)}`;
             const button = this.createEntryControlButton(
                 "plus",
-                range.empty ? `Add 08:00–16:00 entry on ${dayStr}` : `Fill gap on ${dayStr}`,
+                `Add ${intervalLabel} entry on ${dayStr}`,
                 `entry-gap-add${range.empty ? " is-empty-day" : ""}`,
             );
             button.dataset.midpoint = String(range.midpoint);
+            button.dataset.gapStart = String(range.gapStartMinutes);
+            button.dataset.gapEnd = String(range.gapEndMinutes);
+            button.dataset.pinToViewport = String(range.pinToViewport);
             button.addEventListener("click", (ev) => {
                 ev.stopPropagation();
                 this.focusedDayIndex = dayIdx;

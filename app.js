@@ -748,13 +748,12 @@ class App {
     }
 
     /**
-     * Returns the environment-sensitive default application zoom.
-     * Phone-sized coarse-pointer devices receive a larger layout without relying on browser or operating-system sniffing.
+     * Returns the default application zoom used by automatic mode.
+     * Automatic mode currently preserves the browser's natural 100% application scale on every device.
      * @returns {number}
      */
     getRecommendedAppZoom() {
-        const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
-        return getRecommendedUiZoom(window.innerWidth, window.innerHeight, hasCoarsePointer);
+        return getRecommendedUiZoom();
     }
 
     /**
@@ -812,8 +811,8 @@ class App {
     }
 
     /**
-     * Restores environment-sensitive zoom and optionally persists automatic mode.
-     * The reset control therefore returns to 200% on compact touch devices and 100% elsewhere.
+     * Restores the default zoom and optionally persists automatic mode.
+     * The reset control returns to the neutral 100% application scale while preserving responsive mobile layout behavior.
      * @param {boolean} [shouldPersist]
      * @returns {void}
      */

@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
     buildDayGaps,
+    calculateDefaultGapEntryRange,
     calculatePointerEditTimes,
+    calculateVisibleGapButtonMinute,
     calculateVisibleDayCount,
     clampDayWindowStart,
     formatTrackedHours,
@@ -46,6 +48,28 @@ test("day gaps merge occupied ranges before finding free time", () => {
         { startMinutes: 180, endMinutes: 240 },
         { startMinutes: 300, endMinutes: 1440 },
     ]);
+});
+
+test("gap buttons create at most one hour adjacent to existing entries", () => {
+    assert.deepEqual(calculateDefaultGapEntryRange(0, 9 * 60), {
+        startMinutes: 8 * 60,
+        endMinutes: 9 * 60,
+    });
+    assert.deepEqual(calculateDefaultGapEntryRange(10 * 60, 12 * 60), {
+        startMinutes: 10 * 60,
+        endMinutes: 11 * 60,
+    });
+    assert.deepEqual(calculateDefaultGapEntryRange(10 * 60, 10 * 60 + 30), {
+        startMinutes: 10 * 60,
+        endMinutes: 10 * 60 + 30,
+    });
+});
+
+test("edge-gap buttons clamp into the visible part of their gap", () => {
+    assert.equal(calculateVisibleGapButtonMinute(0, 9 * 60, 4.5 * 60, 8 * 60, 12 * 60, 15), 8 * 60 + 15);
+    assert.equal(calculateVisibleGapButtonMinute(17 * 60, 24 * 60, 20.5 * 60, 12 * 60, 18 * 60, 15), 18 * 60 - 15);
+    assert.equal(calculateVisibleGapButtonMinute(10 * 60, 11 * 60, 10.5 * 60, 8 * 60, 12 * 60, 15), 10.5 * 60);
+    assert.equal(calculateVisibleGapButtonMinute(0, 9 * 60, 4.5 * 60, 10 * 60, 12 * 60, 15), 4.5 * 60);
 });
 
 test("pointer edits snap to 15 minutes and respect minimum duration", () => {

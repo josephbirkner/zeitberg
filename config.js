@@ -18,23 +18,13 @@ export const DEFAULT_CONFIG = {
     uiZoomMode: "auto",
 };
 
-const COMPACT_TOUCH_MAX_SHORT_EDGE = 500;
-const COMPACT_TOUCH_UI_ZOOM = 2;
-
 /**
- * Recommends an application zoom from interaction precision and the viewport's shorter edge.
- * A coarse pointer plus a phone-sized viewport is a more useful readability signal than device pixel ratio, which browsers already map into density-independent CSS pixels.
- * @param {number} viewportWidth Width of the layout viewport in CSS pixels.
- * @param {number} viewportHeight Height of the layout viewport in CSS pixels.
- * @param {boolean} hasCoarsePointer Whether the primary pointing device has limited precision, such as a finger.
+ * Returns the default application zoom for automatic mode.
+ * Browser and operating-system page zoom already express the user's preferred physical size, so automatic mode deliberately leaves the application at its natural 100% scale on every viewport.
  * @returns {number}
  */
-export function getRecommendedUiZoom(viewportWidth, viewportHeight, hasCoarsePointer) {
-    const width = Number(viewportWidth);
-    const height = Number(viewportHeight);
-    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return 1;
-    const shortEdge = Math.min(width, height);
-    return hasCoarsePointer && shortEdge <= COMPACT_TOUCH_MAX_SHORT_EDGE ? COMPACT_TOUCH_UI_ZOOM : 1;
+export function getRecommendedUiZoom() {
+    return 1;
 }
 
 /**
