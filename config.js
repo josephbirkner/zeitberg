@@ -6,6 +6,7 @@
  * @property {string} ref
  * @property {string} timezone
  * @property {number} uiZoom
+ * @property {"auto" | "manual"} uiZoomMode
  */
 
 export const DEFAULT_CONFIG = {
@@ -14,7 +15,27 @@ export const DEFAULT_CONFIG = {
     ref: "main",
     timezone: "Europe/Berlin",
     uiZoom: 1,
+    uiZoomMode: "auto",
 };
+
+const COMPACT_TOUCH_MAX_SHORT_EDGE = 500;
+const COMPACT_TOUCH_UI_ZOOM = 2;
+
+/**
+ * Recommends an application zoom from interaction precision and the viewport's shorter edge.
+ * A coarse pointer plus a phone-sized viewport is a more useful readability signal than device pixel ratio, which browsers already map into density-independent CSS pixels.
+ * @param {number} viewportWidth Width of the layout viewport in CSS pixels.
+ * @param {number} viewportHeight Height of the layout viewport in CSS pixels.
+ * @param {boolean} hasCoarsePointer Whether the primary pointing device has limited precision, such as a finger.
+ * @returns {number}
+ */
+export function getRecommendedUiZoom(viewportWidth, viewportHeight, hasCoarsePointer) {
+    const width = Number(viewportWidth);
+    const height = Number(viewportHeight);
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return 1;
+    const shortEdge = Math.min(width, height);
+    return hasCoarsePointer && shortEdge <= COMPACT_TOUCH_MAX_SHORT_EDGE ? COMPACT_TOUCH_UI_ZOOM : 1;
+}
 
 const STORAGE_KEYS = {
     config: "tt_viewer:config:v1",

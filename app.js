@@ -1,6 +1,6 @@
 import { AppState } from "./appstate.js";
 import { ChunkCache, DraftJournal } from "./cache.js";
-import { ConfigService, DEFAULT_CONFIG } from "./config.js";
+import { ConfigService, DEFAULT_CONFIG, getRecommendedUiZoom } from "./config.js";
 import { GitHubDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore, TodoStore } from "./store.js";
 import { SearchView } from "./search.view.js";
@@ -19,7 +19,7 @@ import {
 import { Manifest, ProjectList, TodoList, WeekRequirements } from "./model.js";
 
 const MIN_APP_ZOOM = 0.8;
-const MAX_APP_ZOOM = 1.5;
+const MAX_APP_ZOOM = 2;
 const APP_ZOOM_STEP = 0.1;
 
 /**
@@ -719,8 +719,11 @@ class App {
 
         this.toastTimer = 0;
         this.resizeRaf = 0;
-        this.uiZoom = this.normalizeAppZoom(this.config.uiZoom);
-        this.setAppZoom(this.uiZoom, false);
+        /** @type {"auto" | "manual"} */
+        this.uiZoomMode = this.config.uiZoomMode === "manual" ? "manual" : "auto";
+        const initialUiZoom = this.uiZoomMode === "auto" ? this.getRecommendedAppZoom() : this.config.uiZoom;
+        this.uiZoom = this.normalizeAppZoom(initialUiZoom);
+        this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
         this.searchFiltersNarrow = window.innerWidth <= 760;
         this.searchFiltersPanelEl.open = !this.searchFiltersNarrow;
     }
@@ -738,23 +741,48 @@ class App {
     }
 
     /**
-     * Applies a whole-application visual zoom and optionally persists it with the repository configuration.
+     * Returns the environment-sensitive default application zoom.
+     * Phone-sized coarse-pointer devices receive a larger layout without relying on browser or operating-system sniffing.
+     * @returns {number}
+     */
+    getRecommendedAppZoom() {
+        const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+        return getRecommendedUiZoom(window.innerWidth, window.innerHeight, hasCoarsePointer);
+    }
+
+    /**
+     * Applies a whole-application visual zoom, records whether it is automatic or manual, and optionally persists it.
      * Browsers do not expose their native page-zoom setting to page scripts, so CSS zoom provides the equivalent in-app control.
      * @param {number} value
      * @param {boolean} [shouldPersist]
+     * @param {"auto" | "manual"} [mode]
      * @returns {void}
      */
-    setAppZoom(value, shouldPersist = true) {
+    setAppZoom(value, shouldPersist = true, mode = "manual") {
         this.uiZoom = this.normalizeAppZoom(value);
+        this.uiZoomMode = mode === "auto" ? "auto" : "manual";
         document.body.style.setProperty("zoom", String(this.uiZoom));
         this.appZoomLabelEl.textContent = `${Math.round(this.uiZoom * 100)}%`;
-        this.appZoomResetBtn.title = `Reset app zoom (${Math.round(this.uiZoom * 100)}%)`;
+        this.appZoomResetBtn.title =
+            this.uiZoomMode === "auto"
+                ? `Automatic app zoom (${Math.round(this.uiZoom * 100)}%)`
+                : `Restore automatic app zoom (currently ${Math.round(this.uiZoom * 100)}%)`;
         this.appZoomOutBtn.disabled = this.uiZoom <= MIN_APP_ZOOM;
         this.appZoomInBtn.disabled = this.uiZoom >= MAX_APP_ZOOM;
-        this.config = { ...this.config, uiZoom: this.uiZoom };
+        this.config = { ...this.config, uiZoom: this.uiZoom, uiZoomMode: this.uiZoomMode };
         this.state.setConfig(this.config);
         if (shouldPersist) this.configService.saveConfig(this.config);
         window.requestAnimationFrame(() => this.weekView.handleResize());
+    }
+
+    /**
+     * Restores environment-sensitive zoom and optionally persists automatic mode.
+     * The reset control therefore returns to 200% on compact touch devices and 100% elsewhere.
+     * @param {boolean} [shouldPersist]
+     * @returns {void}
+     */
+    setAutomaticAppZoom(shouldPersist = true) {
+        this.setAppZoom(this.getRecommendedAppZoom(), shouldPersist, "auto");
     }
 
     /**
@@ -800,7 +828,7 @@ class App {
             queueMicrotask(() => this.searchInput.focus());
         });
         this.appZoomOutBtn.addEventListener("click", () => this.nudgeAppZoom(-1));
-        this.appZoomResetBtn.addEventListener("click", () => this.setAppZoom(1));
+        this.appZoomResetBtn.addEventListener("click", () => this.setAutomaticAppZoom());
         this.appZoomInBtn.addEventListener("click", () => this.nudgeAppZoom(1));
         this.projectsBtn.addEventListener("click", () => this.projectDialog.open());
         this.logoutBtn.addEventListener("click", () => this.logout());
@@ -999,6 +1027,12 @@ class App {
         if (this.resizeRaf) return;
         this.resizeRaf = window.requestAnimationFrame(() => {
             this.resizeRaf = 0;
+            if (this.uiZoomMode === "auto") {
+                const recommendedUiZoom = this.getRecommendedAppZoom();
+                if (recommendedUiZoom !== this.uiZoom) {
+                    this.setAppZoom(recommendedUiZoom, false, "auto");
+                }
+            }
             const searchFiltersNarrow = window.innerWidth <= 760;
             if (searchFiltersNarrow !== this.searchFiltersNarrow) {
                 this.searchFiltersNarrow = searchFiltersNarrow;
@@ -1054,7 +1088,7 @@ class App {
         this.chunkCache.clearAll();
         this.config = { ...DEFAULT_CONFIG };
         this.state.setConfig(this.config);
-        this.setAppZoom(this.config.uiZoom, false);
+        this.setAutomaticAppZoom(false);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.ownerInput.value = this.config.owner;
