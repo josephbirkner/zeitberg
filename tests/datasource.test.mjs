@@ -1,0 +1,167 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { GitHubDataSource } from "../docs/datasource.js";
+
+const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+/**
+ * Builds minimal manifest chunk metadata for data-source tests.
+ * @param {string} sha
+ * @param {number} week
+ * @param {string} text
+ * @returns {import("../docs/model.js").ManifestChunk}
+ */
+function makeChunk(sha, week, text) {
+    return {
+        entries: 0,
+        path: `data/entries/2026/${String(week).padStart(2, "0")}.json`,
+        sha,
+        size: Buffer.byteLength(text),
+        week,
+        year: 2026,
+    };
+}
+
+/**
+ * Creates a JSON response compatible with the browser Fetch API.
+ * @param {Object} body
+ * @param {number} [status]
+ * @returns {Response}
+ */
+function jsonResponse(body, status = 200) {
+    return new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
+test("GitHub chunk loading retrieves multiple manifest blobs in one GraphQL request", async (context) => {
+    const textA = '{"entries":[],"schema_version":2}\n';
+    const textB = '{"entries":[],"schema_version":2,"week":2}\n';
+    const chunks = [makeChunk(SHA_A, 1, textA), makeChunk(SHA_B, 2, textB)];
+    const requests = [];
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        requests.push({ url: String(url), options });
+        const body = JSON.parse(String(options?.body || "{}"));
+        assert.match(body.query, /chunk0: object\(oid: "a{40}"\)/);
+        assert.match(body.query, /chunk1: object\(oid: "b{40}"\)/);
+        assert.deepEqual(body.variables, { owner: "owner", repo: "repo" });
+        return jsonResponse({
+            data: {
+                repository: {
+                    chunk0: { oid: SHA_A, byteSize: Buffer.byteLength(textA), isBinary: false, isTruncated: false, text: textA },
+                    chunk1: { oid: SHA_B, byteSize: Buffer.byteLength(textB), isBinary: false, isTruncated: false, text: textB },
+                },
+            },
+        });
+    });
+
+    const source = new GitHubDataSource({ owner: "owner", repo: "repo", ref: "main" }, "token");
+    const result = await source.fetchChunkTexts(chunks);
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://api.github.com/graphql");
+    assert.equal(requests[0].options?.method, "POST");
+    assert.equal(result.get(SHA_A), textA);
+    assert.equal(result.get(SHA_B), textB);
+});
+
+test("GitHub chunk loading falls back to REST only for an unresolved GraphQL blob", async (context) => {
+    const textA = '{"entries":[],"schema_version":2}\n';
+    const textB = '{"entries":[],"schema_version":2,"week":2}\n';
+    const chunks = [makeChunk(SHA_A, 1, textA), makeChunk(SHA_B, 2, textB)];
+    const requests = [];
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        const requestUrl = String(url);
+        requests.push(requestUrl);
+        if (requestUrl === "https://api.github.com/graphql") {
+            return jsonResponse({
+                data: {
+                    repository: {
+                        chunk0: { oid: SHA_A, byteSize: Buffer.byteLength(textA), isBinary: false, isTruncated: false, text: textA },
+                        chunk1: { oid: SHA_B, byteSize: Buffer.byteLength(textB), isBinary: false, isTruncated: true, text: textB },
+                    },
+                },
+            });
+        }
+        assert.match(requestUrl, new RegExp(`/git/blobs/${SHA_B}$`));
+        assert.equal(options?.headers?.Accept, "application/vnd.github.raw");
+        return new Response(textB, { status: 200 });
+    });
+
+    const source = new GitHubDataSource({ owner: "owner", repo: "repo", ref: "main" }, "token");
+    const result = await source.fetchChunkTexts(chunks);
+
+    assert.deepEqual(requests, ["https://api.github.com/graphql", `https://api.github.com/repos/owner/repo/git/blobs/${SHA_B}`]);
+    assert.equal(result.get(SHA_A), textA);
+    assert.equal(result.get(SHA_B), textB);
+});
+
+test("GitHub chunk loading retries a failed bulk query as smaller GraphQL batches", async (context) => {
+    const textA = '{"entries":[],"schema_version":2}\n';
+    const textB = '{"entries":[],"schema_version":2,"week":2}\n';
+    const chunks = [makeChunk(SHA_A, 1, textA), makeChunk(SHA_B, 2, textB)];
+    let graphqlRequests = 0;
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        assert.equal(String(url), "https://api.github.com/graphql");
+        graphqlRequests += 1;
+        const body = JSON.parse(String(options?.body || "{}"));
+        if (graphqlRequests === 1) {
+            assert.match(body.query, /chunk1:/);
+            return jsonResponse({ data: null, errors: [{ message: "The query timed out." }] });
+        }
+
+        assert.doesNotMatch(body.query, /chunk1:/);
+        const isFirstChunk = body.query.includes(SHA_A);
+        const sha = isFirstChunk ? SHA_A : SHA_B;
+        const text = isFirstChunk ? textA : textB;
+        return jsonResponse({
+            data: {
+                repository: {
+                    chunk0: { oid: sha, byteSize: Buffer.byteLength(text), isBinary: false, isTruncated: false, text },
+                },
+            },
+        });
+    });
+
+    const source = new GitHubDataSource({ owner: "owner", repo: "repo", ref: "main" }, "token");
+    const result = await source.fetchChunkTexts(chunks);
+
+    assert.equal(graphqlRequests, 3);
+    assert.equal(result.get(SHA_A), textA);
+    assert.equal(result.get(SHA_B), textB);
+});
+
+test("GitHub chunk loading splits histories that exceed the response-size budget", async (context) => {
+    const textA = '{"entries":[],"schema_version":2}\n';
+    const textB = '{"entries":[],"schema_version":2,"week":2}\n';
+    const chunks = [makeChunk(SHA_A, 1, textA), makeChunk(SHA_B, 2, textB)];
+    chunks[0].size = 5 * 1024 * 1024;
+    chunks[1].size = 5 * 1024 * 1024;
+    let graphqlRequests = 0;
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        assert.equal(String(url), "https://api.github.com/graphql");
+        graphqlRequests += 1;
+        const body = JSON.parse(String(options?.body || "{}"));
+        assert.doesNotMatch(body.query, /chunk1:/);
+        const isFirstChunk = body.query.includes(SHA_A);
+        const chunk = isFirstChunk ? chunks[0] : chunks[1];
+        const text = isFirstChunk ? textA : textB;
+        return jsonResponse({
+            data: {
+                repository: {
+                    chunk0: { oid: chunk.sha, byteSize: chunk.size, isBinary: false, isTruncated: false, text },
+                },
+            },
+        });
+    });
+
+    const source = new GitHubDataSource({ owner: "owner", repo: "repo", ref: "main" }, "token");
+    const result = await source.fetchChunkTexts(chunks);
+
+    assert.equal(graphqlRequests, 2);
+    assert.equal(result.get(SHA_A), textA);
+    assert.equal(result.get(SHA_B), textB);
+});

@@ -31,6 +31,26 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
 ];
 
 /**
+ * Parses one normalized week document and returns its entry records after schema validation.
+ * Including the manifest path in failures makes both corrupt IndexedDB records and malformed network responses diagnosable.
+ * @param {import("./model.js").ManifestChunk} chunk
+ * @param {string} raw
+ * @returns {Array<Object>}
+ */
+function parseWeekChunkEntries(chunk, raw) {
+    let payload;
+    try {
+        payload = JSON.parse(raw);
+    } catch {
+        throw new Error(`${chunk.path} is not valid JSON.`);
+    }
+    if (!payload || typeof payload !== "object" || Number(payload.schema_version) !== 2) {
+        throw new Error(`${chunk.path} must use entry schema_version 2.`);
+    }
+    return Array.isArray(payload.entries) ? payload.entries : [];
+}
+
+/**
  * @typedef {Object} ProjectDialogOptions
  * @property {import("./store.js").EntryStore} store
  * @property {import("./datasource.js").DataSource} dataSource
@@ -1435,50 +1455,79 @@ class App {
         this.store.setManifest(manifest);
 
         let cacheHits = 0;
-        let downloads = 0;
+        let memoryHits = 0;
+        /** @type {Map<string, Array<Object>>} */
+        const entriesByKey = new Map();
+        /** @type {import("./model.js").ManifestChunk[]} */
+        const cacheCandidates = [];
 
-        for (let i = 0; i < chunkFiles.length; i++) {
-            const chunk = chunkFiles[i];
+        for (const chunk of chunkFiles) {
             const key = chunkKey(chunk.year, chunk.week);
-            this.setProgress(i, chunkFiles.length, `Loading ${i}/${chunkFiles.length} • ${key}`);
-
-            const mem = this.chunkCache.getMemory(key);
-            if (mem && mem.sha === chunk.sha) {
-                const weekStart = isoWeekStartFromYearWeek(chunk.year, chunk.week);
-                this.store.applyWeekSnapshot(weekStart, mem.entriesRaw || []);
-                continue;
+            const memory = this.chunkCache.getMemory(key);
+            if (memory && memory.sha === chunk.sha) {
+                entriesByKey.set(key, memory.entriesRaw || []);
+                memoryHits += 1;
+            } else {
+                cacheCandidates.push(chunk);
             }
+        }
 
-            let payload = null;
-            const cachedRaw = await this.chunkCache.getRawBySha(chunk.sha);
-            if (typeof cachedRaw === "string" && cachedRaw) {
+        this.setProgress(memoryHits, chunkFiles.length, `Checking ${cacheCandidates.length} cached week files…`);
+        const cachedRawBySha = await this.chunkCache.getRawByShas(cacheCandidates.map((chunk) => chunk.sha));
+        /** @type {import("./model.js").ManifestChunk[]} */
+        const downloadChunks = [];
+        const corruptCacheShas = new Set();
+        for (const chunk of cacheCandidates) {
+            const key = chunkKey(chunk.year, chunk.week);
+            const cachedRaw = cachedRawBySha.get(chunk.sha);
+            if (cachedRaw) {
                 try {
-                    payload = JSON.parse(cachedRaw);
+                    entriesByKey.set(key, parseWeekChunkEntries(chunk, cachedRaw));
                     cacheHits += 1;
+                    continue;
                 } catch {
-                    await this.chunkCache.deleteRawBySha(chunk.sha);
-                    payload = null;
+                    corruptCacheShas.add(chunk.sha);
                 }
             }
+            downloadChunks.push(chunk);
+        }
+        await this.chunkCache.deleteRawByShas(corruptCacheShas);
 
-            if (!payload) {
-                const raw = await this.dataSource.fetchChunkText(chunk);
-                payload = JSON.parse(raw);
-                downloads += 1;
-                await this.chunkCache.putRawBySha(chunk.sha, raw);
+        /** @type {Map<string, string>} */
+        let downloadedRawBySha = new Map();
+        if (downloadChunks.length) {
+            this.setProgress(
+                memoryHits + cacheHits,
+                chunkFiles.length,
+                `Downloading ${downloadChunks.length} week files in bulk…`,
+            );
+            downloadedRawBySha = await this.dataSource.fetchChunkTexts(downloadChunks);
+        }
+
+        const cacheWrites = new Map();
+        for (const chunk of downloadChunks) {
+            const raw = downloadedRawBySha.get(chunk.sha);
+            if (typeof raw !== "string" || !raw) {
+                throw new Error(`Data source did not return ${chunk.path}.`);
             }
+            const key = chunkKey(chunk.year, chunk.week);
+            entriesByKey.set(key, parseWeekChunkEntries(chunk, raw));
+            cacheWrites.set(chunk.sha, raw);
+        }
+        await this.chunkCache.putRawByShas(cacheWrites);
 
-            if (!payload || typeof payload !== "object" || Number(payload.schema_version) !== 2) {
-                throw new Error(`${chunk.path} must use entry schema_version 2.`);
-            }
-
-            const entriesRaw = Array.isArray(payload.entries) ? payload.entries : [];
+        for (let index = 0; index < chunkFiles.length; index++) {
+            const chunk = chunkFiles[index];
+            const key = chunkKey(chunk.year, chunk.week);
+            const entriesRaw = entriesByKey.get(key);
+            if (!entriesRaw) throw new Error(`Failed to prepare ${chunk.path}.`);
             this.chunkCache.setMemory(key, { sha: chunk.sha, entriesRaw });
             const weekStart = isoWeekStartFromYearWeek(chunk.year, chunk.week);
             this.store.applyWeekSnapshot(weekStart, entriesRaw);
+            this.setProgress(index + 1, chunkFiles.length, `Preparing ${index + 1}/${chunkFiles.length} • ${key}`);
         }
 
-        const cacheSummary = ` • cached ${cacheHits} • downloaded ${downloads}`;
+        const cacheSummary = ` • memory ${memoryHits} • cached ${cacheHits} • downloaded ${downloadChunks.length}`;
         this.setProgress(chunkFiles.length, chunkFiles.length, `Loaded ${chunkFiles.length}/${chunkFiles.length} week files${cacheSummary}`);
 
         await this.finalizeLoadedEntries();
@@ -1528,10 +1577,8 @@ class App {
         this.todoStore.clear();
         this.todoView.reset();
         try {
-            await this.fetchManifest();
-            await this.fetchProjects();
-            await this.fetchWeekRequirements();
-            await this.fetchTodos();
+            await Promise.all([this.fetchManifest(), this.fetchProjects()]);
+            await Promise.all([this.fetchWeekRequirements(), this.fetchTodos()]);
             await this.loadAllChunks();
             this.showApplicationScreen();
             return true;

@@ -159,6 +159,37 @@ export class ChunkCache {
     }
 
     /**
+     * Reads multiple raw chunk payloads in one IndexedDB transaction.
+     * Batching avoids paying transaction scheduling overhead once for every manifest week during startup.
+     * @param {Iterable<string>} shas
+     * @returns {Promise<Map<string, string>>}
+     */
+    async getRawByShas(shas) {
+        const keys = [...new Set([...shas].map((sha) => String(sha || "").trim()).filter(Boolean))];
+        const result = new Map();
+        if (!keys.length) return result;
+
+        const db = await this.openDb();
+        if (!db) return result;
+
+        try {
+            const tx = db.transaction(CHUNK_CACHE.storeName, "readonly");
+            const done = transactionDone(tx);
+            const store = tx.objectStore(CHUNK_CACHE.storeName);
+            const records = await Promise.all(keys.map((key) => requestToPromise(store.get(key))));
+            await done;
+            for (let index = 0; index < keys.length; index++) {
+                const record = records[index];
+                if (record && typeof record.raw === "string") result.set(keys[index], record.raw);
+            }
+        } catch {
+            // Treat unavailable or interrupted cache reads as misses.
+        }
+
+        return result;
+    }
+
+    /**
      * Reads a raw chunk payload from IndexedDB by sha.
      * Supports cache reuse across reloads and edits.
      * @param {string} sha
@@ -167,21 +198,37 @@ export class ChunkCache {
     async getRawBySha(sha) {
         const key = String(sha || "").trim();
         if (!key) return null;
+        const result = await this.getRawByShas([key]);
+        return result.get(key) || null;
+    }
+
+    /**
+     * Persists multiple SHA-keyed raw chunk payloads in one IndexedDB transaction.
+     * Invalid entries are ignored, while a quota failure disables later cache writes without interrupting the application load.
+     * @param {Map<string, string>} rawBySha
+     * @returns {Promise<void>}
+     */
+    async putRawByShas(rawBySha) {
+        if (this.writesDisabled || !rawBySha.size) return;
+        const entries = [...rawBySha]
+            .map(([sha, raw]) => [String(sha || "").trim(), raw])
+            .filter(([sha, raw]) => Boolean(sha) && typeof raw === "string" && Boolean(raw));
+        if (!entries.length) return;
 
         const db = await this.openDb();
-        if (!db) return null;
+        if (!db) return;
 
         try {
-            const tx = db.transaction(CHUNK_CACHE.storeName, "readonly");
+            const tx = db.transaction(CHUNK_CACHE.storeName, "readwrite");
+            const done = transactionDone(tx);
             const store = tx.objectStore(CHUNK_CACHE.storeName);
-            const rec = await requestToPromise(store.get(key));
-            await transactionDone(tx);
-            if (rec && typeof rec.raw === "string") return rec.raw;
-        } catch {
-            // ignore
+            for (const [sha, raw] of entries) {
+                store.put({ sha, raw, saved_at: Date.now() });
+            }
+            await done;
+        } catch (error) {
+            if (isQuotaError(error)) this.writesDisabled = true;
         }
-
-        return null;
     }
 
     /**
@@ -192,21 +239,33 @@ export class ChunkCache {
      * @returns {Promise<void>}
      */
     async putRawBySha(sha, raw) {
-        if (this.writesDisabled) return;
         const key = String(sha || "").trim();
         if (!key) return;
         if (typeof raw !== "string" || !raw) return;
+        await this.putRawByShas(new Map([[key, raw]]));
+    }
+
+    /**
+     * Removes several corrupt or obsolete cached payloads in one IndexedDB transaction.
+     * Cache deletion is best-effort because network data remains authoritative when browser storage is unavailable.
+     * @param {Iterable<string>} shas
+     * @returns {Promise<void>}
+     */
+    async deleteRawByShas(shas) {
+        const keys = [...new Set([...shas].map((sha) => String(sha || "").trim()).filter(Boolean))];
+        if (!keys.length) return;
 
         const db = await this.openDb();
         if (!db) return;
 
         try {
             const tx = db.transaction(CHUNK_CACHE.storeName, "readwrite");
+            const done = transactionDone(tx);
             const store = tx.objectStore(CHUNK_CACHE.storeName);
-            store.put({ sha: key, raw, saved_at: Date.now() });
-            await transactionDone(tx);
-        } catch (e) {
-            if (isQuotaError(e)) this.writesDisabled = true;
+            for (const key of keys) store.delete(key);
+            await done;
+        } catch {
+            // Cache deletion is best-effort.
         }
     }
 
@@ -219,18 +278,7 @@ export class ChunkCache {
     async deleteRawBySha(sha) {
         const key = String(sha || "").trim();
         if (!key) return;
-
-        const db = await this.openDb();
-        if (!db) return;
-
-        try {
-            const tx = db.transaction(CHUNK_CACHE.storeName, "readwrite");
-            const store = tx.objectStore(CHUNK_CACHE.storeName);
-            store.delete(key);
-            await transactionDone(tx);
-        } catch {
-            // ignore
-        }
+        await this.deleteRawByShas([key]);
     }
 
     /**

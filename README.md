@@ -6,7 +6,8 @@ This is a static HTML5 application that stays “public” as code, but loads **
 
 - The site itself is static: `docs/index.html`, `docs/app.js`, `docs/style.css`.
 - After login, it fetches `data/index/entries-manifest.json` in your private repo via GitHub’s API.
-- The manifest lists weekly chunks in `data/entries/<iso-year>/<week>.json` (and their Git blob SHAs), which are then loaded via the Git blob API.
+- The manifest lists weekly chunks in `data/entries/<iso-year>/<week>.json` and their Git blob SHAs. Cache misses are fetched in size-bounded GitHub GraphQL batches, while missing or truncated GraphQL blobs fall back to the individual Git blob API.
+- Raw week documents are cached by immutable blob SHA in IndexedDB; startup checks and updates that cache through batched transactions.
 - Your token is stored in the browser (localStorage if “Remember” is enabled; otherwise sessionStorage).
 - Edits are saved back into the repo as commits (GitHub mode) or written to disk via `server.py` (local mode).
 - Unsaved week and TODO edits are journaled in IndexedDB after every editor command, restored on reload, and removed only after a successful manual save. The journal is reload protection, not a repository save.

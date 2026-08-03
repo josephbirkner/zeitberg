@@ -1,5 +1,10 @@
 import { gitBlobSha1 } from "./utils.js";
 
+const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
+const GRAPHQL_CHUNK_BATCH_MAX_BYTES = 8 * 1024 * 1024;
+const GRAPHQL_CHUNK_BATCH_MAX_ITEMS = 200;
+const GRAPHQL_UNKNOWN_CHUNK_BYTES = 64 * 1024;
+
 /**
  * Returns true when a value looks like a Git commit/blob SHA.
  * Keeps GitHub API response validation readable at call sites.
@@ -8,6 +13,36 @@ import { gitBlobSha1 } from "./utils.js";
  */
 function isGitSha(value) {
     return /^[0-9a-f]{40}$/i.test(String(value || ""));
+}
+
+/**
+ * Groups manifest chunks into GraphQL requests with bounded response sizes.
+ * The manifest's byte counts let the browser use one request for today's data while automatically splitting future, larger histories.
+ * @param {import("./model.js").ManifestChunk[]} chunks
+ * @returns {import("./model.js").ManifestChunk[][]}
+ */
+function buildGraphqlChunkBatches(chunks) {
+    /** @type {import("./model.js").ManifestChunk[][]} */
+    const batches = [];
+    /** @type {import("./model.js").ManifestChunk[]} */
+    let current = [];
+    let currentBytes = 0;
+
+    for (const chunk of chunks) {
+        const chunkBytes = typeof chunk.size === "number" && chunk.size >= 0 ? chunk.size : GRAPHQL_UNKNOWN_CHUNK_BYTES;
+        const exceedsItemLimit = current.length >= GRAPHQL_CHUNK_BATCH_MAX_ITEMS;
+        const exceedsByteLimit = current.length > 0 && currentBytes + chunkBytes > GRAPHQL_CHUNK_BATCH_MAX_BYTES;
+        if (exceedsItemLimit || exceedsByteLimit) {
+            batches.push(current);
+            current = [];
+            currentBytes = 0;
+        }
+        current.push(chunk);
+        currentBytes += chunkBytes;
+    }
+
+    if (current.length) batches.push(current);
+    return batches;
 }
 
 /**
@@ -30,6 +65,13 @@ function isGitSha(value) {
  * @property {string} path
  * @property {string} content
  * @property {string} [sha]
+ */
+
+/**
+ * @typedef {Object} GraphqlChunkBatchResult
+ * @description Valid GraphQL blob texts plus any chunks that require the REST fallback.
+ * @property {Map<string, string>} textsBySha
+ * @property {import("./model.js").ManifestChunk[]} unresolvedChunks
  */
 
 /**
@@ -76,6 +118,21 @@ export class DataSource {
     }
 
     /**
+     * Fetches several week chunks through one logical data-source operation.
+     * The default implementation preserves compatibility for local and future data sources by delegating to their single-chunk reader.
+     * @param {import("./model.js").ManifestChunk[]} chunks
+     * @returns {Promise<Map<string, string>>}
+     */
+    async fetchChunkTexts(chunks) {
+        const textsBySha = new Map();
+        for (const chunk of chunks) {
+            if (textsBySha.has(chunk.sha)) continue;
+            textsBySha.set(chunk.sha, await this.fetchChunkText(chunk));
+        }
+        return textsBySha;
+    }
+
+    /**
      * Loads the project definitions JSON payload.
      * Used by the app to read or persist data.
      * @returns {Promise<Object>}
@@ -116,7 +173,7 @@ export class DataSource {
 
 /**
  * GitHub-backed data source.
- * Uses the GitHub REST API for reads and commits.
+ * Uses GraphQL for bulk week reads and the GitHub REST API for metadata, recovery reads, and commits.
  */
 export class GitHubDataSource extends DataSource {
     /**
@@ -294,6 +351,120 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Builds a strongly bounded GraphQL query whose aliases map directly back to manifest chunks.
+     * Blob OIDs are validated before interpolation, while owner and repository names remain ordinary GraphQL variables.
+     * @param {import("./model.js").ManifestChunk[]} chunks
+     * @returns {string}
+     */
+    buildChunkBatchQuery(chunks) {
+        const fields = chunks.map(
+            (chunk, index) =>
+                `chunk${index}: object(oid: "${chunk.sha}") { ... on Blob { oid byteSize isBinary isTruncated text } }`,
+        );
+        return `query BulkWeekChunks($owner: String!, $repo: String!) {
+            repository(owner: $owner, name: $repo) {
+                ${fields.join("\n")}
+            }
+        }`;
+    }
+
+    /**
+     * Fetches one prepared GraphQL batch and validates every returned blob against its manifest metadata.
+     * Partial GraphQL responses remain useful: only missing, binary, truncated, or mismatched blobs are marked for REST recovery.
+     * @param {import("./model.js").ManifestChunk[]} chunks
+     * @returns {Promise<GraphqlChunkBatchResult>}
+     */
+    async fetchGraphqlChunkBatch(chunks) {
+        const response = await this.fetchJsonRequest(GITHUB_GRAPHQL_URL, {
+            method: "POST",
+            body: {
+                query: this.buildChunkBatchQuery(chunks),
+                variables: { owner: this.config.owner, repo: this.config.repo },
+            },
+        });
+        const repository = response?.data?.repository;
+        if (!repository || typeof repository !== "object") {
+            const messages = Array.isArray(response?.errors)
+                ? response.errors.map((error) => String(error?.message || "")).filter(Boolean).join("; ")
+                : "";
+            throw new Error(`GitHub GraphQL chunk query failed${messages ? `: ${messages}` : "."}`);
+        }
+
+        const textsBySha = new Map();
+        const unresolvedChunks = [];
+        for (let index = 0; index < chunks.length; index++) {
+            const chunk = chunks[index];
+            const blob = repository[`chunk${index}`];
+            const expectedSize = typeof chunk.size === "number" && chunk.size >= 0 ? chunk.size : null;
+            const valid =
+                blob &&
+                typeof blob === "object" &&
+                String(blob.oid || "").toLowerCase() === chunk.sha.toLowerCase() &&
+                blob.isBinary === false &&
+                blob.isTruncated === false &&
+                typeof blob.text === "string" &&
+                (expectedSize === null || Number(blob.byteSize) === expectedSize);
+            if (valid) {
+                textsBySha.set(chunk.sha, blob.text);
+            } else {
+                unresolvedChunks.push(chunk);
+            }
+        }
+        return { textsBySha, unresolvedChunks };
+    }
+
+    /**
+     * Fetches one GraphQL batch, retries a failed large request as two smaller requests, and finally falls back to REST.
+     * A partial GraphQL response uses REST only for unresolved blobs so successful bulk data is never downloaded twice.
+     * @param {import("./model.js").ManifestChunk[]} chunks
+     * @param {boolean} [allowSplit]
+     * @returns {Promise<Map<string, string>>}
+     */
+    async fetchChunkBatchWithFallback(chunks, allowSplit = true) {
+        try {
+            const { textsBySha, unresolvedChunks } = await this.fetchGraphqlChunkBatch(chunks);
+            if (unresolvedChunks.length) {
+                const recovered = await super.fetchChunkTexts(unresolvedChunks);
+                for (const [sha, text] of recovered) textsBySha.set(sha, text);
+            }
+            return textsBySha;
+        } catch (error) {
+            if (allowSplit && chunks.length > 1) {
+                const midpoint = Math.ceil(chunks.length / 2);
+                const first = await this.fetchChunkBatchWithFallback(chunks.slice(0, midpoint), false);
+                const second = await this.fetchChunkBatchWithFallback(chunks.slice(midpoint), false);
+                for (const [sha, text] of second) first.set(sha, text);
+                return first;
+            }
+            return await super.fetchChunkTexts(chunks);
+        }
+    }
+
+    /**
+     * Bulk-loads all distinct cache-miss blobs through size-bounded GraphQL alias queries.
+     * The returned SHA-keyed map lets the app retain one shared parsing and cache path for GitHub and local modes.
+     * @param {import("./model.js").ManifestChunk[]} chunks
+     * @returns {Promise<Map<string, string>>}
+     */
+    async fetchChunkTexts(chunks) {
+        /** @type {Map<string, import("./model.js").ManifestChunk>} */
+        const uniqueBySha = new Map();
+        for (const chunk of chunks) {
+            if (!isGitSha(chunk?.sha)) {
+                throw new Error(`Invalid blob sha for ${String(chunk?.path || "week chunk")}`);
+            }
+            if (!uniqueBySha.has(chunk.sha)) uniqueBySha.set(chunk.sha, chunk);
+        }
+
+        const textsBySha = new Map();
+        for (const batch of buildGraphqlChunkBatches([...uniqueBySha.values()])) {
+            const batchTexts = await this.fetchChunkBatchWithFallback(batch);
+            for (const [sha, text] of batchTexts) textsBySha.set(sha, text);
+        }
+        return textsBySha;
+    }
+
+    /**
      * Loads the projects.json file from the repository.
      * Used by the app to read or persist data.
      * @returns {Promise<Object>}
@@ -430,15 +601,11 @@ export class GitHubDataSource extends DataSource {
      * @returns {Promise<{repoInfo: any, userInfo: any}>}
      */
     async checkConnection() {
-        const repoInfo = await this.fetchJson(
+        const repoRequest = this.fetchJson(
             `https://api.github.com/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repo)}`,
         );
-        let userInfo = null;
-        try {
-            userInfo = await this.fetchJson("https://api.github.com/user");
-        } catch {
-            userInfo = null;
-        }
+        const userRequest = this.fetchJson("https://api.github.com/user").catch(() => null);
+        const [repoInfo, userInfo] = await Promise.all([repoRequest, userRequest]);
         return { repoInfo, userInfo };
     }
 }
