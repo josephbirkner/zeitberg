@@ -17,6 +17,7 @@ export class AppState {
         this.weekStart = null;
         this.latestWeekStart = null;
         this.zoom = 1;
+        this.effectiveViewportWidth = null;
         this.token = "";
         this.ghUser = null;
     }
@@ -69,6 +70,17 @@ export class AppState {
      */
     setZoom(zoom) {
         this.zoom = zoom;
+    }
+
+    /**
+     * Stores the effective horizontal viewport after application zoom.
+     * WeekView uses this shared value to agree with the responsive CSS mode even where browser element measurements handle CSS zoom differently.
+     * @param {number} width
+     * @returns {void}
+     */
+    setEffectiveViewportWidth(width) {
+        const numericWidth = Number(width);
+        this.effectiveViewportWidth = Number.isFinite(numericWidth) && numericWidth > 0 ? numericWidth : null;
     }
 
     /**

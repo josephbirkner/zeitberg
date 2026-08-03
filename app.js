@@ -1,6 +1,6 @@
 import { AppState } from "./appstate.js";
 import { ChunkCache, DraftJournal } from "./cache.js";
-import { ConfigService, DEFAULT_CONFIG, getRecommendedUiZoom } from "./config.js";
+import { ConfigService, DEFAULT_CONFIG, getEffectiveUiViewportWidth, getRecommendedUiZoom } from "./config.js";
 import { GitHubDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore, TodoStore } from "./store.js";
 import { SearchView } from "./search.view.js";
@@ -21,6 +21,14 @@ import { Manifest, ProjectList, TodoList, WeekRequirements } from "./model.js";
 const MIN_APP_ZOOM = 0.8;
 const MAX_APP_ZOOM = 2;
 const APP_ZOOM_STEP = 0.1;
+/** @type {Array<[string, number]>} */
+const RESPONSIVE_CLASS_BREAKPOINTS = [
+    ["ui-compact", 520],
+    ["ui-project-compact", 720],
+    ["ui-narrow", 760],
+    ["ui-toolbar-compact", 840],
+    ["ui-medium", 980],
+];
 
 /**
  * @typedef {Object} ProjectDialogOptions
@@ -719,13 +727,12 @@ class App {
 
         this.toastTimer = 0;
         this.resizeRaf = 0;
+        this.searchFiltersNarrow = false;
         /** @type {"auto" | "manual"} */
         this.uiZoomMode = this.config.uiZoomMode === "manual" ? "manual" : "auto";
         const initialUiZoom = this.uiZoomMode === "auto" ? this.getRecommendedAppZoom() : this.config.uiZoom;
         this.uiZoom = this.normalizeAppZoom(initialUiZoom);
         this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
-        this.searchFiltersNarrow = window.innerWidth <= 760;
-        this.searchFiltersPanelEl.open = !this.searchFiltersNarrow;
     }
 
     /**
@@ -751,6 +758,34 @@ class App {
     }
 
     /**
+     * Returns the viewport width available to the application after CSS zoom.
+     * Using this effective width makes manually enlarged layouts reflow just like genuinely narrow viewports.
+     * @returns {number}
+     */
+    getEffectiveAppViewportWidth() {
+        return getEffectiveUiViewportWidth(window.innerWidth, this.uiZoom);
+    }
+
+    /**
+     * Synchronizes responsive CSS classes, search-filter state, and shared application state.
+     * Every breakpoint is evaluated against effective width so Safari, other browsers, and manual app zoom all select the same layout mode.
+     * @returns {void}
+     */
+    updateResponsiveLayout() {
+        const effectiveWidth = this.getEffectiveAppViewportWidth();
+        this.state.setEffectiveViewportWidth(effectiveWidth);
+        for (const [className, maxWidth] of RESPONSIVE_CLASS_BREAKPOINTS) {
+            document.documentElement.classList.toggle(className, effectiveWidth <= maxWidth);
+        }
+
+        const searchFiltersNarrow = effectiveWidth <= 760;
+        if (searchFiltersNarrow !== this.searchFiltersNarrow) {
+            this.searchFiltersNarrow = searchFiltersNarrow;
+            this.searchFiltersPanelEl.open = !searchFiltersNarrow;
+        }
+    }
+
+    /**
      * Applies a whole-application visual zoom, records whether it is automatic or manual, and optionally persists it.
      * Browsers do not expose their native page-zoom setting to page scripts, so CSS zoom provides the equivalent in-app control.
      * @param {number} value
@@ -771,6 +806,7 @@ class App {
         this.appZoomInBtn.disabled = this.uiZoom >= MAX_APP_ZOOM;
         this.config = { ...this.config, uiZoom: this.uiZoom, uiZoomMode: this.uiZoomMode };
         this.state.setConfig(this.config);
+        this.updateResponsiveLayout();
         if (shouldPersist) this.configService.saveConfig(this.config);
         window.requestAnimationFrame(() => this.weekView.handleResize());
     }
@@ -1033,11 +1069,7 @@ class App {
                     this.setAppZoom(recommendedUiZoom, false, "auto");
                 }
             }
-            const searchFiltersNarrow = window.innerWidth <= 760;
-            if (searchFiltersNarrow !== this.searchFiltersNarrow) {
-                this.searchFiltersNarrow = searchFiltersNarrow;
-                this.searchFiltersPanelEl.open = !searchFiltersNarrow;
-            }
+            this.updateResponsiveLayout();
             this.weekView.handleResize();
         });
     }

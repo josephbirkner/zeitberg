@@ -1859,15 +1859,13 @@ body.is-entry-moving * {
   border-radius: 8px;
 }
 
-@media (max-width: 720px) {
-  .project-fields,
-  .section-row {
-    grid-template-columns: minmax(0, 1fr) minmax(100px, 0.7fr);
-  }
+html.ui-project-compact .project-fields,
+html.ui-project-compact .section-row {
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 0.7fr);
+}
 
-  .section-row {
-    margin-left: 5px;
-  }
+html.ui-project-compact .section-row {
+  margin-left: 5px;
 }
 
 .week-card {
@@ -1940,390 +1938,382 @@ body.is-entry-moving * {
   padding-bottom: 28px;
 }
 
-@media (max-width: 760px) {
-  :root {
-    --sidebar-width: 50px;
-  }
-
-  .topbar {
-    flex-basis: 50px;
-    min-height: 50px;
-    max-height: 50px;
-    gap: 5px;
-    padding-right: 5px;
-    padding-left: 5px;
-  }
-
-  .app-sidebar {
-    padding-right: 4px;
-    padding-left: 4px;
-  }
-
-  .sidebar-button {
-    min-height: 40px;
-  }
-
-  .global-search {
-    flex: 0 1 170px;
-    min-width: 92px;
-    max-width: 190px;
-    height: 38px;
-  }
-
-  .topbar[data-active-tab="search"] .global-search,
-  .topbar[data-active-tab="todos"] .global-search {
-    max-width: none;
-  }
-
-  .week-controls {
-    height: 100%;
-    flex-wrap: nowrap;
-    gap: 5px;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .week-navigation {
-    order: 2;
-    gap: 3px;
-  }
-
-  .week-history-actions {
-    order: 1;
-  }
-
-  .week-summary {
-    order: 3;
-  }
-
-  .week-zoom-separator {
-    order: 4;
-  }
-
-  .week-zoom-actions {
-    order: 5;
-  }
-
-  .week-editor-actions {
-    order: 6;
-  }
-
-  #latestWeekBtn,
-  .zoom-compact {
-    display: none !important;
-  }
-
-  .week-summary {
-    width: 34px;
-    max-width: 34px;
-    padding: 0;
-    flex: 0 0 34px;
-    display: grid;
-    place-items: center;
-    border-color: var(--border);
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  #weekBillable {
-    display: none;
-  }
-
-  .week-summary-compact-icon {
-    display: block;
-    width: 1.1rem;
-    height: 1.1rem;
-  }
-
-  .topbar-spacer {
-    display: none;
-  }
-
-  .week-editor-actions {
-    min-width: 0;
-  }
-
-  .week-grid {
-    grid-template-columns: 48px repeat(var(--visible-day-count), minmax(0, 1fr));
-  }
-
-  .entry-action-rail,
-  .entry-block.controls-on-left .entry-action-rail {
-    right: 5px;
-    left: auto;
-  }
-
-  .entry-block.is-selected .entry-times {
-    right: 46px;
-  }
-
-  .wg-time-label {
-    left: 6px;
-  }
-
-  input,
-  select,
-  textarea {
-    font-size: max(16px, 0.8125rem);
-  }
-
-  #entryDialog,
-  #todoDialog,
-  #weekReqDialog {
-    inset: 0;
-    width: 100vw;
-    max-width: none;
-    height: 100vh;
-    height: 100dvh;
-    max-height: none;
-    margin: 0;
-  }
-
-  #entryDialog .dialog-card,
-  #todoDialog .dialog-card,
-  #weekReqDialog .dialog-card {
-    width: 100%;
-    min-height: 100vh;
-    min-height: 100dvh;
-    max-height: 100dvh;
-    padding: 12px;
-    border: 0;
-    border-radius: 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-
-  #entryDialog .dialog-grid,
-  #todoDialog .dialog-grid,
-  #weekReqDialog .dialog-grid {
-    flex: 1;
-    align-content: start;
-  }
-
-  #entryDialog .dialog-actions,
-  #todoDialog .dialog-actions,
-  #weekReqDialog .dialog-actions {
-    position: sticky;
-    bottom: -12px;
-    margin: auto -12px -12px;
-    padding: 10px 12px max(10px, env(safe-area-inset-bottom));
-    border-top: 1px solid var(--border);
-    background: rgba(11, 16, 32, 0.98);
-  }
-
-  .grid {
-    grid-template-columns: 1fr;
-  }
-  .col-span-2 {
-    grid-column: span 1;
-  }
-  .search-results-card {
-    padding: 0 !important;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  body.app-mode #searchView > .search-results-card .search-results-wrap {
-    padding: 7px;
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  .search-results-table,
-  .search-results-table tbody {
-    display: block;
-    width: 100%;
-  }
-
-  .search-results-table thead {
-    display: none;
-  }
-
-  .search-results-table tbody {
-    display: grid;
-    gap: 7px;
-  }
-
-  .search-results-table .search-result-card {
-    min-width: 0;
-    padding: 9px;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: rgba(255, 255, 255, 0.045);
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(52px, auto);
-    grid-template-areas:
-      "description description description"
-      "project project billable"
-      "date duration duration"
-      "start end end";
-    gap: 7px 10px;
-    cursor: pointer;
-  }
-
-  .search-results-table .search-result-card:hover {
-    background: rgba(255, 255, 255, 0.07);
-  }
-
-  .search-results-table .search-result-cell {
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    overflow: hidden;
-    white-space: normal;
-  }
-
-  .search-results-table .search-result-cell::before {
-    content: attr(data-label);
-    display: block;
-    margin-bottom: 1px;
-    color: var(--muted);
-    font-size: 0.52rem;
-    font-weight: 650;
-    letter-spacing: 0.05em;
-    line-height: 1.2;
-    text-transform: uppercase;
-  }
-
-  .search-result-date {
-    grid-area: date;
-  }
-
-  .search-result-start {
-    grid-area: start;
-  }
-
-  .search-result-end {
-    grid-area: end;
-  }
-
-  .search-result-duration {
-    grid-area: duration;
-  }
-
-  .search-result-project {
-    grid-area: project;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .search-results-table td.search-result-description {
-    grid-area: description;
-    min-width: 0;
-    overflow-wrap: anywhere;
-    color: var(--text);
-    font-size: 0.82rem;
-    font-weight: 650;
-    line-height: 1.35;
-  }
-
-  .search-result-description::before {
-    display: none !important;
-  }
-
-  .search-results-table td.search-result-billable {
-    grid-area: billable;
-    width: auto;
-    justify-self: end;
-    text-align: right;
-  }
-
-  .todo-toolbar {
-    min-height: 40px;
-  }
-
-  .todo-project-group {
-    margin-right: 4px;
-    margin-left: 4px;
-  }
-
-  .search-controls-card {
-    display: block;
-    padding: 8px;
-  }
-
-  .search-controls-card > .stats {
-    min-width: 0;
-    margin-bottom: 4px;
-    white-space: normal;
-  }
-
-  .search-filters-panel > summary {
-    margin-left: 0;
-  }
-
-  .search-filters-panel .filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+html.ui-narrow {
+  --sidebar-width: 50px;
 }
 
-@media (max-width: 520px) {
-  :root {
-    --sidebar-width: 46px;
-  }
-
-  .app-sidebar {
-    gap: 4px;
-    padding-right: 3px;
-    padding-left: 3px;
-  }
-
-  .sidebar-nav,
-  .sidebar-tools {
-    gap: 4px;
-  }
-
-  .sidebar-button {
-    min-height: 38px;
-  }
-
-  .global-search {
-    flex-basis: 116px;
-    min-width: 82px;
-  }
-
-  .global-search input {
-    padding-left: 28px;
-  }
-
-  .todo-toolbar {
-    min-height: 40px;
-  }
-
-  .todo-group-header,
-  .todo-section-header {
-    padding-right: 4px;
-    padding-left: 7px;
-  }
-
-  .todo-section-group {
-    margin-left: 8px;
-  }
-
-  .todo-row {
-    padding-right: 6px;
-    padding-left: 6px;
-  }
-
-  .search-filters-panel .filters {
-    grid-template-columns: 1fr;
-  }
+html.ui-narrow .topbar {
+  flex-basis: 50px;
+  min-height: 50px;
+  max-height: 50px;
+  gap: 5px;
+  padding-right: 5px;
+  padding-left: 5px;
 }
 
-@media (max-width: 980px) {
-  .week-mode-action {
-    display: none;
-  }
+html.ui-narrow .app-sidebar {
+  padding-right: 4px;
+  padding-left: 4px;
 }
 
-@media (max-width: 840px) {
-  .zoom-compact span {
-    display: none;
-  }
+html.ui-narrow .sidebar-button {
+  min-height: 40px;
+}
 
-  .zoom.zoom-compact input[type="range"] {
-    width: 76px;
-  }
+html.ui-narrow .global-search {
+  flex: 0 1 170px;
+  min-width: 92px;
+  max-width: 190px;
+  height: 38px;
+}
+
+html.ui-narrow .topbar[data-active-tab="search"] .global-search,
+html.ui-narrow .topbar[data-active-tab="todos"] .global-search {
+  max-width: none;
+}
+
+html.ui-narrow .week-controls {
+  height: 100%;
+  flex-wrap: nowrap;
+  gap: 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+html.ui-narrow .week-navigation {
+  order: 2;
+  gap: 3px;
+}
+
+html.ui-narrow .week-history-actions {
+  order: 1;
+}
+
+html.ui-narrow .week-summary {
+  order: 3;
+}
+
+html.ui-narrow .week-zoom-separator {
+  order: 4;
+}
+
+html.ui-narrow .week-zoom-actions {
+  order: 5;
+}
+
+html.ui-narrow .week-editor-actions {
+  order: 6;
+}
+
+html.ui-narrow #latestWeekBtn,
+html.ui-narrow .zoom-compact {
+  display: none !important;
+}
+
+html.ui-narrow .week-summary {
+  width: 34px;
+  max-width: 34px;
+  padding: 0;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.ui-narrow #weekBillable {
+  display: none;
+}
+
+html.ui-narrow .week-summary-compact-icon {
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+html.ui-narrow .topbar-spacer {
+  display: none;
+}
+
+html.ui-narrow .week-editor-actions {
+  min-width: 0;
+}
+
+html.ui-narrow .week-grid {
+  grid-template-columns: 48px repeat(var(--visible-day-count), minmax(0, 1fr));
+}
+
+html.ui-narrow .entry-action-rail,
+html.ui-narrow .entry-block.controls-on-left .entry-action-rail {
+  right: 5px;
+  left: auto;
+}
+
+html.ui-narrow .entry-block.is-selected .entry-times {
+  right: 46px;
+}
+
+html.ui-narrow .wg-time-label {
+  left: 6px;
+}
+
+html.ui-narrow input,
+html.ui-narrow select,
+html.ui-narrow textarea {
+  font-size: max(16px, 0.8125rem);
+}
+
+html.ui-narrow #entryDialog,
+html.ui-narrow #todoDialog,
+html.ui-narrow #weekReqDialog {
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+}
+
+html.ui-narrow #entryDialog .dialog-card,
+html.ui-narrow #todoDialog .dialog-card,
+html.ui-narrow #weekReqDialog .dialog-card {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  padding: 12px;
+  border: 0;
+  border-radius: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+html.ui-narrow #entryDialog .dialog-grid,
+html.ui-narrow #todoDialog .dialog-grid,
+html.ui-narrow #weekReqDialog .dialog-grid {
+  flex: 1;
+  align-content: start;
+}
+
+html.ui-narrow #entryDialog .dialog-actions,
+html.ui-narrow #todoDialog .dialog-actions,
+html.ui-narrow #weekReqDialog .dialog-actions {
+  position: sticky;
+  bottom: -12px;
+  margin: auto -12px -12px;
+  padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: rgba(11, 16, 32, 0.98);
+}
+
+html.ui-narrow .grid {
+  grid-template-columns: 1fr;
+}
+html.ui-narrow .col-span-2 {
+  grid-column: span 1;
+}
+html.ui-narrow .search-results-card {
+  padding: 0 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.ui-narrow body.app-mode #searchView > .search-results-card .search-results-wrap {
+  padding: 7px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+html.ui-narrow .search-results-table,
+html.ui-narrow .search-results-table tbody {
+  display: block;
+  width: 100%;
+}
+
+html.ui-narrow .search-results-table thead {
+  display: none;
+}
+
+html.ui-narrow .search-results-table tbody {
+  display: grid;
+  gap: 7px;
+}
+
+html.ui-narrow .search-results-table .search-result-card {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.045);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(52px, auto);
+  grid-template-areas:
+    "description description description"
+    "project project billable"
+    "date duration duration"
+    "start end end";
+  gap: 7px 10px;
+  cursor: pointer;
+}
+
+html.ui-narrow .search-results-table .search-result-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+html.ui-narrow .search-results-table .search-result-cell {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: normal;
+}
+
+html.ui-narrow .search-results-table .search-result-cell::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 1px;
+  color: var(--muted);
+  font-size: 0.52rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+html.ui-narrow .search-result-date {
+  grid-area: date;
+}
+
+html.ui-narrow .search-result-start {
+  grid-area: start;
+}
+
+html.ui-narrow .search-result-end {
+  grid-area: end;
+}
+
+html.ui-narrow .search-result-duration {
+  grid-area: duration;
+}
+
+html.ui-narrow .search-result-project {
+  grid-area: project;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.ui-narrow .search-results-table td.search-result-description {
+  grid-area: description;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+html.ui-narrow .search-result-description::before {
+  display: none !important;
+}
+
+html.ui-narrow .search-results-table td.search-result-billable {
+  grid-area: billable;
+  width: auto;
+  justify-self: end;
+  text-align: right;
+}
+
+html.ui-narrow .todo-toolbar {
+  min-height: 40px;
+}
+
+html.ui-narrow .todo-project-group {
+  margin-right: 4px;
+  margin-left: 4px;
+}
+
+html.ui-narrow .search-controls-card {
+  display: block;
+  padding: 8px;
+}
+
+html.ui-narrow .search-controls-card > .stats {
+  min-width: 0;
+  margin-bottom: 4px;
+  white-space: normal;
+}
+
+html.ui-narrow .search-filters-panel > summary {
+  margin-left: 0;
+}
+
+html.ui-narrow .search-filters-panel .filters {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html.ui-compact {
+  --sidebar-width: 46px;
+}
+
+html.ui-compact .app-sidebar {
+  gap: 4px;
+  padding-right: 3px;
+  padding-left: 3px;
+}
+
+html.ui-compact .sidebar-nav,
+html.ui-compact .sidebar-tools {
+  gap: 4px;
+}
+
+html.ui-compact .sidebar-button {
+  min-height: 38px;
+}
+
+html.ui-compact .global-search {
+  flex-basis: 116px;
+  min-width: 82px;
+}
+
+html.ui-compact .global-search input {
+  padding-left: 28px;
+}
+
+html.ui-compact .todo-toolbar {
+  min-height: 40px;
+}
+
+html.ui-compact .todo-group-header,
+html.ui-compact .todo-section-header {
+  padding-right: 4px;
+  padding-left: 7px;
+}
+
+html.ui-compact .todo-section-group {
+  margin-left: 8px;
+}
+
+html.ui-compact .todo-row {
+  padding-right: 6px;
+  padding-left: 6px;
+}
+
+html.ui-compact .search-filters-panel .filters {
+  grid-template-columns: 1fr;
+}
+
+html.ui-medium .week-mode-action {
+  display: none;
+}
+
+html.ui-toolbar-compact .zoom-compact span {
+  display: none;
+}
+
+html.ui-toolbar-compact .zoom.zoom-compact input[type="range"] {
+  width: 76px;
 }

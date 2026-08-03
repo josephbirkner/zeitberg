@@ -37,6 +37,21 @@ export function getRecommendedUiZoom(viewportWidth, viewportHeight, hasCoarsePoi
     return hasCoarsePointer && shortEdge <= COMPACT_TOUCH_MAX_SHORT_EDGE ? COMPACT_TOUCH_UI_ZOOM : 1;
 }
 
+/**
+ * Returns the horizontal CSS space available after applying the application's layout-affecting zoom.
+ * Native media queries continue to see the unzoomed viewport, so this derived width is the shared breakpoint input for JavaScript and class-driven responsive styles.
+ * @param {number} viewportWidth Width of the layout viewport in CSS pixels.
+ * @param {number} uiZoom Current application zoom factor.
+ * @returns {number}
+ */
+export function getEffectiveUiViewportWidth(viewportWidth, uiZoom) {
+    const width = Number(viewportWidth);
+    const zoom = Number(uiZoom);
+    if (!Number.isFinite(width) || width <= 0) return 0;
+    if (!Number.isFinite(zoom) || zoom <= 0) return width;
+    return width / zoom;
+}
+
 const STORAGE_KEYS = {
     config: "tt_viewer:config:v1",
     token: "tt_viewer:token:v1",

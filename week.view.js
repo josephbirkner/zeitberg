@@ -643,8 +643,13 @@ export class WeekView {
      * @returns {boolean} true when the visible day count changed
      */
     updateVisibleDayCount() {
-        const measuredWidth = this.weekScrollEl.clientWidth || window.innerWidth;
-        const nextCount = calculateVisibleDayCount(measuredWidth);
+        const effectiveViewportWidth = Number(this.appState.effectiveViewportWidth);
+        const measuredWidth = this.weekScrollEl.clientWidth || effectiveViewportWidth || window.innerWidth;
+        const availableWidth =
+            Number.isFinite(effectiveViewportWidth) && effectiveViewportWidth > 0
+                ? Math.min(measuredWidth, effectiveViewportWidth)
+                : measuredWidth;
+        const nextCount = calculateVisibleDayCount(availableWidth);
         if (nextCount === this.visibleDayCount) return false;
         this.visibleDayCount = nextCount;
         this.ensureFocusedDayInWindow();
