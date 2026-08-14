@@ -58,7 +58,19 @@ npm run check:data -- --workspace ../planplural-data
 
 TODO edits are saved manually. Each mutation updates the in-memory model and its IndexedDB recovery draft immediately; only `Ctrl+S` or **Save changes** writes the configured TODO document through the hosted/local save pipeline.
 
-## Local testing
+## Local development
+
+Keep the public code and private workspace as sibling checkouts:
+
+```bash
+cd /path/to/checkouts
+gh repo clone josephbirkner/planplural
+gh repo clone josephbirkner/planplural-data
+cd planplural
+npm ci
+npm test
+python3 server.py
+```
 
 Local mode serves public application files from the code checkout and maps `/workspace-config`, `/workspace/*`, and `POST /save` to the selected private checkout:
 
@@ -67,6 +79,8 @@ python3 server.py --port 8000 --workspace ../planplural-data
 ```
 
 With a sibling `planplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.
+
+Local application edits belong to the `planplural` working tree. Saves made through local mode write JSON into the separate `planplural-data` working tree without committing it; review, commit, and push those data changes from that repository independently. Use `--workspace PATH` when the private checkout is not a sibling. `npm run check:data` and the Todoist importer use the same sibling discovery behavior.
 
 ## Repository split
 
