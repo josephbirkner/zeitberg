@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Manifest, ProjectList, TodoList } from "../docs/model.js";
-import { EntryStore, TodoStore } from "../docs/store.js";
-import { TimeContext } from "../docs/utils.js";
+import { Manifest, ProjectList, TodoList } from "../model.js";
+import { EntryStore, TodoStore } from "../store.js";
+import { TimeContext } from "../utils.js";
 
 /**
  * Creates a compact canonical taxonomy used by project/section resolution tests.

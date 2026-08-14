@@ -224,19 +224,19 @@ function finalizeCodeLayout(repository) {
     for (const path of listRewriteFiles(repository)) {
         const before = readFileSync(path, "utf8");
         const after = before
-            .replaceAll("../docs/", "../")
-            .replaceAll("docs/index.html", "index.html")
-            .replaceAll("docs/app.js", "app.js")
-            .replaceAll("docs/style.css", "style.css")
-            .replaceAll("/docs/?source=local", "/?source=local")
-            .replaceAll('"include": ["docs/**/*.js"]', '"include": ["*.js"]')
-            .replaceAll('repo: "timetracking"', 'repo: "planplural-data"')
+            .replaceAll("../", "../")
+            .replaceAll("index.html", "index.html")
+            .replaceAll("app.js", "app.js")
+            .replaceAll("style.css", "style.css")
+            .replaceAll("/?source=local", "/?source=local")
+            .replaceAll('"include": ["*.js"]', '"include": ["*.js"]')
+            .replaceAll('repo: "planplural-data"', 'repo: "planplural-data"')
             .replaceAll(
-                "During the compatibility checkpoint, the deployable application remains under `docs/` so the existing Pages site cannot expose mixed-repository root data. `npm run split:prepare` rewrites historical `app/` and `docs/` paths to the root of the resulting public `planplural` repository.",
+                "Application files live at the repository root; private workspace documents are loaded exclusively from a separate repository.",
                 "Application files live at the repository root; private workspace documents are loaded exclusively from a separate repository.",
             )
             .replaceAll(
-                "In the compatibility checkout, omit `--workspace` to use its embedded `planplural.json` and open `http://127.0.0.1:8000/?source=local`. In the final top-level code repository, the server opens `http://127.0.0.1:8000/?source=local`.",
+                "With a sibling `planplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
                 "With a sibling `planplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
             );
         if (after !== before) writeFileSync(path, after, "utf8");

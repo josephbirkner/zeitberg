@@ -10,7 +10,7 @@ import {
     clampDayWindowStart,
     formatTrackedHours,
     isMatchingEntryDoubleTap,
-} from "../docs/week.view.js";
+} from "../week.view.js";
 
 const MINUTE_MS = 60_000;
 

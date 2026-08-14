@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getEffectiveUiViewportWidth, getRecommendedUiZoom } from "../docs/config.js";
+import { getEffectiveUiViewportWidth, getRecommendedUiZoom } from "../config.js";
 
 test("automatic app zoom remains at 100%", () => {
     assert.equal(getRecommendedUiZoom(), 1);

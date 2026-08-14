@@ -4,8 +4,8 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Manifest, ProjectList, TodoList, WeekRequirements } from "../docs/model.js";
-import { gitBlobSha1, utf8ByteLength } from "../docs/utils.js";
+import { Manifest, ProjectList, TodoList, WeekRequirements } from "../model.js";
+import { gitBlobSha1, utf8ByteLength } from "../utils.js";
 import { loadWorkspace, resolveWorkspaceFile } from "./workspace.mjs";
 
 /**
@@ -81,7 +81,7 @@ function repositoryPath(workspaceRoot, path) {
  * Validates all project references used by time entries and TODOs against the shared canonical taxonomy.
  * @param {ProjectList} projectList Parsed project inventory.
  * @param {Object[]} entries Normalized time-entry records.
- * @param {import("../docs/model.js").TodoRaw[]} todos Normalized TODO records.
+ * @param {import("../model.js").TodoRaw[]} todos Normalized TODO records.
  * @returns {void}
  */
 function validateAssignments(projectList, entries, todos) {

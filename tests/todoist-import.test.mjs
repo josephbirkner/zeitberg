@@ -7,7 +7,7 @@ import {
     mergeTodoistTaxonomy,
     preserveLocalCompletionHistory,
 } from "../scripts/import-todoist.mjs";
-import { ProjectList } from "../docs/model.js";
+import { ProjectList } from "../model.js";
 
 test("completed-history windows are contiguous and remain below the API range limit", () => {
     const until = new Date("2026-07-28T12:34:56.000Z");

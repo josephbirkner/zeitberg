@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Recurrence, Todo, TodoList } from "../docs/model.js";
-import { EntryStore, TodoStore } from "../docs/store.js";
-import { TimeContext } from "../docs/utils.js";
+import { Recurrence, Todo, TodoList } from "../model.js";
+import { EntryStore, TodoStore } from "../store.js";
+import { TimeContext } from "../utils.js";
 
 const timeContext = new TimeContext("Europe/Berlin");
 
 /**
  * Creates the smallest valid raw TODO used by store-level recurrence tests.
  * @param {Object} overrides
- * @returns {import("../docs/model.js").TodoRaw}
+ * @returns {import("../model.js").TodoRaw}
  */
 function makeTodo(overrides = {}) {
     return {

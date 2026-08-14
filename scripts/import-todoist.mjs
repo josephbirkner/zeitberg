@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ProjectList, Recurrence, TodoList } from "../docs/model.js";
+import { ProjectList, Recurrence, TodoList } from "../model.js";
 import { loadWorkspace, resolveWorkspaceFile } from "./workspace.mjs";
 
 const API_ROOT = "https://api.todoist.com/api/v1";
@@ -360,7 +360,7 @@ function uniqueById(items) {
  * Carries locally recorded recurring-completion history into freshly downloaded active Todoist tasks.
  * Todoist remains authoritative for ordinary task fields, while this application-specific audit trail is not discarded.
  * @param {Object[]} importedActive
- * @param {import("../docs/model.js").TodoRaw[]} priorImported
+ * @param {import("../model.js").TodoRaw[]} priorImported
  * @returns {Object[]}
  */
 export function preserveLocalCompletionHistory(importedActive, priorImported) {
@@ -402,7 +402,7 @@ function compareImportedTodos(left, right) {
 
 /**
  * Adds one provider identity to a mutable project or section payload without duplicating it.
- * @param {{external_refs?: import("../docs/model.js").ExternalReferenceRaw[]}} target
+ * @param {{external_refs?: import("../model.js").ExternalReferenceRaw[]}} target
  * @param {string} provider
  * @param {string} id
  * @returns {void}

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { GitHubDataSource } from "../docs/datasource.js";
-import { Workspace } from "../docs/model.js";
+import { GitHubDataSource } from "../datasource.js";
+import { Workspace } from "../model.js";
 
 const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -12,7 +12,7 @@ const SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
  * @param {string} sha
  * @param {number} week
  * @param {string} text
- * @returns {import("../docs/model.js").ManifestChunk}
+ * @returns {import("../model.js").ManifestChunk}
  */
 function makeChunk(sha, week, text) {
     return {

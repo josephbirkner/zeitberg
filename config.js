@@ -12,7 +12,7 @@
 
 export const DEFAULT_CONFIG = {
     owner: "josephbirkner",
-    repo: "timetracking",
+    repo: "planplural-data",
     ref: "main",
     workspacePath: "planplural.json",
     timezone: "Europe/Berlin",

@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["docs/**/*.js"]
+  "include": ["*.js"]
 }

@@ -15,7 +15,7 @@ Planplural is a static, keyboard-first personal-operations application. Its publ
 - TODOs and time entries share the workspace's schema-v2 project/section taxonomy. Assignments use stable `project_key`/`section_key` values, so names can change without rewriting diary or TODO history.
 - Startup and explicit reloads use a dedicated progress screen; the application toolbar appears only after initialization succeeds.
 
-During the compatibility checkpoint, the deployable application remains under `docs/` so the existing Pages site cannot expose mixed-repository root data. `npm run split:prepare` rewrites historical `app/` and `docs/` paths to the root of the resulting public `planplural` repository.
+Application files live at the repository root; private workspace documents are loaded exclusively from a separate repository.
 
 ## Views
 
@@ -66,7 +66,7 @@ Local mode serves public application files from the code checkout and maps `/wor
 python3 server.py --port 8000 --workspace ../planplural-data
 ```
 
-In the compatibility checkout, omit `--workspace` to use its embedded `planplural.json` and open `http://127.0.0.1:8000/docs/?source=local`. In the final top-level code repository, the server opens `http://127.0.0.1:8000/?source=local`.
+With a sibling `planplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.
 
 ## Repository split
 

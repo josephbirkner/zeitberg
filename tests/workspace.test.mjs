@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Manifest, Workspace } from "../docs/model.js";
+import { Manifest, Workspace } from "../model.js";
 
 /**
  * Creates a minimal valid workspace payload for model tests.

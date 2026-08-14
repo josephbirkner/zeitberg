@@ -2,7 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { normalizeRepositoryPath, Workspace } from "../docs/model.js";
+import { normalizeRepositoryPath, Workspace } from "../model.js";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CODE_ROOT = resolve(SCRIPT_DIR, "..");
