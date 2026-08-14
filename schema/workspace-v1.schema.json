@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://planplural.io/schema/workspace-v1.schema.json",
+  "title": "Planplural Workspace (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["components", "name", "resources", "schema_version", "timezone", "workspace_id"],
+  "properties": {
+    "$schema": { "type": "string", "format": "uri" },
+    "schema_version": { "type": "integer", "const": 1 },
+    "workspace_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "timezone": { "type": "string", "minLength": 1 },
+    "resources": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "$ref": "#/$defs/repositoryPath" }
+    },
+    "components": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "repositoryPath": {
+      "type": "string",
+      "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)*$",
+      "not": { "pattern": "(^|/)\\.{1,2}(/|$)" }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paths", "type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "paths": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+          "additionalProperties": { "$ref": "#/$defs/repositoryPath" }
+        }
+      }
+    }
+  }
+}

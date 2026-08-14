@@ -4,6 +4,7 @@
  * @property {string} owner
  * @property {string} repo
  * @property {string} ref
+ * @property {string} workspacePath
  * @property {string} timezone
  * @property {number} uiZoom
  * @property {"auto" | "manual"} uiZoomMode
@@ -13,6 +14,7 @@ export const DEFAULT_CONFIG = {
     owner: "josephbirkner",
     repo: "timetracking",
     ref: "main",
+    workspacePath: "planplural.json",
     timezone: "Europe/Berlin",
     uiZoom: 1,
     uiZoomMode: "auto",

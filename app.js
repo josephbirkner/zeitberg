@@ -16,7 +16,7 @@ import {
     TimeContext,
     utcNowIso,
 } from "./utils.js";
-import { Manifest, ProjectList, TodoList, WeekRequirements } from "./model.js";
+import { Manifest, ProjectList, TodoList, WeekRequirements, Workspace } from "./model.js";
 
 const MIN_APP_ZOOM = 0.8;
 const MAX_APP_ZOOM = 2;
@@ -464,7 +464,7 @@ class ProjectDialog {
 
         this.onBusy(true);
         try {
-            await this.dataSource.saveFiles([{ path: "data/projects.json", content }], "Update projects");
+            await this.dataSource.saveFiles([{ path: this.dataSource.getProjectsPath(), content }], "Update projects");
             this.onProjectsSaved(projectList);
             this.close();
         } catch (err) {
@@ -498,8 +498,10 @@ class App {
         this.draftJournal = new DraftJournal();
         this.repositorySummary = "";
         this.todoSummary = "";
+        /** @type {Workspace | null} */
+        this.workspace = null;
 
-        this.dataSource = this.isLocalMode ? new LocalDataSource() : new GitHubDataSource(this.config, this.token);
+        this.dataSource = this.isLocalMode ? new LocalDataSource(this.config) : new GitHubDataSource(this.config, this.token);
 
         this.authStatusEl = getRequiredElement("authStatus", HTMLElement);
         this.logoutBtn = getRequiredElement("logoutBtn", HTMLButtonElement);
@@ -1346,10 +1348,11 @@ class App {
         totals.push(`${this.todoStore.getTodos().length} TODOs`);
         if (manifest.generated_at) totals.push(`manifest @ ${manifest.generated_at}`);
 
+        const workspaceName = this.workspace?.name ? `${this.workspace.name} • ` : "";
         if (this.isLocalMode) {
-            this.repositorySummary = `Local data • ${totals.join(" • ")}`;
+            this.repositorySummary = `${workspaceName}Local data • ${totals.join(" • ")}`;
         } else {
-            this.repositorySummary = `${this.config.owner}/${this.config.repo}@${this.config.ref} • ${totals.join(" • ")}`;
+            this.repositorySummary = `${workspaceName}${this.config.owner}/${this.config.repo}@${this.config.ref} • ${totals.join(" • ")}`;
         }
         this.refreshDataBadge();
     }
@@ -1364,6 +1367,24 @@ class App {
     }
 
     /**
+     * Loads and installs the root planplural workspace configuration before component documents are requested.
+     * The workspace supplies all repository paths and the shared timezone, allowing the same application build to operate against local, GitHub, and future provider-backed repositories.
+     * @returns {Promise<void>}
+     */
+    async fetchWorkspace() {
+        this.setProgress(0, 1, this.isLocalMode ? "Loading workspace (local)…" : "Loading workspace…");
+        const raw = await this.dataSource.fetchWorkspace();
+        const workspace = Workspace.fromRaw(raw);
+        this.workspace = workspace;
+        this.dataSource.setWorkspace(workspace);
+        this.timeContext.setTimeZone(workspace.timezone);
+        this.config = { ...this.config, timezone: workspace.timezone };
+        this.state.setConfig(this.config);
+        this.weekView.setDraftNamespace(this.buildDraftNamespace());
+        this.todoView.setDraftNamespace(this.buildDraftNamespace());
+    }
+
+    /**
      * Loads the entries manifest from the data source.
      * Keeps the main UI flow and data loading coordinated.
      * @returns {Promise<void>}
@@ -1371,7 +1392,7 @@ class App {
     async fetchManifest() {
         this.setProgress(0, 1, this.isLocalMode ? "Loading manifest (local)…" : "Loading manifest…");
         const raw = await this.dataSource.fetchManifest();
-        const manifest = Manifest.fromRaw(raw);
+        const manifest = Manifest.fromRaw(raw, this.dataSource.getEntriesDirectory());
         this.store.setManifest(manifest);
         this.refreshRepoLabel();
     }
@@ -1577,6 +1598,7 @@ class App {
         this.todoStore.clear();
         this.todoView.reset();
         try {
+            await this.fetchWorkspace();
             await Promise.all([this.fetchManifest(), this.fetchProjects()]);
             await Promise.all([this.fetchWeekRequirements(), this.fetchTodos()]);
             await this.loadAllChunks();
@@ -1600,6 +1622,7 @@ class App {
         this.token = token;
         this.state.setToken(token);
         this.dataSource = new GitHubDataSource(this.config, token);
+        this.workspace = null;
         this.weekView.setDataSource(this.dataSource);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDataSource(this.dataSource);
@@ -1638,6 +1661,7 @@ class App {
         this.state.ghUser = null;
         this.state.setWeekStart(null);
         this.state.setLatestWeekStart(null);
+        this.workspace = null;
         this.store.clear();
         this.todoStore.clear();
         this.chunkCache.clearMemory();

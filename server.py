@@ -7,10 +7,10 @@ import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+APP_ROOT = Path(__file__).resolve().parent
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -18,36 +18,77 @@ def _write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _safe_repo_path(path_text: str) -> Path:
-    target = (REPO_ROOT / path_text).resolve()
+def _normalize_workspace_path(path_text: str) -> str:
+    normalized = path_text.strip()
+    if not normalized or normalized.startswith("/") or normalized.endswith("/") or "\\" in normalized:
+        raise ValueError("Invalid workspace path")
+    parts = normalized.split("/")
+    if any(not part or part in (".", "..") for part in parts):
+        raise ValueError("Invalid workspace path")
+    return "/".join(parts)
+
+
+def _safe_workspace_path(workspace_root: Path, path_text: str) -> Path:
+    normalized = _normalize_workspace_path(path_text)
+    target = (workspace_root / normalized).resolve()
     try:
-        target.relative_to(REPO_ROOT.resolve())
+        target.relative_to(workspace_root.resolve())
     except ValueError as exc:
         raise ValueError("Invalid path") from exc
     return target
 
 
-def _is_allowed_path(path_text: str) -> bool:
-    if path_text == "data/index/entries-manifest.json":
+def _is_allowed_workspace_path(path_text: str, workspace_config_path: str) -> bool:
+    try:
+        normalized = _normalize_workspace_path(path_text)
+    except ValueError:
+        return False
+    if normalized == workspace_config_path:
         return True
-    if path_text == "data/projects.json":
-        return True
-    if path_text == "data/week-requirements.json":
-        return True
-    if path_text == "data/todos.json":
-        return True
-    if path_text.startswith("data/entries/") and path_text.endswith(".json"):
-        return True
-    return False
+    return normalized.endswith(".json") and not any(part.startswith(".") for part in normalized.split("/"))
+
+
+def _default_workspace_root() -> Path:
+    if (APP_ROOT / "planplural.json").is_file():
+        return APP_ROOT
+    return APP_ROOT.parent / "planplural-data"
 
 
 class Handler(SimpleHTTPRequestHandler):
+    workspace_root = APP_ROOT
+    workspace_config_path = "planplural.json"
+    app_entry_path = "/docs/"
+
     def do_GET(self) -> None:  # noqa: N802 (stdlib)
         parsed = urlparse(self.path)
         if parsed.path in ("", "/"):
+            if self.app_entry_path == "/" and parse_qs(parsed.query).get("source") == ["local"]:
+                return super().do_GET()
             self.send_response(302)
-            self.send_header("Location", "/docs/?source=local")
+            self.send_header("Location", f"{self.app_entry_path}?source=local")
             self.end_headers()
+            return
+        if parsed.path == "/workspace-config" or parsed.path.startswith("/workspace/"):
+            path_text = (
+                self.workspace_config_path
+                if parsed.path == "/workspace-config"
+                else unquote(parsed.path.removeprefix("/workspace/"))
+            )
+            if not _is_allowed_workspace_path(path_text, self.workspace_config_path):
+                self.send_error(404, "Not found")
+                return
+            try:
+                target = _safe_workspace_path(self.workspace_root, path_text)
+                raw = target.read_bytes()
+            except (OSError, ValueError):
+                self.send_error(404, "Not found")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
             return
         return super().do_GET()
 
@@ -97,25 +138,48 @@ class Handler(SimpleHTTPRequestHandler):
                 continue
             path_text = str(item.get("path") or "")
             content = item.get("content")
-            if not _is_allowed_path(path_text):
+            if not _is_allowed_workspace_path(path_text, self.workspace_config_path):
                 return self._send_json(400, {"ok": False, "error": f"Invalid path: {path_text}"})
             if not isinstance(content, str):
                 return self._send_json(400, {"ok": False, "error": f"{path_text}: 'content' must be a string"})
 
-            out_path = _safe_repo_path(path_text)
+            out_path = _safe_workspace_path(self.workspace_root, path_text)
             _write_text(out_path, content)
         return self._send_json(200, {"ok": True})
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Local dev server for timetracking viewer/editor (serves repo root + POST /save).")
+    parser = argparse.ArgumentParser(description="Local planplural development server with a separately selectable data workspace.")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host. Default: 127.0.0.1")
     parser.add_argument("--port", type=int, default=8000, help="Bind port. Default: 8000")
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=_default_workspace_root(),
+        help="Workspace repository root. Defaults to this mixed checkout or the sibling ../planplural-data repository.",
+    )
+    parser.add_argument(
+        "--workspace-config",
+        default="planplural.json",
+        help="Workspace config path relative to --workspace. Default: planplural.json",
+    )
     args = parser.parse_args(argv)
 
-    handler = lambda *a, **k: Handler(*a, directory=str(REPO_ROOT), **k)  # noqa: E731 (simple factory)
+    workspace_root = args.workspace.expanduser().resolve()
+    workspace_config_path = _normalize_workspace_path(args.workspace_config)
+    app_entry_path = "/" if (APP_ROOT / "index.html").is_file() else "/docs/"
+
+    class ConfiguredHandler(Handler):
+        pass
+
+    ConfiguredHandler.workspace_root = workspace_root
+    ConfiguredHandler.workspace_config_path = workspace_config_path
+    ConfiguredHandler.app_entry_path = app_entry_path
+
+    handler = lambda *a, **k: ConfiguredHandler(*a, directory=str(APP_ROOT), **k)  # noqa: E731 (simple factory)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
-    print(f"Serving {REPO_ROOT} on http://{args.host}:{args.port} (open /docs/?source=local).")
+    print(f"Serving planplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}?source=local")
+    print(f"Workspace: {workspace_root} ({workspace_config_path})")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

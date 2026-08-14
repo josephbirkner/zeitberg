@@ -3535,12 +3535,12 @@ export class WeekView {
      */
     async saveWeeks(weekStarts) {
         const nowIso = utcNowIso();
-        const weekFiles = this.store.serializeWeeks(weekStarts, nowIso);
+        const weekFiles = this.store.serializeWeeks(weekStarts, nowIso, this.dataSource.getEntriesDirectory());
         const oldManifest = this.store.getManifest();
         let manifest = this.store.buildManifest(weekFiles, nowIso);
         const manifestContent = manifest.toJson();
         const files = weekFiles.map((file) => ({ path: file.path, content: file.content }));
-        files.push({ path: "data/index/entries-manifest.json", content: manifestContent });
+        files.push({ path: this.dataSource.getEntriesManifestPath(), content: manifestContent });
 
         const message = this.buildWeekSaveMessage(weekFiles);
         const result = await this.dataSource.saveFiles(files, message);
@@ -3840,7 +3840,7 @@ export class WeekView {
 
     /**
      * Validates and saves week requirement settings through the save pipeline.
-     * Writes data/week-requirements.json in both local and GitHub modes.
+     * Writes the workspace-configured week-requirements document in both local and hosted modes.
      * @param {Event} ev
      * @returns {Promise<void>}
      */
@@ -3872,7 +3872,7 @@ export class WeekView {
 
         this.onBusy(true);
         try {
-            await this.dataSource.saveFiles([{ path: "data/week-requirements.json", content: fileContent }], message);
+            await this.dataSource.saveFiles([{ path: this.dataSource.getWeekRequirementsPath(), content: fileContent }], message);
             this.store.setWeekRequirements(nextWeekRequirements);
             this.updateWeekSummary(weekStart);
             this.closeWeekRequirementsDialog();

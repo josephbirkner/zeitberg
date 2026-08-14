@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { GitHubDataSource } from "../docs/datasource.js";
+import { Workspace } from "../docs/model.js";
 
 const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -36,6 +37,56 @@ function jsonResponse(body, status = 200) {
         headers: { "Content-Type": "application/json" },
     });
 }
+
+test("GitHub data source bootstraps configured workspace document paths", async (context) => {
+    const workspaceRaw = {
+        components: {
+            tasks: { paths: { document: "records/todos.json" }, type: "todos" },
+            time: {
+                paths: {
+                    entries: "records/weeks",
+                    manifest: "records/manifest.json",
+                    week_requirements: "records/requirements.json",
+                },
+                type: "time_tracking",
+            },
+        },
+        name: "Test",
+        resources: { projects: "records/projects.json" },
+        schema_version: 1,
+        timezone: "Europe/Berlin",
+        workspace_id: "test",
+    };
+    const requestedPaths = [];
+    context.mock.method(globalThis, "fetch", async (url) => {
+        const requestUrl = new URL(String(url));
+        requestedPaths.push(requestUrl.pathname);
+        const path = requestUrl.pathname.split("/contents/")[1];
+        const documents = {
+            "config/workspace.json": workspaceRaw,
+            "records/manifest.json": { chunks: [], schema_version: 2, timezone: "Europe/Berlin" },
+            "records/projects.json": { projects: [], schema_version: 2 },
+            "records/requirements.json": { default_required_hours: 40, schema_version: 2, weeks: [] },
+            "records/todos.json": { schema_version: 3, todos: [] },
+        };
+        return new Response(JSON.stringify(documents[path]), { status: documents[path] ? 200 : 404 });
+    });
+
+    const source = new GitHubDataSource(
+        { owner: "owner", repo: "repo", ref: "main", workspacePath: "config/workspace.json" },
+        "token",
+    );
+    source.setWorkspace(Workspace.fromRaw(await source.fetchWorkspace()));
+    await Promise.all([source.fetchManifest(), source.fetchProjects(), source.fetchWeekRequirements(), source.fetchTodos()]);
+
+    assert.deepEqual(requestedPaths, [
+        "/repos/owner/repo/contents/config/workspace.json",
+        "/repos/owner/repo/contents/records/manifest.json",
+        "/repos/owner/repo/contents/records/projects.json",
+        "/repos/owner/repo/contents/records/requirements.json",
+        "/repos/owner/repo/contents/records/todos.json",
+    ]);
+});
 
 test("GitHub chunk loading retrieves multiple manifest blobs in one GraphQL request", async (context) => {
     const textA = '{"entries":[],"schema_version":2}\n';

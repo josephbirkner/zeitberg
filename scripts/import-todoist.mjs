@@ -2,13 +2,12 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ProjectList, Recurrence, TodoList } from "../docs/model.js";
+import { loadWorkspace, resolveWorkspaceFile } from "./workspace.mjs";
 
 const API_ROOT = "https://api.todoist.com/api/v1";
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 const DEFAULT_COMPLETED_SINCE = "2007-01-01";
 const COMPLETED_WINDOW_DAYS = 89;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -43,6 +42,8 @@ const TODOIST_COLORS = new Map([
  * @property {boolean} replaceTodoist
  * @property {boolean} includeCompleted
  * @property {string} completedSince
+ * @property {string | null} workspaceRoot
+ * @property {string} workspaceConfigPath
  */
 
 /**
@@ -58,6 +59,8 @@ function parseArgs(argv) {
         replaceTodoist: false,
         includeCompleted: true,
         completedSince: DEFAULT_COMPLETED_SINCE,
+        workspaceRoot: null,
+        workspaceConfigPath: "planplural.json",
     };
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
@@ -77,10 +80,19 @@ function parseArgs(argv) {
             index += 1;
             if (!argv[index]) throw new Error("--token-file requires a path");
             options.tokenFile = resolve(argv[index]);
+        } else if (arg === "--workspace") {
+            index += 1;
+            if (!argv[index]) throw new Error("--workspace requires a path");
+            options.workspaceRoot = resolve(argv[index]);
+        } else if (arg === "--workspace-config") {
+            index += 1;
+            if (!argv[index]) throw new Error("--workspace-config requires a repository-relative path");
+            options.workspaceConfigPath = argv[index];
         } else if (arg === "--help" || arg === "-h") {
             process.stdout.write(
                 "Usage: node scripts/import-todoist.mjs [--dry-run] [--replace-todoist] [--active-only] " +
-                    "[--completed-since YYYY-MM-DD] [--token-file PATH]\n",
+                    "[--completed-since YYYY-MM-DD] [--token-file PATH] [--workspace PATH] " +
+                    "[--workspace-config PATH]\n",
             );
             process.exit(0);
         } else {
@@ -543,6 +555,7 @@ export function mergeTodoistTaxonomy(currentProjectList, todoistProjects, todois
 async function run(options) {
     const token = (await readFile(options.tokenFile, "utf8")).trim();
     if (!token) throw new Error(`Todoist token file is empty: ${options.tokenFile}`);
+    const { root: workspaceRoot, workspace } = await loadWorkspace(options.workspaceRoot, options.workspaceConfigPath);
 
     const historyUntil = new Date(Date.now() + 60 * 1000);
     const [activeProjects, archivedProjects, sections, labels, activeTasks, completedTasks] = await Promise.all([
@@ -560,8 +573,8 @@ async function run(options) {
         ...activeProjects,
     ]);
 
-    const projectsPath = join(REPO_ROOT, "data", "projects.json");
-    const todosPath = join(REPO_ROOT, "data", "todos.json");
+    const projectsPath = resolveWorkspaceFile(workspaceRoot, workspace.getResourcePath("projects"));
+    const todosPath = resolveWorkspaceFile(workspaceRoot, workspace.getComponentPath("todos", "document"));
     const projectsFile = await readJsonOrDefault(projectsPath, { generated_at: "", projects: [], schema_version: 2 });
     const existingTodosFile = await readJsonOrDefault(todosPath, { generated_at: "", schema_version: 3, todos: [] });
     const currentProjectList = ProjectList.fromRaw(projectsFile);
@@ -569,7 +582,8 @@ async function run(options) {
     const priorImported = existingTodos.filter((todo) => todo?.source?.provider === "todoist");
     if (priorImported.length && !options.replaceTodoist) {
         throw new Error(
-            `data/todos.json already contains ${priorImported.length} Todoist task(s); pass --replace-todoist to refresh them`,
+            `${workspace.getComponentPath("todos", "document")} already contains ${priorImported.length} Todoist task(s); ` +
+                "pass --replace-todoist to refresh them",
         );
     }
 
@@ -612,7 +626,7 @@ async function run(options) {
 
     const mode = options.dryRun ? "Would import" : "Imported";
     process.stdout.write(
-        `${mode} ${importedActive.length} active and ${importedCompleted.length} completed task(s), ` +
+        `${mode} into ${workspace.name}: ${importedActive.length} active and ${importedCompleted.length} completed task(s), ` +
             `${activeProjects.length} active and ${archivedProjects.length} archived Todoist project(s), ` +
             `${sections.length} section(s), and ${labels.length} label(s); added ${taxonomy.addedProjects} shared project(s) ` +
             `and ${taxonomy.addedSections} shared section(s).\n`,

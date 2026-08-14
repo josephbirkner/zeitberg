@@ -1137,17 +1137,20 @@ export class EntryStore {
      * Supports derived data and serialization steps.
      * @param {string[]} weekStarts
      * @param {string} [nowIso]
+     * @param {string} [entriesDirectory] Workspace-relative directory that owns normalized week chunks.
      * @returns {WeekFile[]}
      */
-    serializeWeeks(weekStarts, nowIso = utcNowIso()) {
+    serializeWeeks(weekStarts, nowIso = utcNowIso(), entriesDirectory = "data/entries") {
         const timezone = this.manifest?.timezone || this.timeContext.timeZone;
+        const normalizedDirectory = String(entriesDirectory || "").replace(/\/+$/, "");
+        if (!normalizedDirectory) throw new Error("Missing workspace entries directory.");
         const files = [];
         for (const weekStart of weekStarts) {
             const week = this.weeks.get(weekStart) || new Week(weekStart);
             const { payload, content, size, entries } = week.serialize(nowIso, timezone);
             const sha = gitBlobSha1(content);
             const info = isoWeekInfo(weekStart);
-            const path = `data/entries/${info.isoYear}/${String(info.week).padStart(2, "0")}.json`;
+            const path = `${normalizedDirectory}/${info.isoYear}/${String(info.week).padStart(2, "0")}.json`;
             files.push({
                 weekStart,
                 year: info.isoYear,

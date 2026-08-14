@@ -1,9 +1,35 @@
 import { gitBlobSha1 } from "./utils.js";
+import { normalizeRepositoryPath } from "./model.js";
 
 const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
 const GRAPHQL_CHUNK_BATCH_MAX_BYTES = 8 * 1024 * 1024;
 const GRAPHQL_CHUNK_BATCH_MAX_ITEMS = 200;
 const GRAPHQL_UNKNOWN_CHUNK_BYTES = 64 * 1024;
+
+/**
+ * Parses one repository document and adds its logical name to malformed-JSON errors.
+ * Data sources share this helper so local and hosted modes fail consistently before model validation.
+ * @param {string} raw Raw UTF-8 JSON text.
+ * @param {string} label Human-readable document name.
+ * @returns {Object}
+ */
+function parseJsonDocument(raw, label) {
+    try {
+        return JSON.parse(raw);
+    } catch {
+        throw new Error(`Failed to parse ${label}`);
+    }
+}
+
+/**
+ * URL-encodes each segment of a validated repository-relative path while retaining path separators.
+ * This supports spaces and non-ASCII filenames without allowing a configured path to alter surrounding API query parameters.
+ * @param {string} repoPath Validated repository-relative path.
+ * @returns {string}
+ */
+function encodeRepositoryPath(repoPath) {
+    return repoPath.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
 
 /**
  * Returns true when a value looks like a Git commit/blob SHA.
@@ -51,6 +77,7 @@ function buildGraphqlChunkBatches(chunks) {
  * @property {string} owner
  * @property {string} repo
  * @property {string} ref
+ * @property {string} [workspacePath]
  */
 
 /**
@@ -86,6 +113,8 @@ export class DataSource {
      */
     constructor(config) {
         this.config = { ...config };
+        /** @type {import("./model.js").Workspace | null} */
+        this.workspace = null;
     }
 
     /**
@@ -96,6 +125,83 @@ export class DataSource {
      */
     setConfig(config) {
         this.config = { ...config };
+        this.workspace = null;
+    }
+
+    /**
+     * Returns the validated repository path used to bootstrap workspace discovery.
+     * The path belongs to connection configuration rather than planplural.json because it must be known before that document can be loaded.
+     * @returns {string}
+     */
+    getWorkspaceConfigPath() {
+        return normalizeRepositoryPath(this.config.workspacePath || "planplural.json", "workspacePath");
+    }
+
+    /**
+     * Installs the validated workspace model used by all subsequent document operations.
+     * Requiring this explicit step makes accidental fallback to historical hard-coded data paths impossible.
+     * @param {import("./model.js").Workspace} workspace Parsed workspace model.
+     * @returns {void}
+     */
+    setWorkspace(workspace) {
+        this.workspace = workspace;
+    }
+
+    /**
+     * Returns the active workspace or fails when the bootstrap document has not yet been loaded.
+     * @returns {import("./model.js").Workspace}
+     */
+    getWorkspace() {
+        if (!this.workspace) throw new Error("Workspace configuration has not been loaded.");
+        return this.workspace;
+    }
+
+    /**
+     * Returns the shared project-taxonomy document path declared by the workspace.
+     * @returns {string}
+     */
+    getProjectsPath() {
+        return this.getWorkspace().getResourcePath("projects");
+    }
+
+    /**
+     * Returns the directory containing normalized weekly entry documents.
+     * @returns {string}
+     */
+    getEntriesDirectory() {
+        return this.getWorkspace().getComponentPath("time_tracking", "entries");
+    }
+
+    /**
+     * Returns the normalized entry-manifest document path.
+     * @returns {string}
+     */
+    getEntriesManifestPath() {
+        return this.getWorkspace().getComponentPath("time_tracking", "manifest");
+    }
+
+    /**
+     * Returns the weekly requirements document path.
+     * @returns {string}
+     */
+    getWeekRequirementsPath() {
+        return this.getWorkspace().getComponentPath("time_tracking", "week_requirements");
+    }
+
+    /**
+     * Returns the TODO component document path.
+     * @returns {string}
+     */
+    getTodosPath() {
+        return this.getWorkspace().getComponentPath("todos", "document");
+    }
+
+    /**
+     * Loads the root workspace bootstrap document before any component-specific data.
+     * @returns {Promise<Object>}
+     */
+    async fetchWorkspace() {
+        throw new Error("Not implemented");
     }
 
     /**
@@ -318,9 +424,20 @@ export class GitHubDataSource extends DataSource {
      * @returns {string}
      */
     buildContentsUrl(repoPath) {
+        const path = normalizeRepositoryPath(repoPath, "repository path");
         return `https://api.github.com/repos/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(
             this.config.repo,
-        )}/contents/${repoPath}?ref=${encodeURIComponent(this.config.ref)}`;
+        )}/contents/${encodeRepositoryPath(path)}?ref=${encodeURIComponent(this.config.ref)}`;
+    }
+
+    /**
+     * Loads planplural.json from the configured repository and ref.
+     * This is the only read that occurs before workspace-owned paths become available.
+     * @returns {Promise<Object>}
+     */
+    async fetchWorkspace() {
+        const raw = await this.fetchRaw(this.buildContentsUrl(this.getWorkspaceConfigPath()));
+        return parseJsonDocument(raw, "planplural.json");
     }
 
     /**
@@ -329,12 +446,8 @@ export class GitHubDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchManifest() {
-        const raw = await this.fetchRaw(this.buildContentsUrl("data/index/entries-manifest.json"));
-        try {
-            return JSON.parse(raw);
-        } catch {
-            throw new Error("Failed to parse entries-manifest.json");
-        }
+        const raw = await this.fetchRaw(this.buildContentsUrl(this.getEntriesManifestPath()));
+        return parseJsonDocument(raw, "entries-manifest.json");
     }
 
     /**
@@ -470,12 +583,8 @@ export class GitHubDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchProjects() {
-        const raw = await this.fetchRaw(this.buildContentsUrl("data/projects.json"));
-        try {
-            return JSON.parse(raw);
-        } catch {
-            throw new Error("Failed to parse projects.json");
-        }
+        const raw = await this.fetchRaw(this.buildContentsUrl(this.getProjectsPath()));
+        return parseJsonDocument(raw, "projects.json");
     }
 
     /**
@@ -485,8 +594,8 @@ export class GitHubDataSource extends DataSource {
      */
     async fetchWeekRequirements() {
         try {
-            const raw = await this.fetchRaw(this.buildContentsUrl("data/week-requirements.json"));
-            return JSON.parse(raw);
+            const raw = await this.fetchRaw(this.buildContentsUrl(this.getWeekRequirementsPath()));
+            return parseJsonDocument(raw, "week-requirements.json");
         } catch (err) {
             const message = String(err || "");
             if (message.includes("404")) {
@@ -506,16 +615,14 @@ export class GitHubDataSource extends DataSource {
      */
     async fetchTodos() {
         try {
-            const raw = await this.fetchRaw(this.buildContentsUrl("data/todos.json"));
-            return JSON.parse(raw);
+            const raw = await this.fetchRaw(this.buildContentsUrl(this.getTodosPath()));
+            return parseJsonDocument(raw, "todos.json");
         } catch (err) {
             const message = String(err || "");
             if (message.includes("404")) {
                 return { generated_at: "", schema_version: 3, todos: [] };
             }
-            if (err instanceof SyntaxError) {
-                throw new Error("Failed to parse todos.json");
-            }
+            if (message.includes("Failed to parse")) throw err;
             throw new Error(`Failed to load todos.json: ${message}`);
         }
     }
@@ -577,7 +684,7 @@ export class GitHubDataSource extends DataSource {
         const newTreeSha = treeRes?.sha;
         if (!isGitSha(newTreeSha)) throw new Error("Failed to create tree.");
 
-        const messageText = String(message || "").trim() || "Update timetracking data";
+        const messageText = String(message || "").trim() || "Update planplural workspace";
 
         const commitRes = await this.fetchJsonRequest(`${baseUrl}/git/commits`, {
             method: "POST",
@@ -615,8 +722,12 @@ export class GitHubDataSource extends DataSource {
  * Talks to the lightweight Python server via HTTP.
  */
 export class LocalDataSource extends DataSource {
-    constructor() {
-        super({ owner: "", repo: "", ref: "" });
+    /**
+     * Creates a local source whose workspace files are served through the dedicated /workspace endpoint.
+     * @param {RepoConfig} [config] Bootstrap path configuration shared with hosted modes.
+     */
+    constructor(config = { owner: "", repo: "", ref: "", workspacePath: "planplural.json" }) {
+        super({ owner: "", repo: "", ref: "", ...config });
     }
 
     /**
@@ -625,9 +736,29 @@ export class LocalDataSource extends DataSource {
      * @param {string} repoPath
      * @returns {string}
      */
-    buildLocalUrl(repoPath) {
-        const clean = String(repoPath || "").replace(/^\/+/, "");
-        return new URL(`../${clean}`, window.location.href).toString();
+    buildWorkspaceUrl(repoPath) {
+        const path = normalizeRepositoryPath(repoPath, "workspace path");
+        return new URL(`/workspace/${encodeRepositoryPath(path)}`, window.location.origin).toString();
+    }
+
+    /**
+     * Returns the fixed same-origin endpoint used for local workspace writes.
+     * @returns {string}
+     */
+    buildSaveUrl() {
+        return new URL("/save", window.location.origin).toString();
+    }
+
+    /**
+     * Loads the root workspace configuration from the local workspace repository.
+     * @returns {Promise<Object>}
+     */
+    async fetchWorkspace() {
+        const resp = await fetch(new URL("/workspace-config", window.location.origin), { cache: "no-store" });
+        if (!resp.ok) {
+            throw new Error(`Local planplural.json not found (${resp.status}). Start server.py with --workspace PATH.`);
+        }
+        return parseJsonDocument(await resp.text(), "planplural.json");
     }
 
     /**
@@ -636,16 +767,11 @@ export class LocalDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchManifest() {
-        const resp = await fetch(this.buildLocalUrl("data/index/entries-manifest.json"), { cache: "no-store" });
+        const resp = await fetch(this.buildWorkspaceUrl(this.getEntriesManifestPath()), { cache: "no-store" });
         if (!resp.ok) {
             throw new Error(`Local manifest not found (${resp.status}). Run the local server from repo root: python3 server.py`);
         }
-        const raw = await resp.text();
-        try {
-            return JSON.parse(raw);
-        } catch {
-            throw new Error("Failed to parse entries-manifest.json");
-        }
+        return parseJsonDocument(await resp.text(), "entries-manifest.json");
     }
 
     /**
@@ -655,7 +781,7 @@ export class LocalDataSource extends DataSource {
      * @returns {Promise<string>}
      */
     async fetchChunkText(chunk) {
-        const resp = await fetch(this.buildLocalUrl(chunk.path), { cache: "no-store" });
+        const resp = await fetch(this.buildWorkspaceUrl(chunk.path), { cache: "no-store" });
         if (!resp.ok) throw new Error(`Local fetch failed (${resp.status}): ${chunk.path}`);
         return await resp.text();
     }
@@ -666,16 +792,11 @@ export class LocalDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchProjects() {
-        const resp = await fetch(this.buildLocalUrl("data/projects.json"), { cache: "no-store" });
+        const resp = await fetch(this.buildWorkspaceUrl(this.getProjectsPath()), { cache: "no-store" });
         if (!resp.ok) {
             throw new Error(`Local projects.json not found (${resp.status}).`);
         }
-        const raw = await resp.text();
-        try {
-            return JSON.parse(raw);
-        } catch {
-            throw new Error("Failed to parse projects.json");
-        }
+        return parseJsonDocument(await resp.text(), "projects.json");
     }
 
     /**
@@ -684,7 +805,7 @@ export class LocalDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchWeekRequirements() {
-        const resp = await fetch(this.buildLocalUrl("data/week-requirements.json"), { cache: "no-store" });
+        const resp = await fetch(this.buildWorkspaceUrl(this.getWeekRequirementsPath()), { cache: "no-store" });
         if (!resp.ok) {
             if (resp.status === 404) {
                 return { default_required_hours: 40, generated_at: "", schema_version: 1, weeks: [] };
@@ -692,12 +813,7 @@ export class LocalDataSource extends DataSource {
             throw new Error(`Local week-requirements.json not found (${resp.status}).`);
         }
 
-        const raw = await resp.text();
-        try {
-            return JSON.parse(raw);
-        } catch {
-            throw new Error("Failed to parse week-requirements.json");
-        }
+        return parseJsonDocument(await resp.text(), "week-requirements.json");
     }
 
     /**
@@ -706,7 +822,7 @@ export class LocalDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchTodos() {
-        const resp = await fetch(this.buildLocalUrl("data/todos.json"), { cache: "no-store" });
+        const resp = await fetch(this.buildWorkspaceUrl(this.getTodosPath()), { cache: "no-store" });
         if (!resp.ok) {
             if (resp.status === 404) {
                 return { generated_at: "", schema_version: 3, todos: [] };
@@ -714,12 +830,7 @@ export class LocalDataSource extends DataSource {
             throw new Error(`Local todos.json not found (${resp.status}).`);
         }
 
-        const raw = await resp.text();
-        try {
-            return JSON.parse(raw);
-        } catch {
-            throw new Error("Failed to parse todos.json");
-        }
+        return parseJsonDocument(await resp.text(), "todos.json");
     }
 
     /**
@@ -742,7 +853,7 @@ export class LocalDataSource extends DataSource {
 
         let resp;
         try {
-            resp = await fetch(this.buildLocalUrl("save"), {
+            resp = await fetch(this.buildSaveUrl(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),

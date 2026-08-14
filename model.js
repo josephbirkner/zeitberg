@@ -174,7 +174,209 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
  * @property {number} [schema_version]
  */
 
+/**
+ * @typedef {Object} WorkspaceComponentRaw
+ * @description One enabled planplural component and the repository-relative documents it owns.
+ * @property {string} type
+ * @property {Object.<string, string>} paths
+ */
+
+/**
+ * @typedef {Object} WorkspaceRaw
+ * @description The root planplural.json document that describes one independently shareable data repository.
+ * @property {string} [$schema]
+ * @property {number} schema_version
+ * @property {string} workspace_id
+ * @property {string} name
+ * @property {string} timezone
+ * @property {Object.<string, string>} resources
+ * @property {Object.<string, WorkspaceComponentRaw>} components
+ */
+
 export const DEFAULT_WEEK_REQUIRED_HOURS = 40;
+
+/**
+ * Validates and normalizes a repository-relative workspace path.
+ * Paths are deliberately POSIX-only because the same value is consumed by Git hosting APIs, browser URLs, and local filesystem adapters.
+ * Absolute paths, traversal segments, query fragments, and platform-specific separators are rejected instead of silently rewritten.
+ * @param {unknown} value Candidate path from configuration.
+ * @param {string} label Human-readable field name used in validation errors.
+ * @returns {string}
+ */
+export function normalizeRepositoryPath(value, label) {
+    const path = String(value || "").trim();
+    if (!path) throw new Error(`${label} must be a non-empty repository-relative path.`);
+    if (path.startsWith("/") || path.endsWith("/") || path.includes("\\") || path.includes("?") || path.includes("#")) {
+        throw new Error(`${label} must be a normalized repository-relative path.`);
+    }
+    const parts = path.split("/");
+    if (parts.some((part) => !part || part === "." || part === "..")) {
+        throw new Error(`${label} must not contain empty or traversal segments.`);
+    }
+    return parts.join("/");
+}
+
+/**
+ * Represents the versioned root configuration of one planplural data workspace.
+ * The model keeps repository discovery independent from any hosting provider and centralizes every mutable document path used by the application.
+ * Component keys are stable instance identifiers, while component types let future versions add finances or multiple sharing ledgers without changing the bootstrap format.
+ */
+export class Workspace {
+    /**
+     * Creates an already validated workspace model.
+     * Callers should normally use fromRaw() so malformed or unsafe paths never enter a data source.
+     * @param {string} workspaceId Stable identity used to detect links that resolve to the wrong repository.
+     * @param {string} name Human-readable workspace name.
+     * @param {string} timezone IANA timezone used by date-oriented components.
+     * @param {Object.<string, string>} resources Shared repository resources such as the project taxonomy.
+     * @param {Object.<string, WorkspaceComponentRaw>} components Enabled component instances keyed by stable identifier.
+     * @param {string} schemaUrl Published JSON Schema URL retained during serialization.
+     */
+    constructor(workspaceId, name, timezone, resources, components, schemaUrl) {
+        this.schemaUrl = schemaUrl;
+        this.schema_version = 1;
+        this.workspace_id = workspaceId;
+        this.name = name;
+        this.timezone = timezone;
+        this.resources = cloneJson(resources);
+        this.components = cloneJson(components);
+    }
+
+    /**
+     * Parses and validates a planplural.json payload.
+     * Besides schema-version checks, this validates timezone support, stable identifiers, component uniqueness, and every repository-relative path before network or filesystem access occurs.
+     * @param {unknown} raw Untrusted JSON payload returned by a data source.
+     * @returns {Workspace}
+     */
+    static fromRaw(raw) {
+        if (!raw || typeof raw !== "object") throw new Error("planplural.json must be a JSON object.");
+        const rawObj = /** @type {WorkspaceRaw} */ (raw);
+        if (Number(rawObj.schema_version) !== 1) throw new Error("planplural.json must use schema_version 1.");
+
+        const workspaceId = String(rawObj.workspace_id || "").trim();
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(workspaceId)) {
+            throw new Error("planplural.json contains an invalid workspace_id.");
+        }
+        const name = String(rawObj.name || "").trim();
+        if (!name) throw new Error("planplural.json must define a workspace name.");
+        const timezone = String(rawObj.timezone || "").trim();
+        try {
+            new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
+        } catch {
+            throw new Error(`planplural.json contains an invalid timezone: ${timezone || "(empty)"}.`);
+        }
+
+        if (!rawObj.resources || typeof rawObj.resources !== "object" || Array.isArray(rawObj.resources)) {
+            throw new Error("planplural.json resources must be an object.");
+        }
+        /** @type {Object.<string, string>} */
+        const resources = {};
+        for (const [key, value] of Object.entries(rawObj.resources)) {
+            if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`planplural.json contains an invalid resource key: ${key}.`);
+            resources[key] = normalizeRepositoryPath(value, `resources.${key}`);
+        }
+
+        if (!rawObj.components || typeof rawObj.components !== "object" || Array.isArray(rawObj.components)) {
+            throw new Error("planplural.json components must be an object.");
+        }
+        /** @type {Object.<string, WorkspaceComponentRaw>} */
+        const components = {};
+        for (const [componentId, candidate] of Object.entries(rawObj.components)) {
+            if (!/^[a-z][a-z0-9_-]*$/.test(componentId)) {
+                throw new Error(`planplural.json contains an invalid component id: ${componentId}.`);
+            }
+            if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+                throw new Error(`planplural.json component ${componentId} must be an object.`);
+            }
+            const rawComponent = /** @type {WorkspaceComponentRaw} */ (candidate);
+            const type = String(rawComponent.type || "").trim();
+            if (!/^[a-z][a-z0-9_]*$/.test(type)) {
+                throw new Error(`planplural.json component ${componentId} has an invalid type.`);
+            }
+            if (!rawComponent.paths || typeof rawComponent.paths !== "object" || Array.isArray(rawComponent.paths)) {
+                throw new Error(`planplural.json component ${componentId} paths must be an object.`);
+            }
+            /** @type {Object.<string, string>} */
+            const paths = {};
+            for (const [pathKey, value] of Object.entries(rawComponent.paths)) {
+                if (!/^[a-z][a-z0-9_]*$/.test(pathKey)) {
+                    throw new Error(`planplural.json component ${componentId} contains an invalid path key: ${pathKey}.`);
+                }
+                paths[pathKey] = normalizeRepositoryPath(value, `components.${componentId}.paths.${pathKey}`);
+            }
+            components[componentId] = { paths, type };
+        }
+
+        const schemaUrl = typeof rawObj.$schema === "string" ? rawObj.$schema.trim() : "";
+        return new Workspace(workspaceId, name, timezone, resources, components, schemaUrl);
+    }
+
+    /**
+     * Returns the first configured component of the requested type in deterministic component-id order.
+     * Current views consume one time-tracking and one TODO component, while retaining instance keys for future multi-component routing.
+     * @param {string} type Provider-neutral component type.
+     * @returns {WorkspaceComponentRaw}
+     */
+    getComponent(type) {
+        const normalizedType = String(type || "").trim();
+        const match = Object.entries(this.components)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .find(([, component]) => component.type === normalizedType);
+        if (!match) throw new Error(`Workspace does not enable the ${normalizedType} component.`);
+        return cloneJson(match[1]);
+    }
+
+    /**
+     * Resolves one shared resource path from the workspace manifest.
+     * Keeping this lookup on the model prevents UI controllers from embedding repository layouts.
+     * @param {string} key Resource key such as projects.
+     * @returns {string}
+     */
+    getResourcePath(key) {
+        const path = this.resources[String(key || "")];
+        if (!path) throw new Error(`Workspace does not define the ${key} resource.`);
+        return path;
+    }
+
+    /**
+     * Resolves one document or directory path owned by a component type.
+     * Missing paths fail early with a configuration-oriented error rather than a misleading network 404.
+     * @param {string} componentType Component type such as time_tracking or todos.
+     * @param {string} pathKey Path key inside the component definition.
+     * @returns {string}
+     */
+    getComponentPath(componentType, pathKey) {
+        const component = this.getComponent(componentType);
+        const path = component.paths[String(pathKey || "")];
+        if (!path) throw new Error(`Workspace component ${componentType} does not define the ${pathKey} path.`);
+        return path;
+    }
+
+    /**
+     * Returns a JSON-ready workspace representation with no runtime-only state.
+     * Stable serialization makes workspace identity and path changes straightforward to review in Git.
+     * @returns {WorkspaceRaw}
+     */
+    toObject() {
+        return {
+            ...(this.schemaUrl ? { $schema: this.schemaUrl } : {}),
+            components: cloneJson(this.components),
+            name: this.name,
+            resources: cloneJson(this.resources),
+            schema_version: this.schema_version,
+            timezone: this.timezone,
+            workspace_id: this.workspace_id,
+        };
+    }
+
+    /**
+     * Serializes the workspace using the deterministic JSON format shared by all repository documents.
+     * @returns {string}
+     */
+    toJson() {
+        return jsonStringifySorted(this.toObject());
+    }
+}
 
 /**
  * Normalizes required-hours values to a bounded two-decimal number.
@@ -1736,9 +1938,10 @@ export class Manifest {
      * Parses a raw manifest JSON object and validates its entries.
      * Defines the data shape used by the store.
      * @param {unknown} raw
+     * @param {string} [entriesDirectory] Workspace-relative directory that is allowed to contain manifest chunks.
      * @returns {Manifest}
      */
-    static fromRaw(raw) {
+    static fromRaw(raw, entriesDirectory = "data/entries") {
         if (!raw || typeof raw !== "object") {
             throw new Error("entries-manifest.json must be a JSON object");
         }
@@ -1748,6 +1951,8 @@ export class Manifest {
             throw new Error("entries-manifest.json must use schema_version 2.");
         }
         const chunksRaw = Array.isArray(rawObj.chunks) ? rawObj.chunks : [];
+        const normalizedEntriesDirectory = normalizeRepositoryPath(entriesDirectory, "entries directory");
+        const pathPrefix = `${normalizedEntriesDirectory}/`;
         const chunks = [];
         for (const c of chunksRaw) {
             if (!c || typeof c !== "object") continue;
@@ -1761,7 +1966,7 @@ export class Manifest {
             if (!Number.isFinite(year) || year < 1970 || year > 9999) continue;
             if (!Number.isFinite(week) || week < 1 || week > 53) continue;
             if (!/^[0-9a-f]{40}$/i.test(sha)) continue;
-            if (!path.startsWith("data/entries/")) continue;
+            if (!path.startsWith(pathPrefix)) continue;
 
             chunks.push({
                 entries,

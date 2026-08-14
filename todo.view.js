@@ -1358,7 +1358,7 @@ export class TodoView {
     }
 
     /**
-     * Persists data/todos.json through the same GitHub/local saveFiles pipeline used by other repository documents.
+     * Persists the workspace-configured TODO document through the same hosted/local saveFiles pipeline used by other components.
      * @returns {Promise<void>}
      */
     async saveNow() {
@@ -1373,7 +1373,7 @@ export class TodoView {
         try {
             await this.flushDraftWrites();
             const content = this.store.serialize(utcNowIso());
-            await this.dataSource.saveFiles([{ path: "data/todos.json", content }], "Update TODOs");
+            await this.dataSource.saveFiles([{ path: this.dataSource.getTodosPath(), content }], "Update TODOs");
             this.cleanSnapshot = cloneJson(this.store.snapshotRaw());
             this.dirty = false;
             this.queueDraftDelete();

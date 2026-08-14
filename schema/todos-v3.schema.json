@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/timetracking/todos-v3.schema.json",
-  "title": "TimeTracking TODOs (v3)",
+  "$id": "https://planplural.io/schema/todos-v3.schema.json",
+  "title": "Planplural TODOs (v3)",
   "type": "object",
   "additionalProperties": false,
   "required": ["generated_at", "schema_version", "todos"],

@@ -431,6 +431,16 @@ export class TimeContext {
      * @param {string} timeZone
      */
     constructor(timeZone) {
+        this.setTimeZone(timeZone);
+    }
+
+    /**
+     * Rebuilds all locale formatters for a newly loaded workspace timezone.
+     * Views and stores retain one shared TimeContext instance, so changing it here updates every date calculation without reconstructing the application graph.
+     * @param {string} timeZone IANA timezone declared by the active workspace.
+     * @returns {void}
+     */
+    setTimeZone(timeZone) {
         this.timeZone = timeZone;
         this.dateFmt = new Intl.DateTimeFormat("sv-SE", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
         this.timeFmt = new Intl.DateTimeFormat("sv-SE", { timeZone, hour: "2-digit", minute: "2-digit" });
