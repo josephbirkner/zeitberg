@@ -128,7 +128,7 @@ export class SearchView {
     }
 
     /**
-     * Rebuilds the project filter from the canonical project/section hierarchy.
+     * Rebuilds the project filter from the shared project/section hierarchy.
      * Root options include every section beneath that project, while indented section options allow an exact assignment filter.
      * Keeps filtering behavior aligned with current data.
      * @param {import("./model.js").Entry[]} entries

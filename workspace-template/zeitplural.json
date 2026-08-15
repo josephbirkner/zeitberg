@@ -1,0 +1,26 @@
+{
+  "$schema": "https://zeitplural.io/schema/workspace-v1.schema.json",
+  "components": {
+    "tasks": {
+      "paths": {
+        "document": "data/todos.json"
+      },
+      "type": "todos"
+    },
+    "time": {
+      "paths": {
+        "entries": "data/entries",
+        "manifest": "data/index/entries-manifest.json",
+        "week_requirements": "data/week-requirements.json"
+      },
+      "type": "time_tracking"
+    }
+  },
+  "name": "My workspace",
+  "resources": {
+    "projects": "data/projects.json"
+  },
+  "schema_version": 1,
+  "timezone": "Europe/Berlin",
+  "workspace_id": "replace-with-a-unique-id"
+}

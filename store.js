@@ -1,6 +1,7 @@
 import {
     addIsoDays,
     chunkKey,
+    cloneJson,
     gitBlobSha1,
     hhmmToMinutes,
     isoWeekInfo,
@@ -75,7 +76,7 @@ const BALANCE_ACCUMULATION_START = "2025-09-01";
  */
 export class TodoStore {
     /**
-     * Initializes an empty TODO document backed by the canonical project store.
+     * Initializes an empty TODO document backed by the shared project store.
      * @param {EntryStore} projectStore
      */
     constructor(projectStore) {
@@ -169,7 +170,7 @@ export class TodoStore {
     }
 
     /**
-     * Resolves and validates an optional canonical project/section assignment.
+     * Resolves and validates an optional configured project/section assignment.
      * A section may only exist beneath its owning project; unknown keys are rejected before a TODO snapshot is changed.
      * @param {string | null | undefined} projectKey
      * @param {string | null | undefined} sectionKey
@@ -276,6 +277,26 @@ export class TodoStore {
         this.applySnapshot(next);
         const updated = this.getTodoById(current.id);
         if (!updated) throw new Error("Failed to update TODO.");
+        return updated;
+    }
+
+    /**
+     * Replaces persistence provenance after an external system assigns an identity to a TODO.
+     * The operation intentionally leaves the user-facing `updated_at` timestamp untouched: creating an issue link is save metadata, not a content edit.
+     * @param {string} id Stable zeitplural TODO id.
+     * @param {import("./model.js").TodoSourceRaw | null} source Normalized external source metadata.
+     * @returns {import("./model.js").Todo}
+     */
+    setTodoSource(id, source) {
+        const current = this.getTodoById(id);
+        if (!current) throw new Error("TODO not found.");
+        const next = this.snapshotRaw();
+        const index = next.findIndex((todo) => todo.id === current.id);
+        if (index < 0) throw new Error("TODO not found.");
+        next[index] = { ...next[index], source: source ? cloneJson(source) : null };
+        this.applySnapshot(next);
+        const updated = this.getTodoById(current.id);
+        if (!updated) throw new Error("Failed to attach TODO source metadata.");
         return updated;
     }
 
@@ -433,7 +454,7 @@ export class EntryStore {
     }
 
     /**
-     * Stores the canonical project taxonomy and refreshes entry search labels.
+     * Stores the shared project taxonomy and refreshes entry search labels.
      * Recomputing the label cache also makes project/section renames immediately searchable without rewriting historical entries.
      * @param {ProjectList | null} projectList
      * @returns {void}
@@ -464,7 +485,7 @@ export class EntryStore {
     }
 
     /**
-     * Looks up a project by its immutable canonical key.
+     * Looks up a project by its immutable stable key.
      * @param {string | null | undefined} key
      * @returns {import("./model.js").Project | null}
      */
@@ -503,7 +524,7 @@ export class EntryStore {
     }
 
     /**
-     * Resolves a canonical assignment into its project, section, label, color, and effective billable state.
+     * Resolves a configured assignment into its project, section, label, color, and effective billable state.
      * Returns null for unknown key pairs and a neutral assignment for an intentional no-project entry.
      * @param {string | null | undefined} projectKey
      * @param {string | null | undefined} sectionKey
@@ -781,7 +802,7 @@ export class EntryStore {
         for (const raw of Array.isArray(rawEntries) ? rawEntries : []) {
             if (!raw || typeof raw !== "object") continue;
             if (!("project_key" in raw) || !("section_key" in raw)) {
-                throw new Error(`Week ${weekStart} contains an entry without canonical project_key/section_key fields.`);
+                throw new Error(`Week ${weekStart} contains an entry without valid project_key/section_key fields.`);
             }
             const id = Number(raw.id);
             if (!Number.isFinite(id)) continue;

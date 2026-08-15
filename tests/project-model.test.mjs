@@ -6,7 +6,7 @@ import { EntryStore, TodoStore } from "../store.js";
 import { TimeContext } from "../utils.js";
 
 /**
- * Creates a compact canonical taxonomy used by project/section resolution tests.
+ * Creates a compact shared taxonomy used by project/section resolution tests.
  * @returns {ProjectList}
  */
 function makeProjects() {
@@ -113,9 +113,17 @@ test("provider ids resolve independently from editable display names", () => {
         sectionKey: "coding",
     });
     assert.equal(projects.findProjectByName("KE")?.key, "ke");
+    assert.deepEqual(projects.getProjectByKey("ke")?.getExternalReference("TODOIST"), {
+        provider: "todoist",
+        id: "work-id",
+    });
+    assert.deepEqual(projects.getProjectByKey("ke")?.getSectionByKey("coding")?.getExternalReference("toggl"), {
+        provider: "toggl",
+        id: "coding-id",
+    });
 });
 
-test("TODO store rejects section keys outside the canonical taxonomy", () => {
+test("TODO store rejects section keys outside the shared taxonomy", () => {
     const entryStore = new EntryStore(new TimeContext("Europe/Berlin"));
     entryStore.setProjectList(makeProjects());
     const todoStore = new TodoStore(entryStore);

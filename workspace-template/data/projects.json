@@ -1,0 +1,15 @@
+{
+  "generated_at": "",
+  "projects": [
+    {
+      "archived": false,
+      "billable": false,
+      "color": "#315e9d",
+      "external_refs": [],
+      "key": "personal",
+      "name": "Personal",
+      "sections": []
+    }
+  ],
+  "schema_version": 2
+}

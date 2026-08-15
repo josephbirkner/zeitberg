@@ -24,21 +24,21 @@ async function pathExists(path) {
 
 /**
  * Resolves the active data-workspace root for command-line tooling.
- * The mixed pre-split repository remains the first default; after splitting, the sibling planplural-data checkout is discovered automatically.
+ * The mixed pre-split repository remains the first default; after splitting, the sibling zeitplural-data checkout is discovered automatically.
  * @param {string | null | undefined} requestedRoot Explicit --workspace argument, when supplied.
  * @param {string} [configPath] Repository-relative workspace bootstrap path.
  * @returns {Promise<string>}
  */
-export async function resolveWorkspaceRoot(requestedRoot, configPath = "planplural.json") {
+export async function resolveWorkspaceRoot(requestedRoot, configPath = "zeitplural.json") {
     const normalizedConfigPath = normalizeRepositoryPath(configPath, "workspace config path");
     if (requestedRoot) return resolve(requestedRoot);
 
-    const candidates = [CODE_ROOT, resolve(CODE_ROOT, "..", "planplural-data")];
+    const candidates = [CODE_ROOT, resolve(CODE_ROOT, "..", "zeitplural-data")];
     for (const candidate of candidates) {
         if (await pathExists(resolveWorkspaceFile(candidate, normalizedConfigPath))) return candidate;
     }
     throw new Error(
-        `Could not find ${normalizedConfigPath}; pass --workspace PATH or clone planplural-data next to the code repository.`,
+        `Could not find ${normalizedConfigPath}; pass --workspace PATH or clone zeitplural-data next to the code repository.`,
     );
 }
 
@@ -46,7 +46,7 @@ export async function resolveWorkspaceRoot(requestedRoot, configPath = "planplur
  * Converts a validated repository-relative path into a filesystem path confined to one workspace root.
  * This is the Node.js equivalent of the browser/local-server path boundary and rejects escape attempts even when symbolic path segments are supplied.
  * @param {string} workspaceRoot Absolute or relative workspace repository root.
- * @param {string} repositoryPath Path declared by planplural.json.
+ * @param {string} repositoryPath Path declared by zeitplural.json.
  * @returns {string}
  */
 export function resolveWorkspaceFile(workspaceRoot, repositoryPath) {
@@ -67,7 +67,7 @@ export function resolveWorkspaceFile(workspaceRoot, repositoryPath) {
  * @param {string} [configPath] Repository-relative workspace bootstrap path.
  * @returns {Promise<{root: string, configPath: string, workspace: Workspace}>}
  */
-export async function loadWorkspace(requestedRoot, configPath = "planplural.json") {
+export async function loadWorkspace(requestedRoot, configPath = "zeitplural.json") {
     const normalizedConfigPath = normalizeRepositoryPath(configPath, "workspace config path");
     const root = await resolveWorkspaceRoot(requestedRoot, normalizedConfigPath);
     const raw = JSON.parse(await readFile(resolveWorkspaceFile(root, normalizedConfigPath), "utf8"));

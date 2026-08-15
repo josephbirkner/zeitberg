@@ -1,6 +1,13 @@
 import { AppState } from "./appstate.js";
 import { ChunkCache, DraftJournal } from "./cache.js";
-import { ConfigService, DEFAULT_CONFIG, getEffectiveUiViewportWidth, getRecommendedUiZoom } from "./config.js";
+import {
+    ConfigService,
+    DEFAULT_CONFIG,
+    formatGitHubRepositoryUrl,
+    getEffectiveUiViewportWidth,
+    getRecommendedUiZoom,
+    parseGitHubRepository,
+} from "./config.js";
 import { GitHubDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore, TodoStore } from "./store.js";
 import { SearchView } from "./search.view.js";
@@ -67,7 +74,7 @@ function parseWeekChunkEntries(chunk, raw) {
  */
 
 /**
- * Manages the canonical project/section taxonomy and persists it through the shared save pipeline.
+ * Manages the shared project/section taxonomy and persists it through the shared save pipeline.
  * Stable keys and hidden external-provider references survive display-name edits; new keys are generated only when new rows are saved.
  */
 class ProjectDialog {
@@ -519,6 +526,8 @@ class App {
         this.appZoomResetBtn = getRequiredElement("appZoomResetBtn", HTMLButtonElement);
         this.appZoomLabelEl = getRequiredElement("appZoomLabel", HTMLElement);
         this.appZoomInBtn = getRequiredElement("appZoomInBtn", HTMLButtonElement);
+        this.appThemeToggleBtn = getRequiredElement("appThemeToggleBtn", HTMLButtonElement);
+        this.landingThemeToggleBtn = getRequiredElement("landingThemeToggleBtn", HTMLButtonElement);
         this.weekControlsEl = getRequiredElement("weekControls", HTMLElement);
         this.projectsBtn = getRequiredElement("projectsBtn", HTMLButtonElement);
 
@@ -613,8 +622,7 @@ class App {
         this.todoLabelsInput = getRequiredElement("todoLabels", HTMLInputElement);
         this.todoDialogMetaEl = getRequiredElement("todoDialogMeta", HTMLElement);
 
-        this.ownerInput = getRequiredElement("ownerInput", HTMLInputElement);
-        this.repoInput = getRequiredElement("repoInput", HTMLInputElement);
+        this.repositoryInput = getRequiredElement("repositoryInput", HTMLInputElement);
         this.refInput = getRequiredElement("refInput", HTMLInputElement);
         this.tokenInput = getRequiredElement("tokenInput", HTMLInputElement);
         this.rememberInput = getRequiredElement("rememberInput", HTMLInputElement);
@@ -756,7 +764,49 @@ class App {
         this.uiZoomMode = this.config.uiZoomMode === "manual" ? "manual" : "auto";
         const initialUiZoom = this.uiZoomMode === "auto" ? this.getRecommendedAppZoom() : this.config.uiZoom;
         this.uiZoom = this.normalizeAppZoom(initialUiZoom);
+        /** @type {"dark" | "light"} */
+        this.theme = this.config.theme === "light" ? "light" : "dark";
+        this.setTheme(this.theme, false);
         this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
+    }
+
+    /**
+     * Applies one shared color theme to the public landing page and initialized application.
+     * The preference is stored with other non-workspace UI configuration; dark remains the default when no valid preference exists.
+     * @param {"dark" | "light"} theme Requested theme name.
+     * @param {boolean} [shouldPersist] Whether to persist the preference immediately.
+     * @returns {void}
+     */
+    setTheme(theme, shouldPersist = true) {
+        this.theme = theme === "light" ? "light" : "dark";
+        this.config = { ...this.config, theme: this.theme };
+        this.state.setConfig(this.config);
+        document.documentElement.dataset.theme = this.theme;
+
+        const useLight = this.theme === "dark";
+        const actionLabel = useLight ? "Use light theme" : "Use dark theme";
+        for (const button of [this.appThemeToggleBtn, this.landingThemeToggleBtn]) {
+            button.title = actionLabel;
+            button.setAttribute("aria-label", actionLabel);
+            button.setAttribute("aria-pressed", this.theme === "light" ? "true" : "false");
+        }
+        const landingLabel = this.landingThemeToggleBtn.querySelector("span");
+        if (landingLabel) landingLabel.textContent = useLight ? "Light" : "Dark";
+
+        const themeMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeMeta instanceof HTMLMetaElement) {
+            themeMeta.content = this.theme === "dark" ? "#17191f" : "#f7f7f4";
+        }
+        if (shouldPersist) this.configService.saveConfig(this.config);
+    }
+
+    /**
+     * Switches between the supported light and dark themes.
+     * Both landing-page and application controls invoke this method so appearance never depends on authentication state.
+     * @returns {void}
+     */
+    toggleTheme() {
+        this.setTheme(this.theme === "dark" ? "light" : "dark");
     }
 
     /**
@@ -873,8 +923,7 @@ class App {
      * @returns {void}
      */
     start() {
-        this.ownerInput.value = this.config.owner;
-        this.repoInput.value = this.config.repo;
+        this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
         this.refInput.value = this.config.ref;
         this.rememberInput.checked = this.configService.isTokenRemembered();
 
@@ -889,6 +938,8 @@ class App {
         this.appZoomOutBtn.addEventListener("click", () => this.nudgeAppZoom(-1));
         this.appZoomResetBtn.addEventListener("click", () => this.setAutomaticAppZoom());
         this.appZoomInBtn.addEventListener("click", () => this.nudgeAppZoom(1));
+        this.appThemeToggleBtn.addEventListener("click", () => this.toggleTheme());
+        this.landingThemeToggleBtn.addEventListener("click", () => this.toggleTheme());
         this.projectsBtn.addEventListener("click", () => this.projectDialog.open());
         this.logoutBtn.addEventListener("click", () => this.logout());
         this.reloadDataBtn.addEventListener("click", () => void this.reloadData());
@@ -1107,18 +1158,24 @@ class App {
         ev.preventDefault();
         this.setError(this.loginErrorEl, "");
 
-        const owner = this.ownerInput.value.trim();
-        const repo = this.repoInput.value.trim();
         const ref = this.refInput.value.trim();
         const tok = this.tokenInput.value.trim();
         const remember = this.rememberInput.checked;
 
-        if (!owner || !repo || !ref || !tok) {
-            this.setError(this.loginErrorEl, "Please fill in owner, repo, ref, and token.");
+        if (!this.repositoryInput.value.trim() || !ref || !tok) {
+            this.setError(this.loginErrorEl, "Please fill in the repository URL, ref, and token.");
             return;
         }
 
-        this.config = { ...this.config, owner, repo, ref };
+        let repository;
+        try {
+            repository = parseGitHubRepository(this.repositoryInput.value);
+        } catch (error) {
+            this.setError(this.loginErrorEl, safeText(error));
+            return;
+        }
+
+        this.config = { ...this.config, owner: repository.owner, repo: repository.repo, ref };
         this.state.setConfig(this.config);
         this.configService.saveConfig(this.config);
         this.configService.saveToken(tok, remember);
@@ -1143,11 +1200,11 @@ class App {
         this.chunkCache.clearAll();
         this.config = { ...DEFAULT_CONFIG };
         this.state.setConfig(this.config);
+        this.setTheme(this.config.theme, false);
         this.setAutomaticAppZoom(false);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
-        this.ownerInput.value = this.config.owner;
-        this.repoInput.value = this.config.repo;
+        this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
         this.refInput.value = this.config.ref;
         this.tokenInput.value = "";
         this.rememberInput.checked = false;
@@ -1367,7 +1424,7 @@ class App {
     }
 
     /**
-     * Loads and installs the root planplural workspace configuration before component documents are requested.
+     * Loads and installs the root zeitplural workspace configuration before component documents are requested.
      * The workspace supplies all repository paths and the shared timezone, allowing the same application build to operate against local, GitHub, and future provider-backed repositories.
      * @returns {Promise<void>}
      */

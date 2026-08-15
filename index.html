@@ -1,9 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>planplural</title>
+    <meta name="theme-color" content="#17191f" />
+    <meta
+      name="description"
+      content="A static browser application for time, tasks, and expenses. Your data lives in a Git repository you control."
+    />
+    <title>zeitplural — time, tasks, expenses → Git</title>
+    <script>
+      try {
+        const savedConfig = JSON.parse(localStorage.getItem("tt_viewer:config:v1") || "{}");
+        if (savedConfig.theme === "light") document.documentElement.dataset.theme = "light";
+      } catch {
+        // Invalid or unavailable browser storage leaves the dark default intact.
+      }
+    </script>
+    <link rel="icon" href="./assets/zeitplural-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -33,6 +47,9 @@
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_in"></use></svg>
           </button>
         </div>
+        <button id="appThemeToggleBtn" class="sidebar-button" type="button" title="Use light theme" aria-label="Use light theme">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#contrast"></use></svg>
+        </button>
         <button id="projectsBtn" class="sidebar-button" type="button" title="Projects" aria-label="Manage projects" hidden>
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#account_tree"></use></svg>
         </button>
@@ -133,43 +150,164 @@
     </header>
 
     <main>
-      <section id="loginSection" class="card" hidden>
-        <h2>Login</h2>
-        <p class="muted">
-          Enter a GitHub token for your private planplural workspace repository. Read-only is enough for browsing; to save edits you
-          need Contents: Read &amp; write. The token is stored in your browser (local storage if “Remember” is enabled).
-        </p>
+      <section id="loginSection" class="landing" hidden>
+        <header class="landing-nav">
+          <a class="landing-brand" href="./" aria-label="zeitplural home">
+            <img src="./assets/zeitplural-mark.svg" alt="" />
+            <span>zeitplural</span>
+          </a>
+          <nav aria-label="Landing page">
+            <a href="#architecture">Architecture</a>
+            <a href="#workspace">Setup</a>
+            <a href="#similar">Similar projects</a>
+            <a href="https://github.com/josephbirkner/zeitplural">Source ↗</a>
+            <button id="landingThemeToggleBtn" class="landing-theme-toggle" type="button" title="Use light theme" aria-label="Use light theme">
+              <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#contrast"></use></svg>
+              <span>Light</span>
+            </button>
+          </nav>
+        </header>
 
-        <form id="loginForm" class="grid" autocomplete="off">
-          <label>
-            <span>Owner</span>
-            <input id="ownerInput" name="owner" type="text" spellcheck="false" required />
-          </label>
-          <label>
-            <span>Repo</span>
-            <input id="repoInput" name="repo" type="text" spellcheck="false" required />
-          </label>
-          <label>
-            <span>Ref (branch)</span>
-            <input id="refInput" name="ref" type="text" spellcheck="false" required />
-          </label>
-          <label class="col-span-2">
-            <span>Personal Access Token</span>
-            <input id="tokenInput" name="token" type="password" spellcheck="false" required />
-          </label>
+        <div class="landing-shell">
+          <section class="landing-hero" aria-labelledby="landingTitle">
+            <div class="landing-hero-copy">
+              <p class="landing-eyebrow">STATIC BROWSER APP · GIT WORKSPACE</p>
+              <h1 id="landingTitle">
+                <span>Time</span><b aria-hidden="true">|</b><span>Tasks</span><b aria-hidden="true">|</b><span>Expenses</span>
+                <strong>&gt; Git</strong>
+              </h1>
+              <p class="landing-lede">
+                zeitplural is a static application. It reads and writes versioned workspace files directly in a Git repository
+                you choose; zeitplural.io has no data backend.
+              </p>
+              <ul class="landing-badges" aria-label="Project properties">
+                <li><span aria-hidden="true"></span>Static HTML5</li>
+                <li><span aria-hidden="true"></span>Direct provider API</li>
+                <li><span aria-hidden="true"></span>Versioned JSON</li>
+              </ul>
+            </div>
+            <div id="connect" class="landing-connect-card">
+              <form id="loginForm" class="landing-login" autocomplete="off">
+                <div class="landing-login-head">
+                  <span class="landing-card-tag">OPEN WORKSPACE</span>
+                  <span class="landing-live"><i aria-hidden="true"></i>GitHub API</span>
+                </div>
+                <label>
+                  <span>Workspace repository</span>
+                  <input
+                    id="repositoryInput"
+                    name="repository"
+                    type="url"
+                    inputmode="url"
+                    placeholder="https://github.com/you/zeitplural-data"
+                    spellcheck="false"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Branch / ref</span>
+                  <input id="refInput" name="ref" type="text" spellcheck="false" required />
+                </label>
+                <label>
+                  <span>Fine-grained personal access token</span>
+                  <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" required />
+                </label>
 
-          <label class="checkbox col-span-2">
-            <input id="rememberInput" name="remember" type="checkbox" />
-            <span>Remember token (localStorage)</span>
-          </label>
+                <label class="landing-remember">
+                  <input id="rememberInput" name="remember" type="checkbox" />
+                  <span>Remember this token on this device</span>
+                </label>
 
-          <div class="col-span-2 row">
-            <button class="btn" type="submit">Connect</button>
-            <button id="clearSavedBtn" class="btn btn-secondary" type="button">Clear saved</button>
-          </div>
+                <div class="landing-login-actions">
+                  <button class="landing-button landing-button-primary" type="submit">Open workspace</button>
+                  <button id="clearSavedBtn" class="landing-button" type="button">Clear saved connection</button>
+                </div>
+                <p class="landing-security-note">
+                  The token stays in browser storage and is sent only to GitHub’s API.
+                </p>
+                <pre id="loginError" class="error" hidden></pre>
+              </form>
+            </div>
+          </section>
 
-          <pre id="loginError" class="error" hidden></pre>
-        </form>
+          <figure id="architecture" class="landing-architecture">
+            <img
+              class="landing-architecture-dark"
+              src="./assets/architecture.svg"
+              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+            />
+            <img
+              class="landing-architecture-light"
+              src="./assets/architecture-light.svg"
+              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+            />
+            <figcaption>Credentials remain in browser storage. Requests go directly to the selected Git provider.</figcaption>
+          </figure>
+
+          <section id="workspace" class="landing-reference" aria-labelledby="workspaceTitle">
+            <div class="landing-section-heading">
+              <p class="landing-eyebrow">01 · WORKSPACE</p>
+              <h2 id="workspaceTitle">Create a private data repository.</h2>
+            </div>
+            <div class="landing-reference-grid">
+              <article>
+                <span class="landing-card-tag">GITHUB · AVAILABLE</span>
+                <h3>Connect directly</h3>
+                <p>Read-only tokens can browse. Saving requires <strong>Contents: Read &amp; write</strong>.</p>
+                <ol>
+                  <li>Create a private repository.</li>
+                  <li>Copy the <code>workspace-template</code> files into it.</li>
+                  <li>Enter its URL, branch, and PAT above.</li>
+                </ol>
+                <a class="landing-text-link" href="https://github.com/josephbirkner/zeitplural#workspace-setup">Detailed setup ↗</a>
+              </article>
+              <article>
+                <span class="landing-card-tag">OTHER ROUTES</span>
+                <h3>Planned or self-hosted</h3>
+                <ul>
+                  <li>Codeberg and GitLab connectors are planned.</li>
+                  <li>Compatible private Git servers are planned.</li>
+                  <li>You can fork and host the static application yourself now.</li>
+                </ul>
+              </article>
+            </div>
+          </section>
+
+          <section id="similar" class="landing-similar" aria-labelledby="similarTitle">
+            <div class="landing-section-heading">
+              <p class="landing-eyebrow">02 · SIMILAR PROJECTS</p>
+              <h2 id="similarTitle">Related work.</h2>
+              <p>No direct equivalent surfaced in this review. These projects overlap with zeitplural in scope or storage model.</p>
+            </div>
+            <div class="landing-related-list">
+              <a href="https://github.com/GitJournal/GitJournal">
+                <strong>GitJournal</strong><span>Markdown notes in a Git repository of your choice.</span><small>Git-backed notes</small>
+              </a>
+              <a href="https://github.com/HenriquesLab/TaskRepo">
+                <strong>TaskRepo</strong><span>Tasks stored as Markdown files in Git repositories.</span><small>Git-backed tasks</small>
+              </a>
+              <a href="https://github.com/ActivityWatch/activitywatch">
+                <strong>ActivityWatch</strong><span>Automated time tracking with user-controlled local data.</span><small>Time · local-first</small>
+              </a>
+              <a href="https://github.com/actualbudget/actual">
+                <strong>Actual Budget</strong><span>Local-first personal finance with optional synchronization.</span><small>Finance · local-first</small>
+              </a>
+            </div>
+          </section>
+
+          <footer class="landing-footer">
+            <div>
+              <img src="./assets/zeitplural-mark.svg" alt="" />
+              <strong>zeitplural</strong>
+              <span>static application · Git workspace</span>
+            </div>
+            <p>The code for this project was written using large language models with extensive human supervision.</p>
+            <p>
+              Owl mark adapted from Google Material Symbols’ “owl”, licensed under Apache 2.0.
+              <a href="https://github.com/google/material-design-icons">Source ↗</a>
+            </p>
+          </footer>
+        </div>
       </section>
 
       <section id="loadingSection" class="loading-screen" aria-live="polite" aria-busy="true" hidden>
