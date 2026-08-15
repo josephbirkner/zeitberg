@@ -136,6 +136,10 @@ Open <http://127.0.0.1:8000/?source=local>. When the sibling is named `zeitplura
 
 Local mode serves application files from this checkout and maps workspace reads plus `POST /save` to the separate data checkout. It writes JSON without committing; review, commit, and push data changes from that repository independently.
 
+### Stylesheet ownership
+
+Styles are loaded explicitly from `styles/`: shared tokens, controls, application chrome, and dialogs belong in `common.css`; time tracking and time search belong in `time.css`; TODOs belong in `todos.css`; and the public site plus login belong in `landing.css`. Keep theme and responsive overrides beside the component they affect. New sub-apps should receive their own stylesheet instead of growing `common.css` by default.
+
 Useful checks:
 
 ```bash

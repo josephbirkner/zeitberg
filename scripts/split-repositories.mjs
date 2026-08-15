@@ -227,7 +227,6 @@ function finalizeCodeLayout(repository) {
             .replaceAll("../", "../")
             .replaceAll("index.html", "index.html")
             .replaceAll("app.js", "app.js")
-            .replaceAll("style.css", "style.css")
             .replaceAll("/?source=local", "/?source=local")
             .replaceAll('"include": ["*.js"]', '"include": ["*.js"]')
             .replaceAll('repo: "zeitplural-data"', 'repo: "zeitplural-data"')
