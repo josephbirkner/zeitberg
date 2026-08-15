@@ -37,6 +37,8 @@ test("workspace model resolves provider-neutral component paths", () => {
     assert.equal(workspace.getComponentPath("time_tracking", "entries"), "records/weeks");
     assert.equal(workspace.getComponentPath("time_tracking", "manifest"), "records/manifest.json");
     assert.equal(workspace.getComponentPath("todos", "document"), "records/todos.json");
+    assert.equal(workspace.hasComponent("todos"), true);
+    assert.equal(workspace.hasComponent("expenses"), false);
     assert.deepEqual(Workspace.fromRaw(workspace.toObject()).toObject(), workspace.toObject());
 });
 

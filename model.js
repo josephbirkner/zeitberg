@@ -327,6 +327,17 @@ export class Workspace {
     }
 
     /**
+     * Reports whether at least one configured component has the requested provider-neutral type.
+     * Route restoration uses this non-throwing check to fall back cleanly when a shared link targets a component that the selected workspace does not provide.
+     * @param {string} type Component type such as time_tracking, todos, or expenses.
+     * @returns {boolean}
+     */
+    hasComponent(type) {
+        const normalizedType = String(type || "").trim();
+        return Object.values(this.components).some((component) => component.type === normalizedType);
+    }
+
+    /**
      * Resolves one shared resource path from the workspace manifest.
      * Keeping this lookup on the model prevents UI controllers from embedding repository layouts.
      * @param {string} key Resource key such as projects.

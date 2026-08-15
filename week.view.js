@@ -339,6 +339,7 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {(isBusy: boolean) => void} onBusy
  * @property {() => void} onSearchDirty
  * @property {() => void} onManifestUpdated
+ * @property {() => void} [onStateChange]
  */
 
 /**
@@ -403,6 +404,7 @@ export class WeekView {
         this.onBusy = options.onBusy;
         this.onSearchDirty = options.onSearchDirty;
         this.onManifestUpdated = options.onManifestUpdated;
+        this.onStateChange = options.onStateChange || (() => {});
 
         this.active = false;
         this.busy = false;
@@ -444,6 +446,7 @@ export class WeekView {
         this.gapPositionRaf = 0;
         /** @type {{entryId: number, segmentKey: string, at: number, x: number, y: number} | null} */
         this.lastEntryTap = null;
+        this.restoringRoute = false;
 
         this.undoStack = [];
         this.redoStack = [];
@@ -566,7 +569,14 @@ export class WeekView {
         this.weekScrollEl.addEventListener("touchmove", (ev) => this.handlePinchMove(ev), { passive: false });
         this.weekScrollEl.addEventListener("touchend", (ev) => this.handlePinchEnd(ev));
         this.weekScrollEl.addEventListener("touchcancel", (ev) => this.handlePinchEnd(ev));
-        this.weekScrollEl.addEventListener("scroll", () => this.scheduleGapButtonReposition(), { passive: true });
+        this.weekScrollEl.addEventListener(
+            "scroll",
+            () => {
+                this.scheduleGapButtonReposition();
+                this.notifyStateChange();
+            },
+            { passive: true },
+        );
         this.weekReqBtn.addEventListener("click", () => this.openWeekRequirementsDialog());
         this.weekNormalBtn.addEventListener("click", () => {
             this.setEditMode("normal");
@@ -712,6 +722,75 @@ export class WeekView {
         this.focusedDayIndex = Math.max(0, Math.min(6, focusedDayIndex));
         this.ensureFocusedDayInWindow();
         this.rebuildWeekView();
+    }
+
+    /**
+     * Returns the navigation state needed to reconstruct the current timeline.
+     * Scroll is represented as minutes after midnight rather than pixels so it remains meaningful across viewport sizes and responsive day counts.
+     * @returns {{weekStart: string | null, dayWindowStart: number, selectedEntryId: number | null, zoom: number, scrollMinutes: number}}
+     */
+    getRouteState() {
+        const metrics = this.weekDom?.metrics;
+        const scrollMinutes = metrics
+            ? Math.max(0, Math.min(1440, (this.weekScrollEl.scrollTop - metrics.headerHeight) / metrics.pxPerMinute))
+            : 0;
+        return {
+            weekStart: this.appState.weekStart,
+            dayWindowStart: this.dayWindowStart,
+            selectedEntryId: this.selectedEntryId,
+            zoom: this.zoom,
+            scrollMinutes: Math.round(scrollMinutes * 10) / 10,
+        };
+    }
+
+    /**
+     * Restores week, day window, entry selection, zoom, and vertical position from browser history.
+     * Rendering happens before the final animation-frame scroll so timeline metrics reflect the restored zoom and responsive layout.
+     * @param {Object.<string, unknown>} state Parsed route state.
+     * @returns {void}
+     */
+    restoreRouteState(state) {
+        const routeState = state && typeof state === "object" ? state : {};
+        this.restoringRoute = true;
+
+        const zoom = Number(routeState.zoom);
+        if (Number.isFinite(zoom)) this.setZoomLevel(zoom);
+        const weekStart = String(routeState.weekStart || "");
+        if (/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) this.setWeekStart(weekStart);
+
+        const dayWindowStart = Number(routeState.dayWindowStart);
+        if (Number.isFinite(dayWindowStart)) {
+            this.dayWindowStart = clampDayWindowStart(dayWindowStart, this.getVisibleDayCount());
+            this.applyDayWindow();
+        }
+        const selectedEntryId = Number(routeState.selectedEntryId);
+        if (Number.isFinite(selectedEntryId) && selectedEntryId > 0) {
+            this.focusEntryByIdInWeek(selectedEntryId);
+        } else {
+            this.applyWeekFocusAndSelection();
+        }
+
+        const scrollMinutes = Number(routeState.scrollMinutes);
+        window.requestAnimationFrame(() => {
+            if (Number.isFinite(scrollMinutes) && this.weekDom?.metrics) {
+                const metrics = this.weekDom.metrics;
+                this.weekScrollEl.scrollTop = Math.max(
+                    0,
+                    metrics.headerHeight + Math.max(0, Math.min(1440, scrollMinutes)) * metrics.pxPerMinute,
+                );
+                this.updateGapButtonPositions(metrics);
+            }
+            this.restoringRoute = false;
+        });
+    }
+
+    /**
+     * Announces navigation-relevant timeline changes to the route coordinator.
+     * The coordinator debounces high-frequency scroll and zoom updates; restoration suppresses notifications to avoid feedback loops.
+     * @returns {void}
+     */
+    notifyStateChange() {
+        if (!this.restoringRoute) this.onStateChange();
     }
 
     /**
@@ -953,6 +1032,7 @@ export class WeekView {
             this.updateGapButtonPositions(newMetrics);
         }
         this.updateTopbarActions();
+        this.notifyStateChange();
     }
 
     /**
@@ -1343,6 +1423,7 @@ export class WeekView {
             el.classList.toggle("is-selected", Boolean(selectedKey && key === selectedKey));
         }
         this.updateTopbarActions();
+        this.notifyStateChange();
     }
 
     /**

@@ -24,6 +24,7 @@ import {
     utcNowIso,
 } from "./utils.js";
 import { Manifest, ProjectList, TodoList, WeekRequirements, Workspace } from "./model.js";
+import { getApplicationBasePath, RouteController } from "./routing.js";
 
 const MIN_APP_ZOOM = 0.8;
 const MAX_APP_ZOOM = 2;
@@ -36,6 +37,25 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
     ["ui-toolbar-compact", 840],
     ["ui-medium", 980],
 ];
+
+/**
+ * Applies a credential-free route locator to the legacy active-repository configuration shape.
+ * Multi-workspace persistence builds on this adapter while current views and the GitHub data source continue consuming owner, repo, ref, and workspacePath directly.
+ * @param {import("./config.js").AppConfig} config Existing application configuration.
+ * @param {import("./routing.js").WorkspaceRouteLocator | null} locator Parsed route locator.
+ * @returns {import("./config.js").AppConfig}
+ */
+function configForRouteWorkspace(config, locator) {
+    if (!locator || locator.provider !== "github") return { ...config };
+    const repository = parseGitHubRepository(locator.repositoryUrl);
+    return {
+        ...config,
+        owner: repository.owner,
+        repo: repository.repo,
+        ref: locator.ref,
+        workspacePath: locator.workspacePath,
+    };
+}
 
 /**
  * Parses one normalized week document and returns its entry records after schema validation.
@@ -492,10 +512,16 @@ class App {
      * Does not perform network requests until start() is called.
      */
     constructor() {
+        this.routeController = new RouteController(window, getApplicationBasePath(document));
+        this.routeController.restoreStaticRoute();
+        this.initialRoute = this.routeController.read();
+        /** @type {import("./routing.js").AppRoute | null} */
+        this.pendingRoute = this.initialRoute.component ? this.initialRoute : null;
+        this.routeRestoreInProgress = false;
         this.configService = new ConfigService();
-        this.config = this.configService.loadConfig();
+        this.config = configForRouteWorkspace(this.configService.loadConfig(), this.initialRoute.workspace);
         this.token = this.configService.loadToken();
-        this.isLocalMode = getSourceMode() === "local";
+        this.isLocalMode = this.initialRoute.workspace?.provider === "local" || getSourceMode() === "local";
         this.state = new AppState(this.config, this.isLocalMode);
         this.state.setToken(this.token);
         this.timeContext = new TimeContext(this.config.timezone);
@@ -677,6 +703,7 @@ class App {
             onBusy: (busy) => this.setBusy(busy),
             onSearchDirty: () => this.markSearchDirty(),
             onManifestUpdated: () => this.refreshRepoLabel(),
+            onStateChange: () => this.scheduleRouteReplace(),
         });
 
         this.searchView = new SearchView({
@@ -698,6 +725,7 @@ class App {
                 this.setTab("week");
                 this.weekView.jumpToEntry(entry);
             },
+            onStateChange: () => this.scheduleRouteReplace(),
         });
 
         this.todoView = new TodoView({
@@ -739,6 +767,7 @@ class App {
                 this.todoSummary = summary;
                 this.refreshDataBadge();
             },
+            onStateChange: () => this.scheduleRouteReplace(),
         });
 
         this.projectDialog = new ProjectDialog({
@@ -918,6 +947,204 @@ class App {
     }
 
     /**
+     * Returns the public locator for the active local folder or GitHub repository.
+     * The expected workspace id is included only after zeitplural.json has loaded; credentials are held separately and can never enter this object.
+     * @returns {import("./routing.js").WorkspaceRouteLocator}
+     */
+    getCurrentWorkspaceRouteLocator() {
+        if (this.isLocalMode) {
+            return {
+                provider: "local",
+                repositoryUrl: "",
+                ref: "",
+                workspacePath: this.config.workspacePath || "zeitplural.json",
+                expectedWorkspaceId: this.workspace?.workspace_id || "",
+            };
+        }
+        return {
+            provider: "github",
+            repositoryUrl: formatGitHubRepositoryUrl(this.config.owner, this.config.repo),
+            ref: this.config.ref,
+            workspacePath: this.config.workspacePath || "zeitplural.json",
+            expectedWorkspaceId: this.workspace?.workspace_id || "",
+        };
+    }
+
+    /**
+     * Captures the active component and all navigation-relevant view state in the route model.
+     * Time search shares one route state with the week timeline, while TODO filters remain wholly owned by TodoView.
+     * @returns {import("./routing.js").AppRoute}
+     */
+    buildCurrentRoute() {
+        if (this.state.activeTab === "todos") {
+            return {
+                version: 1,
+                component: "todos",
+                panel: "main",
+                workspace: this.getCurrentWorkspaceRouteLocator(),
+                state: this.todoView.getRouteState(),
+            };
+        }
+
+        const panel = this.state.activeTab === "search" ? "search" : "main";
+        return {
+            version: 1,
+            component: "time",
+            panel,
+            workspace: this.getCurrentWorkspaceRouteLocator(),
+            state: {
+                ...this.weekView.getRouteState(),
+                ...(panel === "search" ? this.searchView.getRouteState() : {}),
+            },
+        };
+    }
+
+    /**
+     * Writes the latest initialized application state to browser history.
+     * Pushes are reserved for component/panel navigation; view interactions use debounced replacement through scheduleRouteReplace().
+     * @param {"push" | "replace"} [mode] History mutation kind.
+     * @returns {void}
+     */
+    writeCurrentRoute(mode = "replace") {
+        if (this.routeRestoreInProgress || this.appSection.hidden || !this.workspace) return;
+        this.routeController.write(this.buildCurrentRoute(), mode);
+    }
+
+    /**
+     * Schedules a high-frequency route update for scroll, zoom, filters, and selection.
+     * The lazy route factory captures state after the final event in a burst and keeps browser Back/Forward focused on meaningful navigation.
+     * @returns {void}
+     */
+    scheduleRouteReplace() {
+        if (this.routeRestoreInProgress || this.appSection.hidden || !this.workspace) return;
+        this.routeController.scheduleReplace(() => this.buildCurrentRoute());
+    }
+
+    /**
+     * Maps a component-first route to the existing view identifiers used by AppState.
+     * @param {import("./routing.js").AppRoute} route Parsed route.
+     * @returns {"week" | "todos" | "search"}
+     */
+    tabForRoute(route) {
+        if (route.component === "todos") return "todos";
+        if (route.component === "time" && route.panel === "search") return "search";
+        return "week";
+    }
+
+    /**
+     * Normalizes a requested component against both the loaded workspace and the components implemented in this release.
+     * Unavailable TODO or future Expense routes fall back to an enabled Time component, then to TODOs, without leaving a broken blank surface.
+     * @param {import("./routing.js").AppRoute} route Requested route.
+     * @returns {import("./routing.js").AppRoute}
+     */
+    normalizeLoadedRoute(route) {
+        if (!this.workspace || !route.component) return this.buildCurrentRoute();
+        const hasTime = this.workspace.hasComponent("time_tracking");
+        const hasTodos = this.workspace.hasComponent("todos");
+        let component = route.component;
+        let panel = route.panel;
+
+        if (component === "expenses" || (component === "time" && !hasTime) || (component === "todos" && !hasTodos)) {
+            component = hasTime ? "time" : hasTodos ? "todos" : "time";
+            panel = "main";
+        }
+        if (component !== "time" && panel === "search") panel = "main";
+        return { ...route, component, panel };
+    }
+
+    /**
+     * Applies a parsed route after workspace documents and view models are ready.
+     * Route-originated changes are suppressed until the next animation frame, then one normalized replaceState records any safe fallback.
+     * @param {import("./routing.js").AppRoute} route Requested route.
+     * @returns {void}
+     */
+    applyLoadedRoute(route) {
+        const normalized = this.normalizeLoadedRoute(route);
+        this.routeRestoreInProgress = true;
+        const tab = this.tabForRoute(normalized);
+        this.setTab(tab, "none");
+        if (normalized.component === "time") {
+            this.weekView.restoreRouteState(normalized.state);
+            if (normalized.panel === "search") this.searchView.restoreRouteState(normalized.state);
+        } else if (normalized.component === "todos") {
+            this.todoView.restoreRouteState(normalized.state);
+        }
+
+        window.requestAnimationFrame(() => {
+            this.routeRestoreInProgress = false;
+            this.routeController.write(this.buildCurrentRoute(), "replace");
+        });
+    }
+
+    /**
+     * Reports whether a locator addresses the active repository connection.
+     * The expected workspace id is verified separately after loading because an empty first-connection locator is still allowed.
+     * @param {import("./routing.js").WorkspaceRouteLocator | null} locator Requested workspace locator.
+     * @returns {boolean}
+     */
+    routeTargetsCurrentConnection(locator) {
+        if (!locator) return true;
+        if (this.isLocalMode) return locator.provider === "local";
+        if (locator.provider !== "github") return false;
+        try {
+            const repository = parseGitHubRepository(locator.repositoryUrl);
+            return (
+                repository.owner.toLowerCase() === this.config.owner.toLowerCase() &&
+                repository.repo.toLowerCase() === this.config.repo.toLowerCase() &&
+                locator.ref === this.config.ref &&
+                locator.workspacePath === (this.config.workspacePath || "zeitplural.json")
+            );
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Handles Back/Forward navigation after RouteController has parsed the new address.
+     * A locator for another repository is prefilled but never receives the current repository's credential automatically; the user authenticates that connection explicitly.
+     * @param {import("./routing.js").AppRoute} route Parsed browser route.
+     * @returns {Promise<void>}
+     */
+    async handleRouteNavigation(route) {
+        if (!route.component) {
+            if (this.isLocalMode && this.workspace) {
+                this.routeController.write(this.buildCurrentRoute(), "replace");
+                return;
+            }
+            this.pendingRoute = null;
+            this.showLoginScreen();
+            return;
+        }
+
+        this.pendingRoute = route;
+        if (!this.routeTargetsCurrentConnection(route.workspace)) {
+            if (route.workspace?.provider === "github") {
+                this.config = configForRouteWorkspace(this.config, route.workspace);
+                this.state.setConfig(this.config);
+                this.repositoryInput.value = route.workspace.repositoryUrl;
+                this.refInput.value = route.workspace.ref;
+            }
+            this.showLoginScreen();
+            this.setError(this.loginErrorEl, "Authenticate to open the workspace named in this link.");
+            return;
+        }
+
+        if (this.workspace && !this.appSection.hidden) {
+            this.applyLoadedRoute(route);
+            return;
+        }
+        if (this.token) {
+            try {
+                await this.connectWithToken(this.token);
+            } catch (error) {
+                this.setError(this.loginErrorEl, safeText(error));
+            }
+        } else {
+            this.showLoginScreen();
+        }
+    }
+
+    /**
      * Boots the application and triggers the initial load flow.
      * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
@@ -926,6 +1153,7 @@ class App {
         this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
         this.refInput.value = this.config.ref;
         this.rememberInput.checked = this.configService.isTokenRemembered();
+        if (this.pendingRoute) this.state.setActiveTab(this.tabForRoute(this.pendingRoute));
 
         this.loginForm.addEventListener("submit", (ev) => this.handleLoginSubmit(ev));
         this.clearSavedBtn.addEventListener("click", () => this.handleClearSaved());
@@ -954,6 +1182,7 @@ class App {
 
         document.addEventListener("keydown", (ev) => this.handleGlobalKeydown(ev));
         window.addEventListener("resize", () => this.handleResize());
+        this.routeController.start((route) => void this.handleRouteNavigation(route));
 
         this.setProgress(0, 1, "");
         setVisible(this.sidebarEl, false);
@@ -961,6 +1190,15 @@ class App {
         setVisible(this.loadingSection, false);
 
         if (this.isLocalMode) {
+            if (!this.pendingRoute) {
+                this.pendingRoute = {
+                    version: 1,
+                    component: "time",
+                    panel: "main",
+                    workspace: this.getCurrentWorkspaceRouteLocator(),
+                    state: {},
+                };
+            }
             this.setAuthStatus("Local mode");
             setVisible(this.logoutBtn, false);
             setVisible(this.reloadDataBtn, true);
@@ -974,7 +1212,10 @@ class App {
         setVisible(this.reloadDataBtn, false);
         setVisible(this.projectsBtn, false);
 
-        if (this.token) {
+        if (!this.pendingRoute) {
+            this.setAuthStatus(this.token ? "Saved connection available" : "Not logged in");
+            this.showLoginScreen();
+        } else if (this.token) {
             this.showLoadingScreen("Connecting to GitHub…");
             this.connectWithToken(this.token).catch((err) => {
                 this.showLoginScreen();
@@ -1035,7 +1276,7 @@ class App {
         setVisible(this.appSection, true);
         this.loadingSection.setAttribute("aria-busy", "false");
         this.setAppMode(true);
-        this.setTab(this.state.activeTab);
+        this.setTab(this.state.activeTab, "none");
     }
 
     /**
@@ -1159,7 +1400,7 @@ class App {
         this.setError(this.loginErrorEl, "");
 
         const ref = this.refInput.value.trim();
-        const tok = this.tokenInput.value.trim();
+        const tok = this.tokenInput.value.trim() || this.token;
         const remember = this.rememberInput.checked;
 
         if (!this.repositoryInput.value.trim() || !ref || !tok) {
@@ -1179,6 +1420,33 @@ class App {
         this.state.setConfig(this.config);
         this.configService.saveConfig(this.config);
         this.configService.saveToken(tok, remember);
+        const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
+        if (!this.pendingRoute) {
+            this.pendingRoute = {
+                version: 1,
+                component: "time",
+                panel: "main",
+                workspace: {
+                    provider: "github",
+                    repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
+                    ref,
+                    workspacePath: this.config.workspacePath || "zeitplural.json",
+                    expectedWorkspaceId: "",
+                },
+                state: {},
+            };
+        } else {
+            this.pendingRoute = {
+                ...this.pendingRoute,
+                workspace: {
+                    provider: "github",
+                    repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
+                    ref,
+                    workspacePath: this.config.workspacePath || "zeitplural.json",
+                    expectedWorkspaceId,
+                },
+            };
+        }
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.tokenInput.value = "";
@@ -1198,6 +1466,8 @@ class App {
     handleClearSaved() {
         this.configService.clearSaved();
         this.chunkCache.clearAll();
+        this.token = "";
+        this.state.setToken("");
         this.config = { ...DEFAULT_CONFIG };
         this.state.setConfig(this.config);
         this.setTheme(this.config.theme, false);
@@ -1209,6 +1479,8 @@ class App {
         this.tokenInput.value = "";
         this.rememberInput.checked = false;
         this.setAuthStatus("Cleared");
+        this.pendingRoute = null;
+        this.routeController.write({ version: 1, component: null, panel: "main", workspace: null, state: {} }, "replace");
     }
 
     /**
@@ -1318,9 +1590,10 @@ class App {
      * Switches between Week, TODO, and Search tabs.
      * Keeps the main UI flow and data loading coordinated.
      * @param {"week" | "todos" | "search"} tab
+     * @param {"push" | "replace" | "none"} [historyMode] Whether this navigation should create, replace, or leave browser history.
      * @returns {void}
      */
-    setTab(tab) {
+    setTab(tab, historyMode = "push") {
         const next = tab === "search" || tab === "todos" ? tab : "week";
         const searchesTodos = next === "todos";
         const searchQuery = searchesTodos ? this.todoView.getSearchQuery() : this.searchView.getSearchQuery();
@@ -1346,6 +1619,7 @@ class App {
         setVisible(this.todoTopbarControlsEl, next === "todos" && !this.topbarEl.hidden);
         setVisible(this.editorBadgeEl, next !== "search" && !this.topbarEl.hidden);
         this.refreshDataBadge();
+        if (historyMode !== "none") this.writeCurrentRoute(historyMode);
     }
 
     /**
@@ -1432,6 +1706,12 @@ class App {
         this.setProgress(0, 1, this.isLocalMode ? "Loading workspace (local)…" : "Loading workspace…");
         const raw = await this.dataSource.fetchWorkspace();
         const workspace = Workspace.fromRaw(raw);
+        const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
+        if (expectedWorkspaceId && workspace.workspace_id !== expectedWorkspaceId) {
+            throw new Error(
+                `Workspace identity mismatch: the link expects ${expectedWorkspaceId}, but the repository contains ${workspace.workspace_id}.`,
+            );
+        }
         this.workspace = workspace;
         this.dataSource.setWorkspace(workspace);
         this.timeContext.setTimeZone(workspace.timezone);
@@ -1659,7 +1939,15 @@ class App {
             await Promise.all([this.fetchManifest(), this.fetchProjects()]);
             await Promise.all([this.fetchWeekRequirements(), this.fetchTodos()]);
             await this.loadAllChunks();
+            const requestedRoute = this.pendingRoute;
+            this.routeRestoreInProgress = Boolean(requestedRoute);
             this.showApplicationScreen();
+            if (requestedRoute) {
+                this.pendingRoute = null;
+                this.applyLoadedRoute(requestedRoute);
+            } else {
+                this.routeController.write(this.buildCurrentRoute(), "replace");
+            }
             return true;
         } catch (err) {
             this.showLoadingError(safeText(err));
@@ -1719,6 +2007,7 @@ class App {
         this.state.setWeekStart(null);
         this.state.setLatestWeekStart(null);
         this.workspace = null;
+        this.pendingRoute = null;
         this.store.clear();
         this.todoStore.clear();
         this.chunkCache.clearMemory();
@@ -1739,6 +2028,7 @@ class App {
         setVisible(this.projectsBtn, false);
         this.showLoginScreen();
         this.configService.saveToken("", false);
+        this.routeController.write({ version: 1, component: null, panel: "main", workspace: null, state: {} }, "replace");
     }
 }
 

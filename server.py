@@ -54,6 +54,20 @@ def _default_workspace_root() -> Path:
     return APP_ROOT.parent / "zeitplural-data"
 
 
+def _is_application_route(path: str, app_entry_path: str) -> bool:
+    base = app_entry_path.rstrip("/")
+    if base and base != "/":
+        if path == base:
+            return False
+        prefix = f"{base}/"
+        if not path.startswith(prefix):
+            return False
+        relative = path.removeprefix(prefix)
+    else:
+        relative = path.lstrip("/")
+    return relative.rstrip("/") in {"time", "todos", "expenses"}
+
+
 class Handler(SimpleHTTPRequestHandler):
     workspace_root = APP_ROOT
     workspace_config_path = "zeitplural.json"
@@ -90,6 +104,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        if _is_application_route(parsed.path, self.app_entry_path):
+            original_path = self.path
+            try:
+                self.path = f"{self.app_entry_path.rstrip('/')}/index.html"
+                return super().do_GET()
+            finally:
+                self.path = original_path
         return super().do_GET()
 
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
@@ -178,7 +199,7 @@ def main(argv: list[str]) -> int:
 
     handler = lambda *a, **k: ConfiguredHandler(*a, directory=str(APP_ROOT), **k)  # noqa: E731 (simple factory)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
-    print(f"Serving zeitplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}?source=local")
+    print(f"Serving zeitplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}time?source=local")
     print(f"Workspace: {workspace_root} ({workspace_config_path})")
     try:
         httpd.serve_forever()

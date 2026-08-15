@@ -44,6 +44,7 @@ const TODO_DOCUMENT_NAME = "todos";
  * @property {(isBusy: boolean) => void} onBusy
  * @property {() => void} onSaved
  * @property {(summary: string) => void} onStatsChanged
+ * @property {() => void} [onStateChange]
  */
 
 /**
@@ -183,6 +184,7 @@ export class TodoView {
         this.onBusy = options.onBusy;
         this.onSaved = options.onSaved;
         this.onStatsChanged = options.onStatsChanged;
+        this.onStateChange = options.onStateChange || (() => {});
 
         this.viewEl = options.elements.todoView;
         this.listEl = options.elements.todoList;
@@ -230,6 +232,7 @@ export class TodoView {
         this.redoStack = [];
         this.draftWriteChain = Promise.resolve();
         this.draftWarningShown = false;
+        this.restoringRoute = false;
 
         this.bindEvents();
         this.populateProjectControls({ projectKey: null, sectionKey: null });
@@ -370,6 +373,55 @@ export class TodoView {
      */
     getSearchQuery() {
         return this.searchQuery;
+    }
+
+    /**
+     * Returns the navigation state owned by the TODO component.
+     * Persisted task data remains in the workspace; this compact state contains only filters, the query, and the current selection.
+     * @returns {{query: string, project: string, selectedTodoId: string | null, currentOnly: boolean, openOnly: boolean}}
+     */
+    getRouteState() {
+        return {
+            query: this.searchQuery,
+            project: this.projectFilterKey,
+            selectedTodoId: this.selectedTodoId,
+            currentOnly: this.currentOnly,
+            openOnly: this.openOnly,
+        };
+    }
+
+    /**
+     * Restores TODO filters and selection after tasks and the shared project taxonomy have loaded.
+     * A missing or filtered-out selection is normalized to the first visible task by the ordinary rendering path.
+     * @param {Object.<string, unknown>} state Parsed route state.
+     * @returns {void}
+     */
+    restoreRouteState(state) {
+        const routeState = state && typeof state === "object" ? state : {};
+        this.restoringRoute = true;
+        try {
+            this.searchQuery = String(routeState.query || "");
+            this.searchInput.value = this.searchQuery;
+            this.currentOnly = typeof routeState.currentOnly === "boolean" ? routeState.currentOnly : true;
+            this.openOnly = typeof routeState.openOnly === "boolean" ? routeState.openOnly : true;
+            this.projectFilterKey = String(routeState.project || "*");
+            this.selectedTodoId = routeState.selectedTodoId ? String(routeState.selectedTodoId) : null;
+            this.populateProjectControls();
+            this.updateFilterButtons();
+            this.render();
+            this.selectTodo(this.selectedTodoId, false);
+        } finally {
+            this.restoringRoute = false;
+        }
+    }
+
+    /**
+     * Announces filter or selection changes to the application route coordinator.
+     * History restoration suppresses the callback until all dependent controls agree with the parsed route.
+     * @returns {void}
+     */
+    notifyStateChange() {
+        if (!this.restoringRoute) this.onStateChange();
     }
 
     /**
@@ -540,6 +592,7 @@ export class TodoView {
         const completedCount = all.length - openCount;
         this.onStatsChanged(`${visible.length} shown • ${openCount} open • ${completedCount} completed`);
         this.updateSaveState();
+        this.notifyStateChange();
     }
 
     /**
@@ -838,6 +891,7 @@ export class TodoView {
             row.setAttribute("aria-selected", selected ? "true" : "false");
             if (selected && ensureVisible) row.scrollIntoView({ block: "nearest" });
         }
+        this.notifyStateChange();
     }
 
     /**

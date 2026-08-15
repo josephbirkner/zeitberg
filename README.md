@@ -35,7 +35,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual Git commits. |
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, and direct browser-to-provider persistence. |
-| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [capability links](https://github.com/josephbirkner/zeitplural/issues/19), [URL routing](https://github.com/josephbirkner/zeitplural/issues/16), and [agent integration](https://github.com/josephbirkner/zeitplural/issues/9). |
+| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [capability links](https://github.com/josephbirkner/zeitplural/issues/19), and [multi-workspace connections](https://github.com/josephbirkner/zeitplural/issues/22). |
 
 The project is intentionally one application: time, tasks, and future components share a project inventory and workspace identity while retaining separate documents and views.
 
@@ -102,6 +102,16 @@ Time entries are normalized into ISO-week files. Their manifest records immutabl
 
 TODOs and time entries share the schema-v2 project/section taxonomy. Assignments use stable `project_key` and `section_key` values, so display names can change without rewriting historical entries.
 
+## Routes and browser history
+
+The public root remains the landing and connection page. Initialized views use component-first routes:
+
+- `/time` for the week timeline and Time search;
+- `/todos` for tasks;
+- `/expenses` for the upcoming expense component.
+
+The query string records the credential-free workspace locator and navigation state such as the selected week or TODO, filters, timeline zoom, and scroll time. PATs are never part of an ordinary route. Meaningful view changes create browser-history entries; high-frequency selection, filter, zoom, and scroll changes update the current entry. A small `404.html` handoff makes direct component-route reloads work on GitHub Pages without server-side rewrites.
+
 ## GitHub issue-linked TODOs
 
 A workspace project can opt into GitHub issue persistence with an external reference:
@@ -132,7 +142,7 @@ npm test
 python3 server.py --workspace ../zeitplural-data
 ```
 
-Open <http://127.0.0.1:8000/?source=local>. When the sibling is named `zeitplural-data`, `--workspace` may be omitted.
+Open <http://127.0.0.1:8000/time?source=local>. When the sibling is named `zeitplural-data`, `--workspace` may be omitted.
 
 Local mode serves application files from this checkout and maps workspace reads plus `POST /save` to the separate data checkout. It writes JSON without committing; review, commit, and push data changes from that repository independently.
 

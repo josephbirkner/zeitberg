@@ -15,6 +15,7 @@ import { formatDuration, safeText, setVisible } from "./utils.js";
  * @property {HTMLElement} elements.stats
  * @property {HTMLTableSectionElement} elements.entriesTbody
  * @property {(entry: import("./model.js").Entry) => void} onJumpToEntry
+ * @property {() => void} [onStateChange]
  */
 
 /**
@@ -41,11 +42,13 @@ export class SearchView {
         this.statsEl = options.elements.stats;
         this.entriesTbody = options.elements.entriesTbody;
         this.onJumpToEntry = options.onJumpToEntry;
+        this.onStateChange = options.onStateChange || (() => {});
 
         this.active = false;
         this.query = "";
         this.allEntries = [];
         this.searchDirty = false;
+        this.restoringRoute = false;
 
         this.bindEvents();
     }
@@ -102,6 +105,64 @@ export class SearchView {
         this.query = String(value || "");
         if (this.active) this.searchInput.value = this.query;
         if (shouldRender && this.active) this.applyFiltersAndRender();
+        this.notifyStateChange();
+    }
+
+    /**
+     * Returns the serializable filter state owned by the Time search panel.
+     * App merges this with the current week state when producing a `/time` route, so switching between timeline and search never loses either context.
+     * @returns {{query: string, project: string, from: string, to: string, maxRows: number, sort: "asc" | "desc"}}
+     */
+    getRouteState() {
+        return {
+            query: this.query,
+            project: this.projectSelect.value,
+            from: this.fromDateInput.value,
+            to: this.toDateInput.value,
+            maxRows: Math.max(50, Number.parseInt(this.maxRowsInput.value || "500", 10) || 500),
+            sort: this.sortSelect.value === "asc" ? "asc" : "desc",
+        };
+    }
+
+    /**
+     * Restores search filters after repository data and project options are available.
+     * Invalid project values fall back to the all-project option instead of leaving the select in a browser-dependent state.
+     * @param {Object.<string, unknown>} state Parsed route state.
+     * @returns {void}
+     */
+    restoreRouteState(state) {
+        const routeState = state && typeof state === "object" ? state : {};
+        this.restoringRoute = true;
+        try {
+            this.query = String(routeState.query || "");
+            this.searchInput.value = this.query;
+            this.fromDateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(String(routeState.from || ""))
+                ? String(routeState.from)
+                : "";
+            this.toDateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(String(routeState.to || ""))
+                ? String(routeState.to)
+                : "";
+            const maxRows = Number(routeState.maxRows);
+            this.maxRowsInput.value = String(Number.isFinite(maxRows) ? Math.max(50, Math.min(10000, Math.round(maxRows))) : 500);
+            this.sortSelect.value = routeState.sort === "asc" ? "asc" : "desc";
+            this.searchDirty = true;
+            this.applyFiltersAndRender();
+            const project = String(routeState.project || "");
+            this.projectSelect.value = project;
+            if (this.projectSelect.value !== project) this.projectSelect.value = "";
+            this.applyFiltersAndRender();
+        } finally {
+            this.restoringRoute = false;
+        }
+    }
+
+    /**
+     * Announces a user-visible filter change to the route coordinator.
+     * Notifications are suppressed during history restoration to avoid writing a second route while popstate is still being applied.
+     * @returns {void}
+     */
+    notifyStateChange() {
+        if (!this.restoringRoute) this.onStateChange();
     }
 
     /**
@@ -272,5 +333,6 @@ export class SearchView {
             frag.append(tr);
         }
         this.entriesTbody.append(frag);
+        this.notifyStateChange();
     }
 }

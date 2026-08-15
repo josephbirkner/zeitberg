@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Opening zeitplural…</title>
+    <script>
+      (() => {
+        const storageKey = "zeitplural:static-route:v1";
+        const segments = window.location.pathname.split("/").filter(Boolean);
+        const isGitHubProjectPage = window.location.hostname.endsWith(".github.io") && segments.length > 1;
+        const basePath = isGitHubProjectPage ? `/${segments[0]}/` : "/";
+        try {
+          window.sessionStorage.setItem(
+            storageKey,
+            `${window.location.pathname}${window.location.search}${window.location.hash}`,
+          );
+        } catch {
+          // A storage-disabled browser can still return to the public entry point.
+        }
+        window.location.replace(basePath);
+      })();
+    </script>
+  </head>
+  <body>
+    <noscript>zeitplural requires JavaScript to restore this application route.</noscript>
+  </body>
+</html>
