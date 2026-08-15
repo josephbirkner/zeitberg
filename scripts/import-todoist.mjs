@@ -60,7 +60,7 @@ function parseArgs(argv) {
         includeCompleted: true,
         completedSince: DEFAULT_COMPLETED_SINCE,
         workspaceRoot: null,
-        workspaceConfigPath: "planplural.json",
+        workspaceConfigPath: "zeitplural.json",
     };
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
@@ -278,7 +278,7 @@ function mapDue(due) {
 /**
  * Maps an active task or one completed-history record into the repository's provider-neutral TODO schema.
  * Historical records receive occurrence-specific local IDs, preventing collisions with reopened or recurring active tasks.
- * Project references use canonical stable keys; Inbox deliberately maps to no project.
+ * Project references use stable workspace keys; Inbox deliberately maps to no project.
  * @param {Object} task
  * @param {Map<string, {projectKey: string | null, sectionKey: string | null}>} projectAssignmentById
  * @param {Map<string, {projectKey: string | null, sectionKey: string | null}>} sectionAssignmentById
@@ -416,7 +416,7 @@ function addExternalReference(target, provider, id) {
 }
 
 /**
- * Reconciles Todoist's project/section inventory with the canonical shared taxonomy.
+ * Reconciles Todoist's project/section inventory with the shared workspace taxonomy.
  * Existing external-reference bindings win, exact display-name matches acquire a binding, and only genuinely unknown definitions create new keys.
  * @param {ProjectList} currentProjectList
  * @param {Object[]} todoistProjects
@@ -509,14 +509,14 @@ export function mergeTodoistTaxonomy(currentProjectList, todoistProjects, todois
         const bound = externalAssignments.get(`todoist\u0000${id}`);
         if (bound) {
             if (bound.projectKey !== parentAssignment.projectKey || !bound.sectionKey) {
-                throw new Error(`Todoist section ${id} is bound outside its canonical parent project.`);
+                throw new Error(`Todoist section ${id} is bound outside its configured parent project.`);
             }
             sectionAssignmentById.set(id, { ...bound });
             continue;
         }
 
         const project = projectsByKey.get(parentAssignment.projectKey);
-        if (!project) throw new Error(`Canonical project ${parentAssignment.projectKey} is missing.`);
+        if (!project) throw new Error(`Project ${parentAssignment.projectKey} is missing.`);
         project.sections = Array.isArray(project.sections) ? project.sections : [];
         let localSection = project.sections.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase());
         if (!localSection) {

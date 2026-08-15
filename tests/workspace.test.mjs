@@ -9,7 +9,7 @@ import { Manifest, Workspace } from "../model.js";
  */
 function makeWorkspaceRaw() {
     return {
-        $schema: "https://planplural.io/schema/workspace-v1.schema.json",
+        $schema: "https://zeitplural.io/schema/workspace-v1.schema.json",
         components: {
             tasks: { paths: { document: "records/todos.json" }, type: "todos" },
             time: {

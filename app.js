@@ -74,7 +74,7 @@ function parseWeekChunkEntries(chunk, raw) {
  */
 
 /**
- * Manages the canonical project/section taxonomy and persists it through the shared save pipeline.
+ * Manages the shared project/section taxonomy and persists it through the shared save pipeline.
  * Stable keys and hidden external-provider references survive display-name edits; new keys are generated only when new rows are saved.
  */
 class ProjectDialog {
@@ -1424,7 +1424,7 @@ class App {
     }
 
     /**
-     * Loads and installs the root planplural workspace configuration before component documents are requested.
+     * Loads and installs the root zeitplural workspace configuration before component documents are requested.
      * The workspace supplies all repository paths and the shared timezone, allowing the same application build to operate against local, GitHub, and future provider-backed repositories.
      * @returns {Promise<void>}
      */

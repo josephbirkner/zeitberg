@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./assets/planplural-mark.svg" width="92" height="92" alt="planplural owl mark" />
+  <img src="./assets/zeitplural-mark.svg" width="92" height="92" alt="zeitplural owl mark" />
 </p>
 
-<h1 align="center">planplural</h1>
+<h1 align="center">zeitplural</h1>
 
 <p align="center">
   <strong>Time · Tasks · Expenses → Git</strong><br />
@@ -10,12 +10,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/josephbirkner/planplural/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/josephbirkner/planplural/actions/workflows/test.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml/badge.svg?branch=main" /></a>
 </p>
 
 ---
 
-planplural manages time and TODOs today, with expenses planned next. The public application is plain HTML, CSS, and JavaScript. It has no planplural-operated application server or database.
+zeitplural manages time and TODOs today, with expenses planned next. The public application is plain HTML, CSS, and JavaScript. It has no zeitplural-operated application server or database.
 
 You choose a Git repository as the workspace. The browser reads and writes versioned documents directly through the provider API. The repository remains independently inspectable, cloneable, and portable.
 
@@ -24,7 +24,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./assets/architecture.svg" />
-    <img src="./assets/architecture-light.svg" alt="The static planplural application runs in the browser and connects directly through a Git provider API to a private workspace repository." />
+    <img src="./assets/architecture-light.svg" alt="The static zeitplural application runs in the browser and connects directly through a Git provider API to a private workspace repository." />
   </picture>
 </p>
 
@@ -35,13 +35,13 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual Git commits. |
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, and direct browser-to-provider persistence. |
-| **Next** | [Finances](https://github.com/josephbirkner/planplural/issues/8), [additional providers](https://github.com/josephbirkner/planplural/issues/18), [capability links](https://github.com/josephbirkner/planplural/issues/19), [URL routing](https://github.com/josephbirkner/planplural/issues/16), and [agent integration](https://github.com/josephbirkner/planplural/issues/9). |
+| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/8), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [capability links](https://github.com/josephbirkner/zeitplural/issues/19), [URL routing](https://github.com/josephbirkner/zeitplural/issues/16), and [agent integration](https://github.com/josephbirkner/zeitplural/issues/9). |
 
 The project is intentionally one application: time, tasks, and future components share a project inventory and workspace identity while retaining separate documents and views.
 
 ## Similar projects
 
-No direct equivalent surfaced in our review. The closest projects each overlap with one part of planplural:
+No direct equivalent surfaced in our review. The closest projects each overlap with one part of zeitplural:
 
 - [GitJournal](https://github.com/GitJournal/GitJournal) stores Markdown notes in a Git repository of the user's choice.
 - [TaskRepo](https://github.com/HenriquesLab/TaskRepo) stores tasks as Markdown files in Git repositories.
@@ -54,23 +54,23 @@ GitHub is available now. GitLab, Codeberg/Forgejo, and compatible private Git se
 
 1. Create a **private** repository for your data.
 2. Copy the contents of [`workspace-template`](./workspace-template) into it.
-3. In `planplural.json`, replace `workspace_id`, set the name and IANA timezone, then commit and push.
+3. In `zeitplural.json`, replace `workspace_id`, set the name and IANA timezone, then commit and push.
 4. Create a fine-grained GitHub personal access token for that repository:
    - `Contents: Read-only` is enough to browse.
    - `Contents: Read & write` is required to save.
-5. Visit [planplural.io](https://planplural.io), enter the repository URL, branch, and token, then open the workspace.
+5. Visit [zeitplural.io](https://zeitplural.io), enter the repository URL, branch, and token, then open the workspace.
 
 A shell-based start looks like this after cloning this application repository:
 
 ```bash
-mkdir planplural-data
-cp -R workspace-template/. planplural-data/
-cd planplural-data
+mkdir zeitplural-data
+cp -R workspace-template/. zeitplural-data/
+cd zeitplural-data
 git init
-# Edit planplural.json before the first commit.
+# Edit zeitplural.json before the first commit.
 git add .
-git commit -m "Initialize planplural workspace"
-gh repo create YOUR_ACCOUNT/planplural-data --private --source=. --push
+git commit -m "Initialize zeitplural workspace"
+gh repo create YOUR_ACCOUNT/zeitplural-data --private --source=. --push
 ```
 
 The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to `api.github.com`; the static host never receives the credential.
@@ -79,7 +79,7 @@ If a project is bound to another GitHub repository for issue synchronization, th
 
 ## How the workspace works
 
-`planplural.json` is the versioned bootstrap document. It declares:
+`zeitplural.json` is the versioned bootstrap document. It declares:
 
 - a stable workspace ID, name, and timezone;
 - shared resources such as `data/projects.json`;
@@ -89,7 +89,7 @@ If a project is bound to another GitHub repository for issue synchronization, th
 The default template has this shape:
 
 ```text
-planplural.json
+zeitplural.json
 data/
 ├── entries/                     # weekly files created as needed
 ├── index/entries-manifest.json
@@ -114,7 +114,7 @@ A workspace project can opt into GitHub issue persistence with an external refer
 }
 ```
 
-Sections may identify their issue label through a `github-label` external reference. When an issue-backed TODO is manually saved, planplural creates or updates the corresponding issue first and then commits the TODO document to the workspace repository. The issue number is retained in the TODO's generic source metadata, making retries idempotent and links durable. Local-server mode continues to write workspace files without making remote issue changes.
+Sections may identify their issue label through a `github-label` external reference. When an issue-backed TODO is manually saved, zeitplural creates or updates the corresponding issue first and then commits the TODO document to the workspace repository. The issue number is retained in the TODO's generic source metadata, making retries idempotent and links durable. Local-server mode continues to write workspace files without making remote issue changes.
 
 Legacy tasks whose title or description explicitly names Toggl or Todoist remain private and are not auto-published into the issue tracker.
 
@@ -124,15 +124,15 @@ Keep the public application and private workspace as sibling checkouts:
 
 ```bash
 cd /path/to/checkouts
-gh repo clone josephbirkner/planplural
-gh repo clone YOUR_ACCOUNT/planplural-data
-cd planplural
+gh repo clone josephbirkner/zeitplural
+gh repo clone YOUR_ACCOUNT/zeitplural-data
+cd zeitplural
 npm ci
 npm test
-python3 server.py --workspace ../planplural-data
+python3 server.py --workspace ../zeitplural-data
 ```
 
-Open <http://127.0.0.1:8000/?source=local>. When the sibling is named `planplural-data`, `--workspace` may be omitted.
+Open <http://127.0.0.1:8000/?source=local>. When the sibling is named `zeitplural-data`, `--workspace` may be omitted.
 
 Local mode serves application files from this checkout and maps workspace reads plus `POST /save` to the separate data checkout. It writes JSON without committing; review, commit, and push data changes from that repository independently.
 
@@ -141,20 +141,20 @@ Useful checks:
 ```bash
 npm test
 npm run typecheck
-npm run check:data -- --workspace ../planplural-data
+npm run check:data -- --workspace ../zeitplural-data
 ```
 
 The one-way Todoist importer reads its token from `~/.todoist` and never copies it into a repository:
 
 ```bash
-npm run import:todoist -- --workspace ../planplural-data
+npm run import:todoist -- --workspace ../zeitplural-data
 ```
 
 Use `--replace-todoist` to refresh an earlier import, `--active-only` to omit completed history, or `--completed-since YYYY-MM-DD` to choose an archive boundary.
 
 ## Hosting and provider roadmap
 
-The canonical deployment serves this repository from [planplural.io](https://planplural.io). You can also fork and host the same static files yourself, including from a private Pages deployment where your hosting plan supports one.
+The public deployment serves this repository from [zeitplural.io](https://zeitplural.io). You can also fork and host the same static files yourself, including from a private Pages deployment where your hosting plan supports one.
 
 Planned connectors retain the same architecture:
 
@@ -168,6 +168,6 @@ There is deliberately no GitHub App or OAuth broker today: GitHub's confidential
 
 The code for this project was written using large language models with extensive human supervision.
 
-The planplural owl mark adapts the **owl** glyph from [Google Material Symbols](https://github.com/google/material-design-icons), used under the [Apache License 2.0](./icons/LICENSE). The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
+The zeitplural owl mark adapts the **owl** glyph from [Google Material Symbols](https://github.com/google/material-design-icons), used under the [Apache License 2.0](./icons/LICENSE). The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
 
 No generative or diffusion-based image model was used for the logo or architecture graphic.

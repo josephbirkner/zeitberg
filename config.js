@@ -13,9 +13,9 @@
 
 export const DEFAULT_CONFIG = {
     owner: "josephbirkner",
-    repo: "planplural-data",
+    repo: "zeitplural-data",
     ref: "main",
-    workspacePath: "planplural.json",
+    workspacePath: "zeitplural.json",
     timezone: "Europe/Berlin",
     uiZoom: 1,
     uiZoomMode: "auto",
@@ -23,8 +23,24 @@ export const DEFAULT_CONFIG = {
 };
 
 /**
+ * Migrates the original hosted workspace defaults after the product and repository rename.
+ * The migration is deliberately limited to Joseph's first-party data repository so independently named workspaces may continue using any bootstrap filename they chose.
+ * @param {AppConfig} config Fully merged application configuration.
+ * @returns {AppConfig}
+ */
+export function migrateRenamedWorkspaceConfig(config) {
+    const migrated = { ...config };
+    const isFirstPartyWorkspace =
+        migrated.owner === "josephbirkner" && ["planplural-data", "zeitplural-data"].includes(migrated.repo);
+    if (!isFirstPartyWorkspace) return migrated;
+    if (migrated.repo === "planplural-data") migrated.repo = "zeitplural-data";
+    if (migrated.workspacePath === "planplural.json") migrated.workspacePath = "zeitplural.json";
+    return migrated;
+}
+
+/**
  * Parses a GitHub repository locator into the owner and repository values used by the API data source.
- * The public connection form accepts the canonical HTTPS URL promised by the onboarding copy as well as the compact `owner/repo` form for experienced users.
+ * The public connection form accepts the full HTTPS URL promised by the onboarding copy as well as the compact `owner/repo` form for experienced users.
  * Query strings, fragments, extra path segments, and non-GitHub hosts are rejected so a credential can never be redirected to an unexpected origin.
  * @param {string} value User-entered GitHub repository URL or `owner/repo` shorthand.
  * @returns {{owner: string, repo: string}}
@@ -49,7 +65,7 @@ export function parseGitHubRepository(value) {
     }
 
     const parts = path.replace(/^\/+|\/+$/g, "").split("/");
-    if (parts.length !== 2) throw new Error("Use a repository URL such as https://github.com/you/planplural-data.");
+    if (parts.length !== 2) throw new Error("Use a repository URL such as https://github.com/you/zeitplural-data.");
     const owner = parts[0];
     const repo = parts[1].replace(/\.git$/i, "");
     const segmentPattern = /^[A-Za-z0-9_.-]+$/;
@@ -60,7 +76,7 @@ export function parseGitHubRepository(value) {
 }
 
 /**
- * Formats stored owner/repository configuration as the canonical public connection URL.
+ * Formats stored owner/repository configuration as the standard public connection URL.
  * @param {string} owner GitHub account or organization name.
  * @param {string} repo GitHub repository name.
  * @returns {string}
@@ -120,7 +136,11 @@ export class ConfigService {
                 return { ...DEFAULT_CONFIG };
             }
             const parsed = JSON.parse(raw);
-            return { ...DEFAULT_CONFIG, ...parsed };
+            const config = migrateRenamedWorkspaceConfig({ ...DEFAULT_CONFIG, ...parsed });
+            if (config.repo !== parsed.repo || config.workspacePath !== parsed.workspacePath) {
+                localStorage.setItem(this.storageKeys.config, JSON.stringify(config));
+            }
+            return config;
         } catch {
             return { ...DEFAULT_CONFIG };
         }

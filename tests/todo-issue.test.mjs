@@ -41,7 +41,7 @@ test("issue serialization keeps readable task details and a stable reconciliatio
     const write = buildTodoIssueWrite(todo, "type/feature");
 
     assert.match(body, /^Persist the active component/);
-    assert.match(body, /planplural-todo-id: local:test-route/);
+    assert.match(body, /zeitplural-todo-id: local:test-route/);
     assert.deepEqual(write, {
         title: "Restore application route",
         body,
@@ -50,12 +50,12 @@ test("issue serialization keeps readable task details and a stable reconciliatio
     });
 });
 
-test("completed planplural tasks map to closed issues and retain their historical timestamp", () => {
+test("completed zeitplural tasks map to closed issues and retain their historical timestamp", () => {
     const todo = makeTodo({ completed_at: "2026-08-15T10:00:00Z" });
     const write = buildTodoIssueWrite(todo, "type/feature");
 
     assert.equal(write.state, "closed");
-    assert.match(write.body, /Originally completed in planplural on 2026-08-15T10:00:00Z/);
+    assert.match(write.body, /Originally completed in zeitplural on 2026-08-15T10:00:00Z/);
 });
 
 test("provider-specific legacy tasks remain private instead of becoming public issues", () => {
@@ -74,7 +74,7 @@ test("issue synchronization journals an assigned issue number and retries withou
                 archived: false,
                 billable: false,
                 color: "#ee6a3b",
-                external_refs: [{ provider: "github", id: "owner/planplural" }],
+                external_refs: [{ provider: "github", id: "owner/zeitplural" }],
                 key: "app",
                 name: "App",
                 sections: [
@@ -123,7 +123,7 @@ test("issue synchronization journals an assigned issue number and retries withou
     assert.deepEqual(todoStore.getTodoById(raw.id)?.source, {
         provider: "github",
         id: "23",
-        project_id: "owner/planplural",
+        project_id: "owner/zeitplural",
         section_id: "type/feature",
     });
 

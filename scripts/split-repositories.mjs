@@ -30,7 +30,7 @@ const CODE_PATHS = [
 ];
 
 const DATA_PATHS = [
-    "planplural.json",
+    "zeitplural.json",
     "data/index/entries-manifest.json",
     "data/projects.json",
     "data/todos.json",
@@ -73,7 +73,7 @@ function parseArgs(argv) {
             process.stdout.write(
                 "Usage: node scripts/split-repositories.mjs --output PATH [--source PATH_OR_URL] " +
                     "[--branch NAME] [--skip-verify]\n\n" +
-                    "Creates PATH/planplural and PATH/planplural-data from fresh clones. It never pushes or modifies the source.\n",
+                    "Creates PATH/zeitplural and PATH/zeitplural-data from fresh clones. It never pushes or modifies the source.\n",
             );
             process.exit(0);
         } else {
@@ -124,8 +124,8 @@ function normalizeSource(source) {
  * @returns {{code: string, data: string}}
  */
 function prepareDestinations(outputParent) {
-    const code = join(outputParent, "planplural");
-    const data = join(outputParent, "planplural-data");
+    const code = join(outputParent, "zeitplural");
+    const data = join(outputParent, "zeitplural-data");
     if (existsSync(code) || existsSync(data)) {
         throw new Error(`Refusing to overwrite existing split destination under ${outputParent}.`);
     }
@@ -185,7 +185,7 @@ function filterCodeRepository(repository) {
 }
 
 /**
- * Filters the private history to canonical workspace documents only.
+ * Filters the private history to the current workspace documents only.
  * The strict week-path regex omits root CSV/PNG exports, yearly aggregate JSON, raw provider dumps, schema copies, and placeholder files.
  * @param {string} repository Fresh data clone.
  * @returns {void}
@@ -230,21 +230,21 @@ function finalizeCodeLayout(repository) {
             .replaceAll("style.css", "style.css")
             .replaceAll("/?source=local", "/?source=local")
             .replaceAll('"include": ["*.js"]', '"include": ["*.js"]')
-            .replaceAll('repo: "planplural-data"', 'repo: "planplural-data"')
+            .replaceAll('repo: "zeitplural-data"', 'repo: "zeitplural-data"')
             .replaceAll(
                 "Application files live at the repository root; private workspace documents are loaded exclusively from a separate repository.",
                 "Application files live at the repository root; private workspace documents are loaded exclusively from a separate repository.",
             )
             .replaceAll(
-                "With a sibling `planplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
-                "With a sibling `planplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
+                "With a sibling `zeitplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
+                "With a sibling `zeitplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
             );
         if (after !== before) writeFileSync(path, after, "utf8");
     }
     const status = run("git", ["status", "--porcelain"], repository, true);
     if (!status.trim()) return;
     run("git", ["add", "-A"], repository);
-    run("git", ["commit", "-m", "Finalize top-level planplural layout."], repository);
+    run("git", ["commit", "-m", "Finalize top-level zeitplural layout."], repository);
 }
 
 /**
@@ -261,7 +261,7 @@ function auditFilteredHistory(codeRepository, dataRepository) {
         .filter(Boolean);
     const leakedPublicPath = publicPaths.find(
         (path) =>
-            path === "planplural.json" ||
+            path === "zeitplural.json" ||
             path.startsWith("data/") ||
             /^\d{4}\.csv$/i.test(path) ||
             /^\d{4}\/\d+\.png$/i.test(path),
@@ -274,14 +274,14 @@ function auditFilteredHistory(codeRepository, dataRepository) {
         .filter(Boolean);
     const invalidDataPath = dataPaths.find(
         (path) =>
-            path !== "planplural.json" &&
+            path !== "zeitplural.json" &&
             path !== "data/index/entries-manifest.json" &&
             path !== "data/projects.json" &&
             path !== "data/todos.json" &&
             path !== "data/week-requirements.json" &&
             !/^data\/entries\/[0-9]{4}\/[0-9]{2}\.json$/.test(path),
     );
-    if (invalidDataPath) throw new Error(`Non-canonical path survived in private history: ${invalidDataPath}`);
+    if (invalidDataPath) throw new Error(`Unexpected path survived in private history: ${invalidDataPath}`);
 
     const revisions = run("git", ["rev-list", "--all"], codeRepository, true)
         .split(/\r?\n/)

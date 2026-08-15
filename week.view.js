@@ -2305,7 +2305,7 @@ export class WeekView {
     }
 
     /**
-     * Returns a cached color pair for one canonical project/section assignment.
+     * Returns a cached color pair for one configured project/section assignment.
      * Part of the week view interaction flow.
      * @param {string | null | undefined} projectKey
      * @param {string | null | undefined} sectionKey

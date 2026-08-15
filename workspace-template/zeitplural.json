@@ -1,5 +1,5 @@
 {
-  "$schema": "https://planplural.io/schema/workspace-v1.schema.json",
+  "$schema": "https://zeitplural.io/schema/workspace-v1.schema.json",
   "components": {
     "tasks": {
       "paths": {

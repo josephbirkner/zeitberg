@@ -8,7 +8,7 @@
       name="description"
       content="A static browser application for time, tasks, and expenses. Your data lives in a Git repository you control."
     />
-    <title>planplural — time, tasks, expenses → Git</title>
+    <title>zeitplural — time, tasks, expenses → Git</title>
     <script>
       try {
         const savedConfig = JSON.parse(localStorage.getItem("tt_viewer:config:v1") || "{}");
@@ -17,7 +17,7 @@
         // Invalid or unavailable browser storage leaves the dark default intact.
       }
     </script>
-    <link rel="icon" href="./assets/planplural-mark.svg" type="image/svg+xml" />
+    <link rel="icon" href="./assets/zeitplural-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -152,15 +152,15 @@
     <main>
       <section id="loginSection" class="landing" hidden>
         <header class="landing-nav">
-          <a class="landing-brand" href="./" aria-label="planplural home">
-            <img src="./assets/planplural-mark.svg" alt="" />
-            <span>planplural</span>
+          <a class="landing-brand" href="./" aria-label="zeitplural home">
+            <img src="./assets/zeitplural-mark.svg" alt="" />
+            <span>zeitplural</span>
           </a>
           <nav aria-label="Landing page">
             <a href="#architecture">Architecture</a>
             <a href="#workspace">Setup</a>
             <a href="#similar">Similar projects</a>
-            <a href="https://github.com/josephbirkner/planplural">Source ↗</a>
+            <a href="https://github.com/josephbirkner/zeitplural">Source ↗</a>
             <button id="landingThemeToggleBtn" class="landing-theme-toggle" type="button" title="Use light theme" aria-label="Use light theme">
               <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#contrast"></use></svg>
               <span>Light</span>
@@ -177,8 +177,8 @@
                 <strong>&gt; Git</strong>
               </h1>
               <p class="landing-lede">
-                planplural is a static application. It reads and writes versioned workspace files directly in a Git repository
-                you choose; planplural.io has no data backend.
+                zeitplural is a static application. It reads and writes versioned workspace files directly in a Git repository
+                you choose; zeitplural.io has no data backend.
               </p>
               <ul class="landing-badges" aria-label="Project properties">
                 <li><span aria-hidden="true"></span>Static HTML5</li>
@@ -199,7 +199,7 @@
                     name="repository"
                     type="url"
                     inputmode="url"
-                    placeholder="https://github.com/you/planplural-data"
+                    placeholder="https://github.com/you/zeitplural-data"
                     spellcheck="false"
                     required
                   />
@@ -234,12 +234,12 @@
             <img
               class="landing-architecture-dark"
               src="./assets/architecture.svg"
-              alt="Static host loads planplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
             />
             <img
               class="landing-architecture-light"
               src="./assets/architecture-light.svg"
-              alt="Static host loads planplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
             />
             <figcaption>Credentials remain in browser storage. Requests go directly to the selected Git provider.</figcaption>
           </figure>
@@ -259,7 +259,7 @@
                   <li>Copy the <code>workspace-template</code> files into it.</li>
                   <li>Enter its URL, branch, and PAT above.</li>
                 </ol>
-                <a class="landing-text-link" href="https://github.com/josephbirkner/planplural#workspace-setup">Detailed setup ↗</a>
+                <a class="landing-text-link" href="https://github.com/josephbirkner/zeitplural#workspace-setup">Detailed setup ↗</a>
               </article>
               <article>
                 <span class="landing-card-tag">OTHER ROUTES</span>
@@ -277,7 +277,7 @@
             <div class="landing-section-heading">
               <p class="landing-eyebrow">02 · SIMILAR PROJECTS</p>
               <h2 id="similarTitle">Related work.</h2>
-              <p>No direct equivalent surfaced in this review. These projects overlap with planplural in scope or storage model.</p>
+              <p>No direct equivalent surfaced in this review. These projects overlap with zeitplural in scope or storage model.</p>
             </div>
             <div class="landing-related-list">
               <a href="https://github.com/GitJournal/GitJournal">
@@ -297,8 +297,8 @@
 
           <footer class="landing-footer">
             <div>
-              <img src="./assets/planplural-mark.svg" alt="" />
-              <strong>planplural</strong>
+              <img src="./assets/zeitplural-mark.svg" alt="" />
+              <strong>zeitplural</strong>
               <span>static application · Git workspace</span>
             </div>
             <p>The code for this project was written using large language models with extensive human supervision.</p>

@@ -124,7 +124,7 @@ function buildGraphqlChunkBatches(chunks) {
 
 /**
  * @typedef {Object} GitHubIssueWrite
- * @description User-facing issue fields synchronized from an issue-backed planplural TODO.
+ * @description User-facing issue fields synchronized from an issue-backed zeitplural TODO.
  * @property {string} [title]
  * @property {string} [body]
  * @property {string[]} [labels]
@@ -167,11 +167,11 @@ export class DataSource {
 
     /**
      * Returns the validated repository path used to bootstrap workspace discovery.
-     * The path belongs to connection configuration rather than planplural.json because it must be known before that document can be loaded.
+     * The path belongs to connection configuration rather than zeitplural.json because it must be known before that document can be loaded.
      * @returns {string}
      */
     getWorkspaceConfigPath() {
-        return normalizeRepositoryPath(this.config.workspacePath || "planplural.json", "workspacePath");
+        return normalizeRepositoryPath(this.config.workspacePath || "zeitplural.json", "workspacePath");
     }
 
     /**
@@ -476,7 +476,7 @@ export class GitHubDataSource extends DataSource {
 
     /**
      * Patches only supplied fields on a linked GitHub issue.
-     * Completion and reopening use GitHub's ordinary issue state while title, description, and task labels remain canonical in the workspace TODO.
+     * Completion and reopening use GitHub's ordinary issue state while title, description, and task labels remain controlled by the workspace TODO.
      * @param {string} repository GitHub repository identity in `owner/repository` form.
      * @param {number | string} issueNumber Positive GitHub issue number.
      * @param {GitHubIssueWrite} issue Changed issue fields.
@@ -562,13 +562,13 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
-     * Loads planplural.json from the configured repository and ref.
+     * Loads zeitplural.json from the configured repository and ref.
      * This is the only read that occurs before workspace-owned paths become available.
      * @returns {Promise<Object>}
      */
     async fetchWorkspace() {
         const raw = await this.fetchRaw(this.buildContentsUrl(this.getWorkspaceConfigPath()));
-        return parseJsonDocument(raw, "planplural.json");
+        return parseJsonDocument(raw, "zeitplural.json");
     }
 
     /**
@@ -815,7 +815,7 @@ export class GitHubDataSource extends DataSource {
         const newTreeSha = treeRes?.sha;
         if (!isGitSha(newTreeSha)) throw new Error("Failed to create tree.");
 
-        const messageText = String(message || "").trim() || "Update planplural workspace";
+        const messageText = String(message || "").trim() || "Update zeitplural workspace";
 
         const commitRes = await this.fetchJsonRequest(`${baseUrl}/git/commits`, {
             method: "POST",
@@ -857,7 +857,7 @@ export class LocalDataSource extends DataSource {
      * Creates a local source whose workspace files are served through the dedicated /workspace endpoint.
      * @param {RepoConfig} [config] Bootstrap path configuration shared with hosted modes.
      */
-    constructor(config = { owner: "", repo: "", ref: "", workspacePath: "planplural.json" }) {
+    constructor(config = { owner: "", repo: "", ref: "", workspacePath: "zeitplural.json" }) {
         super({ owner: "", repo: "", ref: "", ...config });
     }
 
@@ -887,9 +887,9 @@ export class LocalDataSource extends DataSource {
     async fetchWorkspace() {
         const resp = await fetch(new URL("/workspace-config", window.location.origin), { cache: "no-store" });
         if (!resp.ok) {
-            throw new Error(`Local planplural.json not found (${resp.status}). Start server.py with --workspace PATH.`);
+            throw new Error(`Local zeitplural.json not found (${resp.status}). Start server.py with --workspace PATH.`);
         }
-        return parseJsonDocument(await resp.text(), "planplural.json");
+        return parseJsonDocument(await resp.text(), "zeitplural.json");
     }
 
     /**

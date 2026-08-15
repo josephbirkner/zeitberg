@@ -21,7 +21,7 @@ import { loadWorkspace, resolveWorkspaceFile } from "./workspace.mjs";
  * @returns {ValidateOptions}
  */
 function parseArgs(argv) {
-    const options = { workspaceRoot: null, workspaceConfigPath: "planplural.json" };
+    const options = { workspaceRoot: null, workspaceConfigPath: "zeitplural.json" };
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
         if (arg === "--workspace") {
@@ -78,7 +78,7 @@ function repositoryPath(workspaceRoot, path) {
 }
 
 /**
- * Validates all project references used by time entries and TODOs against the shared canonical taxonomy.
+ * Validates all project references used by time entries and TODOs against the shared project taxonomy.
  * @param {ProjectList} projectList Parsed project inventory.
  * @param {Object[]} entries Normalized time-entry records.
  * @param {import("../model.js").TodoRaw[]} todos Normalized TODO records.
@@ -87,18 +87,18 @@ function repositoryPath(workspaceRoot, path) {
 function validateAssignments(projectList, entries, todos) {
     for (const entry of entries) {
         if (!projectList.resolveAssignment(entry.project_key, entry.section_key)) {
-            throw new Error(`Entry ${entry.id} has an unresolved canonical assignment.`);
+            throw new Error(`Entry ${entry.id} has an unresolved configured assignment.`);
         }
     }
     for (const todo of todos) {
         if (!projectList.resolveAssignment(todo.project_key, todo.section_key)) {
-            throw new Error(`TODO ${todo.id} has an unresolved canonical assignment.`);
+            throw new Error(`TODO ${todo.id} has an unresolved configured assignment.`);
         }
     }
 }
 
 /**
- * Performs a complete, read-only integrity pass over one canonical planplural workspace.
+ * Performs a complete, read-only integrity pass over one zeitplural workspace.
  * It checks the workspace model, data inventory, schemas, project assignments, manifest metadata, blob hashes, and entry totals; undeclared files beneath data/ are rejected so obsolete import artifacts cannot silently enter the private repository.
  * @param {ValidateOptions} options Parsed command-line options.
  * @returns {Promise<void>}
@@ -132,7 +132,7 @@ async function validateWorkspace(options) {
     }
     const manifestPaths = manifest.chunks.map((chunk) => chunk.path);
     if (JSON.stringify(actualWeekPaths) !== JSON.stringify(manifestPaths)) {
-        throw new Error("Manifest chunk paths do not exactly match canonical week files on disk.");
+        throw new Error("Manifest chunk paths do not exactly match the expected week files on disk.");
     }
 
     const entries = [];
@@ -145,7 +145,7 @@ async function validateWorkspace(options) {
             throw new Error(`${chunk.path} year/week metadata does not match its manifest chunk.`);
         }
         if (String(week.timezone || "") !== workspace.timezone) {
-            throw new Error(`${chunk.path} timezone does not match planplural.json.`);
+            throw new Error(`${chunk.path} timezone does not match zeitplural.json.`);
         }
         const weekEntries = Array.isArray(week.entries) ? week.entries : [];
         entries.push(...weekEntries);

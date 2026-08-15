@@ -117,17 +117,17 @@ function dueDateKey(due) {
 }
 
 /**
- * Builds a stable, readable GitHub issue body from a canonical planplural TODO.
+ * Builds a stable, readable GitHub issue body from a zeitplural TODO.
  * A hidden local-id marker supports future reconciliation without exposing workspace credentials or repository details.
  * @param {import("./model.js").Todo} todo Linked TODO model.
  * @returns {string}
  */
 export function buildTodoIssueBody(todo) {
     const description = String(todo?.description || "").trim();
-    const completed = todo?.completed_at ? `\n\n_Originally completed in planplural on ${todo.completed_at}._` : "";
+    const completed = todo?.completed_at ? `\n\n_Originally completed in zeitplural on ${todo.completed_at}._` : "";
     const safeId = String(todo?.id || "").replace(/--/g, "—");
     const content = description || "_No additional description._";
-    return `${content}${completed}\n\n---\n<sub>Linked to planplural task <code>${safeId}</code>.</sub>\n<!-- planplural-todo-id: ${safeId} -->`;
+    return `${content}${completed}\n\n---\n<sub>Linked to zeitplural task <code>${safeId}</code>.</sub>\n<!-- zeitplural-todo-id: ${safeId} -->`;
 }
 
 /**
@@ -408,7 +408,7 @@ export class TodoView {
     }
 
     /**
-     * Rebuilds the project filter and the editor's single searchable project/section list from the canonical taxonomy.
+     * Rebuilds the project filter and the editor's single searchable project/section list from the shared taxonomy.
      * Archived assignments stay available only when they are the value of the TODO currently being edited.
      * @param {{projectKey: string | null, sectionKey: string | null} | undefined} [selectedAssignment]
      * @returns {void}
@@ -543,7 +543,7 @@ export class TodoView {
     }
 
     /**
-     * Groups already-filtered TODOs by canonical project and section while retaining the due-date ordering inside each group.
+     * Groups already-filtered TODOs by configured project and section while retaining the due-date ordering inside each group.
      * Project and section order follows projects.json, with the intentional no-project bucket rendered last.
      * @param {import("./model.js").Todo[]} todos
      * @returns {Array<{projectKey: string | null, projectName: string, color: string, rootTodos: import("./model.js").Todo[], sections: Array<{sectionKey: string, sectionName: string, todos: import("./model.js").Todo[]}>}>}
@@ -660,7 +660,7 @@ export class TodoView {
     }
 
     /**
-     * Creates an icon-only add button carrying the canonical assignment for a TODO group header.
+     * Creates an icon-only add button carrying the configured assignment for a TODO group header.
      * @param {string | null} projectKey
      * @param {string | null} sectionKey
      * @param {string} label
@@ -1447,7 +1447,7 @@ export class TodoView {
 
     /**
      * Resolves the issue repository, type label, and optional issue number for one TODO.
-     * Existing source metadata wins for repository identity, while the current canonical section supplies the label so moving a task between App sections updates its issue type.
+     * Existing source metadata wins for repository identity, while the currently selected section supplies the label so moving a task between App sections updates its issue type.
      * @param {import("./model.js").Todo} todo TODO model to inspect.
      * @returns {{repository: string, sectionLabel: string | null, issueNumber: number | null} | null}
      */

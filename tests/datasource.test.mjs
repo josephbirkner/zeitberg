@@ -58,15 +58,15 @@ test("GitHub issue writes can target a repository other than the workspace", asy
     });
 
     const source = new GitHubDataSource({ owner: "workspace-owner", repo: "workspace-data", ref: "main" }, "secret");
-    const created = await source.createGitHubIssue("app-owner/planplural", {
+    const created = await source.createGitHubIssue("app-owner/zeitplural", {
         title: "Issue-backed TODO",
         body: "Details",
         labels: ["type/feature"],
         state: "open",
     });
-    await source.updateGitHubIssue("app-owner/planplural", created.number, { state: "closed" });
+    await source.updateGitHubIssue("app-owner/zeitplural", created.number, { state: "closed" });
 
-    assert.equal(requests[0].url, "https://api.github.com/repos/app-owner/planplural/issues");
+    assert.equal(requests[0].url, "https://api.github.com/repos/app-owner/zeitplural/issues");
     assert.equal(requests[0].options?.method, "POST");
     assert.deepEqual(JSON.parse(String(requests[0].options?.body)), {
         title: "Issue-backed TODO",
@@ -74,7 +74,7 @@ test("GitHub issue writes can target a repository other than the workspace", asy
         labels: ["type/feature"],
     });
     assert.equal(requests[0].options?.headers?.Authorization, "Bearer secret");
-    assert.equal(requests[1].url, "https://api.github.com/repos/app-owner/planplural/issues/17");
+    assert.equal(requests[1].url, "https://api.github.com/repos/app-owner/zeitplural/issues/17");
     assert.equal(requests[1].options?.method, "PATCH");
     assert.deepEqual(JSON.parse(String(requests[1].options?.body)), { state: "closed" });
 });

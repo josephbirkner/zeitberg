@@ -18,7 +18,7 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
 
 /**
  * @typedef {Object} ExternalReferenceRaw
- * @description A stable identifier from an upstream service used only when importing data into the canonical local taxonomy.
+ * @description A stable identifier from an upstream service used only when importing data into the shared workspace taxonomy.
  * @property {string} provider
  * @property {string} id
  */
@@ -36,7 +36,7 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
 
 /**
  * @typedef {Object} ProjectRaw
- * @description One canonical project together with its optional sections and upstream identity bindings.
+ * @description One shared project together with its optional sections and upstream identity bindings.
  * @property {string} key
  * @property {string} name
  * @property {string} color
@@ -176,14 +176,14 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
 
 /**
  * @typedef {Object} WorkspaceComponentRaw
- * @description One enabled planplural component and the repository-relative documents it owns.
+ * @description One enabled zeitplural component and the repository-relative documents it owns.
  * @property {string} type
  * @property {Object.<string, string>} paths
  */
 
 /**
  * @typedef {Object} WorkspaceRaw
- * @description The root planplural.json document that describes one independently shareable data repository.
+ * @description The root zeitplural.json document that describes one independently shareable data repository.
  * @property {string} [$schema]
  * @property {number} schema_version
  * @property {string} workspace_id
@@ -217,7 +217,7 @@ export function normalizeRepositoryPath(value, label) {
 }
 
 /**
- * Represents the versioned root configuration of one planplural data workspace.
+ * Represents the versioned root configuration of one zeitplural data workspace.
  * The model keeps repository discovery independent from any hosting provider and centralizes every mutable document path used by the application.
  * Component keys are stable instance identifiers, while component types let future versions add finances or multiple sharing ledgers without changing the bootstrap format.
  */
@@ -243,64 +243,64 @@ export class Workspace {
     }
 
     /**
-     * Parses and validates a planplural.json payload.
+     * Parses and validates a zeitplural.json payload.
      * Besides schema-version checks, this validates timezone support, stable identifiers, component uniqueness, and every repository-relative path before network or filesystem access occurs.
      * @param {unknown} raw Untrusted JSON payload returned by a data source.
      * @returns {Workspace}
      */
     static fromRaw(raw) {
-        if (!raw || typeof raw !== "object") throw new Error("planplural.json must be a JSON object.");
+        if (!raw || typeof raw !== "object") throw new Error("zeitplural.json must be a JSON object.");
         const rawObj = /** @type {WorkspaceRaw} */ (raw);
-        if (Number(rawObj.schema_version) !== 1) throw new Error("planplural.json must use schema_version 1.");
+        if (Number(rawObj.schema_version) !== 1) throw new Error("zeitplural.json must use schema_version 1.");
 
         const workspaceId = String(rawObj.workspace_id || "").trim();
         if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(workspaceId)) {
-            throw new Error("planplural.json contains an invalid workspace_id.");
+            throw new Error("zeitplural.json contains an invalid workspace_id.");
         }
         const name = String(rawObj.name || "").trim();
-        if (!name) throw new Error("planplural.json must define a workspace name.");
+        if (!name) throw new Error("zeitplural.json must define a workspace name.");
         const timezone = String(rawObj.timezone || "").trim();
         try {
             new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
         } catch {
-            throw new Error(`planplural.json contains an invalid timezone: ${timezone || "(empty)"}.`);
+            throw new Error(`zeitplural.json contains an invalid timezone: ${timezone || "(empty)"}.`);
         }
 
         if (!rawObj.resources || typeof rawObj.resources !== "object" || Array.isArray(rawObj.resources)) {
-            throw new Error("planplural.json resources must be an object.");
+            throw new Error("zeitplural.json resources must be an object.");
         }
         /** @type {Object.<string, string>} */
         const resources = {};
         for (const [key, value] of Object.entries(rawObj.resources)) {
-            if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`planplural.json contains an invalid resource key: ${key}.`);
+            if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`zeitplural.json contains an invalid resource key: ${key}.`);
             resources[key] = normalizeRepositoryPath(value, `resources.${key}`);
         }
 
         if (!rawObj.components || typeof rawObj.components !== "object" || Array.isArray(rawObj.components)) {
-            throw new Error("planplural.json components must be an object.");
+            throw new Error("zeitplural.json components must be an object.");
         }
         /** @type {Object.<string, WorkspaceComponentRaw>} */
         const components = {};
         for (const [componentId, candidate] of Object.entries(rawObj.components)) {
             if (!/^[a-z][a-z0-9_-]*$/.test(componentId)) {
-                throw new Error(`planplural.json contains an invalid component id: ${componentId}.`);
+                throw new Error(`zeitplural.json contains an invalid component id: ${componentId}.`);
             }
             if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-                throw new Error(`planplural.json component ${componentId} must be an object.`);
+                throw new Error(`zeitplural.json component ${componentId} must be an object.`);
             }
             const rawComponent = /** @type {WorkspaceComponentRaw} */ (candidate);
             const type = String(rawComponent.type || "").trim();
             if (!/^[a-z][a-z0-9_]*$/.test(type)) {
-                throw new Error(`planplural.json component ${componentId} has an invalid type.`);
+                throw new Error(`zeitplural.json component ${componentId} has an invalid type.`);
             }
             if (!rawComponent.paths || typeof rawComponent.paths !== "object" || Array.isArray(rawComponent.paths)) {
-                throw new Error(`planplural.json component ${componentId} paths must be an object.`);
+                throw new Error(`zeitplural.json component ${componentId} paths must be an object.`);
             }
             /** @type {Object.<string, string>} */
             const paths = {};
             for (const [pathKey, value] of Object.entries(rawComponent.paths)) {
                 if (!/^[a-z][a-z0-9_]*$/.test(pathKey)) {
-                    throw new Error(`planplural.json component ${componentId} contains an invalid path key: ${pathKey}.`);
+                    throw new Error(`zeitplural.json component ${componentId} contains an invalid path key: ${pathKey}.`);
                 }
                 paths[pathKey] = normalizeRepositoryPath(value, `components.${componentId}.paths.${pathKey}`);
             }
@@ -708,7 +708,7 @@ export class Section {
 }
 
 /**
- * Represents one canonical project and all of its configured sections.
+ * Represents one shared project and all of its configured sections.
  * Project-level color and billable values provide defaults shared by time entries and TODOs.
  */
 export class Project {
@@ -730,7 +730,7 @@ export class Project {
 
     /**
      * Returns the first external binding for a provider, or null when the project has no such integration.
-     * This is used both by importers and optional live integrations without coupling the canonical project model to a particular service.
+     * This is used both by importers and optional live integrations without coupling the shared project model to a particular service.
      * @param {string} provider External system identifier such as `github` or `todoist`.
      * @returns {ExternalReferenceRaw | null}
      */
@@ -799,7 +799,7 @@ export class Project {
 
 /**
  * @typedef {Object} AssignmentOption
- * @description One searchable project/section choice exposed by the canonical taxonomy.
+ * @description One searchable project/section choice exposed by the shared taxonomy.
  * Root projects use a null section key, while section choices use the full “Project / Section” display label.
  * @property {string} projectKey
  * @property {string | null} sectionKey
@@ -813,7 +813,7 @@ export class Project {
  */
 export class ProjectList {
     /**
-     * Creates lookup indexes for canonical keys and external provider identities.
+     * Creates lookup indexes for stable keys and external provider identities.
      * Duplicate provider references are rejected because an import must never resolve one source id to two local assignments.
      * @param {Project[]} projects
      * @param {string} generatedAt
@@ -1045,7 +1045,7 @@ export class ProjectList {
     }
 
     /**
-     * Resolves an upstream service identifier to one canonical assignment.
+     * Resolves an upstream service identifier to one configured assignment.
      * This is the only supported bridge for Todoist/Toggl imports after migration.
      * @param {string} provider
      * @param {string | number | null | undefined} id
@@ -1060,7 +1060,7 @@ export class ProjectList {
     }
 
     /**
-     * Returns a shallow copy of canonical projects for rendering and management.
+     * Returns a shallow copy of configured projects for rendering and management.
      * @returns {Project[]}
      */
     list() {
@@ -1656,7 +1656,7 @@ export class TodoList {
         for (const item of rawTodos) {
             if (!item || typeof item !== "object") continue;
             if (!("project_key" in item) || !("section_key" in item)) {
-                throw new Error("todos.json contains a TODO without canonical project_key/section_key fields.");
+                throw new Error("todos.json contains a TODO without valid project_key/section_key fields.");
             }
             const todo = new Todo(item);
             if (!todo.id || !todo.content) continue;

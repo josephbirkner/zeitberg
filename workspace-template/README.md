@@ -1,11 +1,11 @@
-# planplural workspace
+# zeitplural workspace
 
-This repository stores private planplural data. Keep it private unless every enabled component is intentionally public.
+This repository stores private zeitplural data. Keep it private unless every enabled component is intentionally public.
 
-Before connecting it to planplural, edit `planplural.json`:
+Before connecting it to zeitplural, edit `zeitplural.json`:
 
 - replace `workspace_id` with a stable unique value, such as a UUID;
 - choose the workspace `name` and IANA `timezone`;
 - leave the declared paths unchanged unless you move their files at the same time.
 
-The public application and workspace format are documented at <https://planplural.io>.
+The public application and workspace format are documented at <https://zeitplural.io>.

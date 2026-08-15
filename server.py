@@ -49,14 +49,14 @@ def _is_allowed_workspace_path(path_text: str, workspace_config_path: str) -> bo
 
 
 def _default_workspace_root() -> Path:
-    if (APP_ROOT / "planplural.json").is_file():
+    if (APP_ROOT / "zeitplural.json").is_file():
         return APP_ROOT
-    return APP_ROOT.parent / "planplural-data"
+    return APP_ROOT.parent / "zeitplural-data"
 
 
 class Handler(SimpleHTTPRequestHandler):
     workspace_root = APP_ROOT
-    workspace_config_path = "planplural.json"
+    workspace_config_path = "zeitplural.json"
     app_entry_path = "/docs/"
 
     def do_GET(self) -> None:  # noqa: N802 (stdlib)
@@ -149,19 +149,19 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Local planplural development server with a separately selectable data workspace.")
+    parser = argparse.ArgumentParser(description="Local zeitplural development server with a separately selectable data workspace.")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host. Default: 127.0.0.1")
     parser.add_argument("--port", type=int, default=8000, help="Bind port. Default: 8000")
     parser.add_argument(
         "--workspace",
         type=Path,
         default=_default_workspace_root(),
-        help="Workspace repository root. Defaults to this mixed checkout or the sibling ../planplural-data repository.",
+        help="Workspace repository root. Defaults to this mixed checkout or the sibling ../zeitplural-data repository.",
     )
     parser.add_argument(
         "--workspace-config",
-        default="planplural.json",
-        help="Workspace config path relative to --workspace. Default: planplural.json",
+        default="zeitplural.json",
+        help="Workspace config path relative to --workspace. Default: zeitplural.json",
     )
     args = parser.parse_args(argv)
 
@@ -178,7 +178,7 @@ def main(argv: list[str]) -> int:
 
     handler = lambda *a, **k: ConfiguredHandler(*a, directory=str(APP_ROOT), **k)  # noqa: E731 (simple factory)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
-    print(f"Serving planplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}?source=local")
+    print(f"Serving zeitplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}?source=local")
     print(f"Workspace: {workspace_root} ({workspace_config_path})")
     try:
         httpd.serve_forever()
