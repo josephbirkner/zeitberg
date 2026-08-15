@@ -164,6 +164,10 @@ Planned connectors retain the same architecture:
 
 There is deliberately no GitHub App or OAuth broker today: GitHub's confidential OAuth and GitHub App flows require a server-held secret or private key, while the current fine-grained PAT flow remains fully static.
 
+## License
+
+Zeitplural is available under the [Apache License 2.0](./LICENSE).
+
 ## Credits and disclosure
 
 The code for this project was written using large language models with extensive human supervision.
