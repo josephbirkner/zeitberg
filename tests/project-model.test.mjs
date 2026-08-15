@@ -113,6 +113,14 @@ test("provider ids resolve independently from editable display names", () => {
         sectionKey: "coding",
     });
     assert.equal(projects.findProjectByName("KE")?.key, "ke");
+    assert.deepEqual(projects.getProjectByKey("ke")?.getExternalReference("TODOIST"), {
+        provider: "todoist",
+        id: "work-id",
+    });
+    assert.deepEqual(projects.getProjectByKey("ke")?.getSectionByKey("coding")?.getExternalReference("toggl"), {
+        provider: "toggl",
+        id: "coding-id",
+    });
 });
 
 test("TODO store rejects section keys outside the canonical taxonomy", () => {

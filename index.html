@@ -3,7 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>planplural</title>
+    <meta name="theme-color" content="#f7f7f4" />
+    <meta
+      name="description"
+      content="A static, keyboard-first personal workspace. Your data lives in a private Git repository you control."
+    />
+    <title>planplural — your plans, your repository</title>
+    <link rel="icon" href="./assets/planplural-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -133,43 +139,177 @@
     </header>
 
     <main>
-      <section id="loginSection" class="card" hidden>
-        <h2>Login</h2>
-        <p class="muted">
-          Enter a GitHub token for your private planplural workspace repository. Read-only is enough for browsing; to save edits you
-          need Contents: Read &amp; write. The token is stored in your browser (local storage if “Remember” is enabled).
-        </p>
+      <section id="loginSection" class="landing" hidden>
+        <header class="landing-nav">
+          <a class="landing-brand" href="./" aria-label="planplural home">
+            <img src="./assets/planplural-mark.svg" alt="" />
+            <span>planplural</span>
+          </a>
+          <nav aria-label="Landing page">
+            <a href="#principles">Principles</a>
+            <a href="#architecture">Architecture</a>
+            <a href="#connect">Open workspace</a>
+            <a href="https://github.com/josephbirkner/planplural">GitHub ↗</a>
+          </nav>
+        </header>
 
-        <form id="loginForm" class="grid" autocomplete="off">
-          <label>
-            <span>Owner</span>
-            <input id="ownerInput" name="owner" type="text" spellcheck="false" required />
-          </label>
-          <label>
-            <span>Repo</span>
-            <input id="repoInput" name="repo" type="text" spellcheck="false" required />
-          </label>
-          <label>
-            <span>Ref (branch)</span>
-            <input id="refInput" name="ref" type="text" spellcheck="false" required />
-          </label>
-          <label class="col-span-2">
-            <span>Personal Access Token</span>
-            <input id="tokenInput" name="token" type="password" spellcheck="false" required />
-          </label>
+        <div class="landing-shell">
+          <section class="landing-hero" aria-labelledby="landingTitle">
+            <div class="landing-hero-copy">
+              <p class="landing-eyebrow">PERSONAL OPERATIONS · STATIC BY DESIGN</p>
+              <h1 id="landingTitle">Many plans.<br />One place you own.</h1>
+              <p class="landing-lede">
+                planplural brings time, tasks, and the next parts of everyday life into one calm workspace. The application is
+                static. Your private data and its complete history live in a Git repository of your choice.
+              </p>
+              <div class="landing-actions">
+                <a class="landing-button landing-button-primary" href="#connect">Open your workspace</a>
+                <a class="landing-button" href="https://github.com/josephbirkner/planplural">View the source ↗</a>
+              </div>
+              <ul class="landing-badges" aria-label="Project properties">
+                <li><span aria-hidden="true"></span>Static HTML5</li>
+                <li><span aria-hidden="true"></span>No planplural backend</li>
+                <li><span aria-hidden="true"></span>Git-native data</li>
+              </ul>
+            </div>
+            <aside class="landing-manifest" aria-label="Core principle">
+              <span class="landing-card-tag">00 · MANIFESTO</span>
+              <p>Your tools may be hosted.<br />Your life should not be.</p>
+              <dl>
+                <div><dt>Application</dt><dd>public + static</dd></div>
+                <div><dt>Workspace</dt><dd>private + portable</dd></div>
+                <div><dt>History</dt><dd>ordinary Git</dd></div>
+              </dl>
+            </aside>
+          </section>
 
-          <label class="checkbox col-span-2">
-            <input id="rememberInput" name="remember" type="checkbox" />
-            <span>Remember token (localStorage)</span>
-          </label>
+          <section id="principles" class="landing-section" aria-labelledby="principlesTitle">
+            <div class="landing-section-heading">
+              <p class="landing-eyebrow">01 · PRINCIPLES</p>
+              <h2 id="principlesTitle">A personal system with an exit door.</h2>
+            </div>
+            <div class="landing-principles">
+              <article>
+                <span>OWN</span>
+                <h3>Your repository</h3>
+                <p>Choose where the workspace lives. Clone it, inspect it, back it up, or move it without asking planplural.</p>
+              </article>
+              <article>
+                <span>SEE</span>
+                <h3>Readable documents</h3>
+                <p>Versioned JSON and ordinary commits make your data understandable outside the interface that created it.</p>
+              </article>
+              <article>
+                <span>RUN</span>
+                <h3>A browser, not a service</h3>
+                <p>The public site delivers application files. Authenticated reads and writes go directly to your Git provider.</p>
+              </article>
+            </div>
+          </section>
 
-          <div class="col-span-2 row">
-            <button class="btn" type="submit">Connect</button>
-            <button id="clearSavedBtn" class="btn btn-secondary" type="button">Clear saved</button>
-          </div>
+          <figure id="architecture" class="landing-architecture">
+            <img
+              src="./assets/architecture.svg"
+              alt="Static host loads planplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+            />
+            <figcaption>Your credential remains in browser storage; planplural.io has no application server to receive it.</figcaption>
+          </figure>
 
-          <pre id="loginError" class="error" hidden></pre>
-        </form>
+          <section id="connect" class="landing-connect" aria-labelledby="connectTitle">
+            <div class="landing-connect-copy">
+              <p class="landing-eyebrow">02 · OPEN A WORKSPACE</p>
+              <h2 id="connectTitle">Bring a private GitHub repository.</h2>
+              <p>
+                Create a private repository, initialize it with the planplural workspace files, and use a fine-grained personal
+                access token. Read-only access is enough to browse; saving needs <strong>Contents: Read &amp; write</strong>.
+              </p>
+              <ol>
+                <li><span>1</span>Create or choose a private repository.</li>
+                <li><span>2</span>Add <code>planplural.json</code> and the component documents.</li>
+                <li><span>3</span>Connect here; the repository remains the source of truth.</li>
+              </ol>
+              <a class="landing-text-link" href="https://github.com/josephbirkner/planplural#workspace-setup">Workspace format and setup ↗</a>
+            </div>
+
+            <form id="loginForm" class="landing-login" autocomplete="off">
+              <div class="landing-login-head">
+                <span class="landing-card-tag">GITHUB · AVAILABLE NOW</span>
+                <span class="landing-live"><i aria-hidden="true"></i>direct connection</span>
+              </div>
+              <label>
+                <span>Workspace repository</span>
+                <input
+                  id="repositoryInput"
+                  name="repository"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://github.com/you/planplural-data"
+                  spellcheck="false"
+                  required
+                />
+              </label>
+              <label>
+                <span>Branch / ref</span>
+                <input id="refInput" name="ref" type="text" spellcheck="false" required />
+              </label>
+              <label>
+                <span>Fine-grained personal access token</span>
+                <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" required />
+              </label>
+
+              <label class="landing-remember">
+                <input id="rememberInput" name="remember" type="checkbox" />
+                <span>Remember this token on this device</span>
+              </label>
+
+              <div class="landing-login-actions">
+                <button class="landing-button landing-button-primary" type="submit">Open workspace</button>
+                <button id="clearSavedBtn" class="landing-button" type="button">Clear saved connection</button>
+              </div>
+              <p class="landing-security-note">
+                Session storage is used by default. “Remember” opts into local storage. The token is sent only to GitHub’s API.
+              </p>
+              <pre id="loginError" class="error" hidden></pre>
+            </form>
+          </section>
+
+          <section class="landing-options" aria-labelledby="optionsTitle">
+            <div class="landing-section-heading">
+              <p class="landing-eyebrow">03 · OTHER ROUTES</p>
+              <h2 id="optionsTitle">One application, several ways home.</h2>
+            </div>
+            <div class="landing-option-grid">
+              <article>
+                <span class="landing-card-tag">COMING SOON</span>
+                <h3>Codeberg + GitLab</h3>
+                <p>Provider-assisted onboarding, private repository creation, and the same portable workspace model.</p>
+              </article>
+              <article>
+                <span class="landing-card-tag">PLANNED</span>
+                <h3>Your private Git server</h3>
+                <p>Connect a compatible Forgejo, GitLab, or other private host without routing data through planplural.</p>
+              </article>
+              <article>
+                <span class="landing-card-tag">SELF-HOST</span>
+                <h3>Fork the application</h3>
+                <p>Serve the static repository yourself—or from a private Pages deployment where your hosting plan supports it.</p>
+              </article>
+            </div>
+          </section>
+
+          <footer class="landing-footer">
+            <div>
+              <img src="./assets/planplural-mark.svg" alt="" />
+              <strong>planplural</strong>
+              <span>plural plans, singular ownership</span>
+            </div>
+            <p>The code for this project was written using large language models with extensive human supervision.</p>
+            <p>
+              Owl mark adapted from Google Material Symbols’ “owl”, licensed under Apache 2.0.
+              <a href="https://github.com/google/material-design-icons">Source ↗</a>
+            </p>
+          </footer>
+        </div>
       </section>
 
       <section id="loadingSection" class="loading-screen" aria-live="polite" aria-busy="true" hidden>

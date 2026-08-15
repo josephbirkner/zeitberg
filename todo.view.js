@@ -1,5 +1,6 @@
 import { cloneJson, createMaterialIcon, setVisible, utcNowIso } from "./utils.js";
 import { Recurrence } from "./model.js";
+import { buildGitHubIssueUrl } from "./datasource.js";
 
 const TODO_DOCUMENT_NAME = "todos";
 
@@ -113,6 +114,52 @@ function splitDue(due) {
 function dueDateKey(due) {
     const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(due?.date || ""));
     return match ? match[1] : "";
+}
+
+/**
+ * Builds a stable, readable GitHub issue body from a canonical planplural TODO.
+ * A hidden local-id marker supports future reconciliation without exposing workspace credentials or repository details.
+ * @param {import("./model.js").Todo} todo Linked TODO model.
+ * @returns {string}
+ */
+export function buildTodoIssueBody(todo) {
+    const description = String(todo?.description || "").trim();
+    const completed = todo?.completed_at ? `\n\n_Originally completed in planplural on ${todo.completed_at}._` : "";
+    const safeId = String(todo?.id || "").replace(/--/g, "—");
+    const content = description || "_No additional description._";
+    return `${content}${completed}\n\n---\n<sub>Linked to planplural task <code>${safeId}</code>.</sub>\n<!-- planplural-todo-id: ${safeId} -->`;
+}
+
+/**
+ * Converts one linked TODO into the GitHub issue fields for which the workspace is authoritative.
+ * The section's integration label and task labels are de-duplicated while completion maps to GitHub's ordinary open/closed state.
+ * @param {import("./model.js").Todo} todo Linked TODO model.
+ * @param {string | null} sectionLabel Optional issue type label supplied by the assigned project section.
+ * @returns {{title: string, body: string, labels: string[], state: "open" | "closed"}}
+ */
+export function buildTodoIssueWrite(todo, sectionLabel) {
+    const labels = new Set();
+    if (sectionLabel) labels.add(String(sectionLabel).trim());
+    for (const label of todo?.labels || []) {
+        const normalized = String(label || "").trim();
+        if (normalized) labels.add(normalized);
+    }
+    return {
+        title: String(todo?.content || "").trim(),
+        body: buildTodoIssueBody(todo),
+        labels: [...labels],
+        state: todo?.isCompleted() || todo?.archived ? "closed" : "open",
+    };
+}
+
+/**
+ * Reports whether a task is suitable for the public issue integration.
+ * Legacy provider-specific implementation notes remain available in the private workspace but are deliberately excluded from the public tracker.
+ * @param {import("./model.js").Todo} todo TODO model to inspect.
+ * @returns {boolean}
+ */
+export function isTodoIssuePublishable(todo) {
+    return !/\b(?:toggl|todoist)\b/i.test(`${String(todo?.content || "")}\n${String(todo?.description || "")}`);
 }
 
 /**
@@ -692,9 +739,37 @@ export class TodoView {
             labels.textContent = todo.labels.map((label) => `#${label}`).join(" ");
             meta.append(labels);
         }
+        const issueUrl = this.getTodoIssueUrl(todo);
+        if (issueUrl) {
+            const issueLink = document.createElement("a");
+            issueLink.className = "todo-issue-link";
+            issueLink.href = issueUrl;
+            issueLink.target = "_blank";
+            issueLink.rel = "noreferrer";
+            issueLink.title = `Open GitHub issue #${todo.source?.id}`;
+            issueLink.setAttribute("aria-label", `Open linked GitHub issue #${todo.source?.id}`);
+            issueLink.append(createMaterialIcon("open_in_new", "app-icon todo-issue-icon"));
+            issueLink.append(document.createTextNode(`#${todo.source?.id}`));
+            meta.append(issueLink);
+        }
         if (meta.childElementCount) body.append(meta);
         row.append(check, body);
         return row;
+    }
+
+    /**
+     * Returns a safe public URL for a TODO whose source metadata points at a GitHub issue.
+     * Invalid or legacy provenance is treated as non-linkable during rendering and is reported explicitly if synchronization is attempted.
+     * @param {import("./model.js").Todo} todo TODO model that may carry issue source metadata.
+     * @returns {string | null}
+     */
+    getTodoIssueUrl(todo) {
+        if (String(todo?.source?.provider || "").toLowerCase() !== "github" || !todo.source?.project_id) return null;
+        try {
+            return buildGitHubIssueUrl(todo.source.project_id, todo.source.id);
+        } catch {
+            return null;
+        }
     }
 
     /**
@@ -796,7 +871,7 @@ export class TodoView {
      */
     handleListDoubleClick(event) {
         const target = event.target;
-        if (!(target instanceof Element) || target.closest("[data-todo-action='toggle']")) return;
+        if (!(target instanceof Element) || target.closest("[data-todo-action='toggle'], .todo-issue-link")) return;
         const row = target.closest(".todo-row");
         if (!(row instanceof HTMLElement)) return;
         const todo = this.store.getTodoById(row.dataset.todoId || "");
@@ -951,9 +1026,22 @@ export class TodoView {
         if (this.busy || this.saveInFlight) return;
         this.editingTodoId = todo.id;
         this.dialogTitleEl.textContent = "Edit TODO";
-        const source = todo.source?.provider ? ` • imported from ${todo.source.provider}` : "";
         const hierarchy = todo.parent_id ? " • subtask" : "";
-        this.dialogMetaEl.textContent = `${todo.isCompleted() ? "Completed" : "Open"}${hierarchy}${source}`;
+        const source = todo.source?.provider && todo.source.provider !== "github" ? ` • imported from ${todo.source.provider}` : "";
+        this.dialogMetaEl.replaceChildren(
+            document.createTextNode(`${todo.isCompleted() ? "Completed" : "Open"}${hierarchy}${source}`),
+        );
+        const issueUrl = this.getTodoIssueUrl(todo);
+        if (issueUrl) {
+            const issueLink = document.createElement("a");
+            issueLink.className = "todo-dialog-issue-link";
+            issueLink.href = issueUrl;
+            issueLink.target = "_blank";
+            issueLink.rel = "noreferrer";
+            issueLink.append(createMaterialIcon("open_in_new", "app-icon todo-issue-icon"));
+            issueLink.append(document.createTextNode(`GitHub issue #${todo.source?.id}`));
+            this.dialogMetaEl.append(document.createTextNode(" • "), issueLink);
+        }
         this.contentInput.value = todo.content;
         this.descriptionInput.value = todo.description;
         this.populateProjectControls({ projectKey: todo.projectKey, sectionKey: todo.sectionKey });
@@ -1358,6 +1446,106 @@ export class TodoView {
     }
 
     /**
+     * Resolves the issue repository, type label, and optional issue number for one TODO.
+     * Existing source metadata wins for repository identity, while the current canonical section supplies the label so moving a task between App sections updates its issue type.
+     * @param {import("./model.js").Todo} todo TODO model to inspect.
+     * @returns {{repository: string, sectionLabel: string | null, issueNumber: number | null} | null}
+     */
+    resolveGitHubIssueBinding(todo) {
+        if (!isTodoIssuePublishable(todo)) return null;
+        const assignment = this.projectStore.resolveAssignment(todo.projectKey, todo.sectionKey);
+        const projectRepository = assignment?.project?.getExternalReference("github")?.id || null;
+        const sectionLabel = assignment?.section?.getExternalReference("github-label")?.id || null;
+        const source = String(todo.source?.provider || "").toLowerCase() === "github" ? todo.source : null;
+        const repository = source?.project_id || projectRepository;
+        if (!repository) return null;
+
+        let issueNumber = null;
+        if (source) {
+            const parsed = Number(source.id);
+            if (!Number.isInteger(parsed) || parsed <= 0) {
+                throw new Error(`TODO "${todo.content}" has an invalid linked GitHub issue number.`);
+            }
+            issueNumber = parsed;
+        }
+        return {
+            repository,
+            sectionLabel: sectionLabel || source?.section_id || null,
+            issueNumber,
+        };
+    }
+
+    /**
+     * Synchronizes only issue-backed TODOs changed since the last successful workspace save.
+     * Remote writes happen before the workspace commit; newly assigned issue numbers are journaled immediately, making a retry update the created issue instead of creating a duplicate.
+     * Deleted linked TODOs close their issue, while local-server mode deliberately skips remote integration and follows the same remaining save path.
+     * @returns {Promise<void>}
+     */
+    async synchronizeGitHubIssues() {
+        if (!this.dataSource.supportsGitHubIssueSync()) return;
+        const baselineById = todosById(this.cleanSnapshot);
+        const currentIds = this.store.snapshotRaw().map((todo) => todo.id);
+        const currentIdSet = new Set(currentIds);
+
+        for (const id of currentIds) {
+            let todo = this.store.getTodoById(id);
+            if (!todo) continue;
+            const binding = this.resolveGitHubIssueBinding(todo);
+            if (!binding) continue;
+            const baseline = baselineById.get(id);
+            if (baseline && rawTodosEqual(baseline, todo.toRaw())) continue;
+
+            try {
+                const issueWrite = buildTodoIssueWrite(todo, binding.sectionLabel);
+                let issueNumber = binding.issueNumber;
+                if (issueNumber === null) {
+                    const created = await this.dataSource.createGitHubIssue(binding.repository, issueWrite);
+                    issueNumber = Number(created?.number);
+                    if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+                        throw new Error("GitHub did not return the created issue number.");
+                    }
+                    this.store.setTodoSource(id, {
+                        provider: "github",
+                        id: String(issueNumber),
+                        project_id: binding.repository,
+                        section_id: binding.sectionLabel,
+                    });
+                    this.queueDraftWrite();
+                    if (issueWrite.state === "closed") {
+                        await this.dataSource.updateGitHubIssue(binding.repository, issueNumber, { state: "closed" });
+                    }
+                } else {
+                    await this.dataSource.updateGitHubIssue(binding.repository, issueNumber, issueWrite);
+                    const expectedSource = {
+                        provider: "github",
+                        id: String(issueNumber),
+                        project_id: binding.repository,
+                        section_id: binding.sectionLabel,
+                    };
+                    if (JSON.stringify(todo.source) !== JSON.stringify(expectedSource)) {
+                        this.store.setTodoSource(id, expectedSource);
+                        this.queueDraftWrite();
+                    }
+                }
+            } catch (error) {
+                const detail = error instanceof Error ? error.message : String(error);
+                throw new Error(`GitHub issue sync failed for "${todo.content}": ${detail}`);
+            }
+        }
+
+        for (const baseline of this.cleanSnapshot) {
+            if (currentIdSet.has(baseline.id) || String(baseline.source?.provider || "").toLowerCase() !== "github") continue;
+            if (!baseline.source?.project_id) continue;
+            try {
+                await this.dataSource.updateGitHubIssue(baseline.source.project_id, baseline.source.id, { state: "closed" });
+            } catch (error) {
+                const detail = error instanceof Error ? error.message : String(error);
+                throw new Error(`GitHub issue sync failed for deleted TODO "${baseline.content}": ${detail}`);
+            }
+        }
+    }
+
+    /**
      * Persists the workspace-configured TODO document through the same hosted/local saveFiles pipeline used by other components.
      * @returns {Promise<void>}
      */
@@ -1372,6 +1560,7 @@ export class TodoView {
         this.updateSaveState();
         try {
             await this.flushDraftWrites();
+            await this.synchronizeGitHubIssues();
             const content = this.store.serialize(utcNowIso());
             await this.dataSource.saveFiles([{ path: this.dataSource.getTodosPath(), content }], "Update TODOs");
             this.cleanSnapshot = cloneJson(this.store.snapshotRaw());

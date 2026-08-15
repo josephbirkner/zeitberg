@@ -42,6 +42,34 @@ function isGitSha(value) {
 }
 
 /**
+ * Validates the provider-neutral `owner/repository` identifier stored in project and TODO external references.
+ * Restricting it to exactly two safe path segments prevents integration metadata from altering the GitHub API or web origin.
+ * @param {string} repository GitHub repository identity in `owner/repository` form.
+ * @returns {{owner: string, repo: string}}
+ */
+export function parseGitHubRepositoryId(repository) {
+    const parts = String(repository || "").trim().split("/");
+    const segmentPattern = /^[A-Za-z0-9_.-]+$/;
+    if (parts.length !== 2 || !segmentPattern.test(parts[0]) || !segmentPattern.test(parts[1])) {
+        throw new Error(`Invalid GitHub repository binding: ${String(repository || "(empty)")}`);
+    }
+    return { owner: parts[0], repo: parts[1] };
+}
+
+/**
+ * Builds the public browser URL for a linked GitHub issue after validating both repository and issue identity.
+ * @param {string} repository GitHub repository identity in `owner/repository` form.
+ * @param {number | string} issueNumber Positive GitHub issue number.
+ * @returns {string}
+ */
+export function buildGitHubIssueUrl(repository, issueNumber) {
+    const target = parseGitHubRepositoryId(repository);
+    const number = Number(issueNumber);
+    if (!Number.isInteger(number) || number <= 0) throw new Error("Invalid GitHub issue number.");
+    return `https://github.com/${target.owner}/${target.repo}/issues/${number}`;
+}
+
+/**
  * Groups manifest chunks into GraphQL requests with bounded response sizes.
  * The manifest's byte counts let the browser use one request for today's data while automatically splitting future, larger histories.
  * @param {import("./model.js").ManifestChunk[]} chunks
@@ -92,6 +120,15 @@ function buildGraphqlChunkBatches(chunks) {
  * @property {string} path
  * @property {string} content
  * @property {string} [sha]
+ */
+
+/**
+ * @typedef {Object} GitHubIssueWrite
+ * @description User-facing issue fields synchronized from an issue-backed planplural TODO.
+ * @property {string} [title]
+ * @property {string} [body]
+ * @property {string[]} [labels]
+ * @property {"open" | "closed"} [state]
  */
 
 /**
@@ -275,6 +312,42 @@ export class DataSource {
     async saveFiles(files, message) {
         throw new Error("Not implemented");
     }
+
+    /**
+     * Reports whether this data source can use the active credential for direct GitHub issue writes.
+     * Local and future non-GitHub providers return false so the core TODO save path remains shared without pretending to have remote capabilities.
+     * @returns {boolean}
+     */
+    supportsGitHubIssueSync() {
+        return false;
+    }
+
+    /**
+     * Creates a GitHub issue in an explicitly bound repository.
+     * Subclasses without GitHub credentials reject the operation; callers should check `supportsGitHubIssueSync` first.
+     * @param {string} repository GitHub repository identity in `owner/repository` form.
+     * @param {GitHubIssueWrite} issue Fields for the new issue.
+     * @returns {Promise<any>}
+     */
+    async createGitHubIssue(repository, issue) {
+        void repository;
+        void issue;
+        throw new Error("GitHub issue synchronization is not available for this data source.");
+    }
+
+    /**
+     * Updates an existing GitHub issue in an explicitly bound repository.
+     * @param {string} repository GitHub repository identity in `owner/repository` form.
+     * @param {number | string} issueNumber Positive GitHub issue number.
+     * @param {GitHubIssueWrite} issue Changed issue fields.
+     * @returns {Promise<any>}
+     */
+    async updateGitHubIssue(repository, issueNumber, issue) {
+        void repository;
+        void issueNumber;
+        void issue;
+        throw new Error("GitHub issue synchronization is not available for this data source.");
+    }
 }
 
 /**
@@ -313,6 +386,15 @@ export class GitHubDataSource extends DataSource {
      */
     setToken(token) {
         this.token = token;
+    }
+
+    /**
+     * Confirms that this source has the authenticated GitHub transport required by issue-backed TODOs.
+     * Fine-grained token permissions are still enforced by GitHub per target repository when a write occurs.
+     * @returns {boolean}
+     */
+    supportsGitHubIssueSync() {
+        return Boolean(this.token);
     }
 
     /**
@@ -368,6 +450,55 @@ export class GitHubDataSource extends DataSource {
             throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
         }
         return await resp.json();
+    }
+
+    /**
+     * Creates one issue in the GitHub repository declared by a workspace project binding.
+     * The target is independent of the workspace-data repository, allowing private tasks to mirror into the public application repository with the same fine-grained PAT.
+     * @param {string} repository GitHub repository identity in `owner/repository` form.
+     * @param {GitHubIssueWrite} issue Initial title, body, labels, and optional state.
+     * @returns {Promise<any>}
+     */
+    async createGitHubIssue(repository, issue) {
+        if (!this.token) throw new Error("Not logged in.");
+        const target = parseGitHubRepositoryId(repository);
+        const body = {
+            title: String(issue?.title || "").trim(),
+            body: String(issue?.body || ""),
+            labels: Array.isArray(issue?.labels) ? issue.labels.map((label) => String(label)) : [],
+        };
+        if (!body.title) throw new Error("A GitHub issue needs a title.");
+        return await this.fetchJsonRequest(
+            `https://api.github.com/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/issues`,
+            { method: "POST", body },
+        );
+    }
+
+    /**
+     * Patches only supplied fields on a linked GitHub issue.
+     * Completion and reopening use GitHub's ordinary issue state while title, description, and task labels remain canonical in the workspace TODO.
+     * @param {string} repository GitHub repository identity in `owner/repository` form.
+     * @param {number | string} issueNumber Positive GitHub issue number.
+     * @param {GitHubIssueWrite} issue Changed issue fields.
+     * @returns {Promise<any>}
+     */
+    async updateGitHubIssue(repository, issueNumber, issue) {
+        if (!this.token) throw new Error("Not logged in.");
+        const target = parseGitHubRepositoryId(repository);
+        const number = Number(issueNumber);
+        if (!Number.isInteger(number) || number <= 0) throw new Error("Invalid GitHub issue number.");
+        /** @type {GitHubIssueWrite} */
+        const body = {};
+        if (issue?.title !== undefined) body.title = String(issue.title).trim();
+        if (issue?.body !== undefined) body.body = String(issue.body);
+        if (issue?.labels !== undefined) {
+            body.labels = Array.isArray(issue.labels) ? issue.labels.map((label) => String(label)) : [];
+        }
+        if (issue?.state === "open" || issue?.state === "closed") body.state = issue.state;
+        return await this.fetchJsonRequest(
+            `https://api.github.com/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/issues/${number}`,
+            { method: "PATCH", body },
+        );
     }
 
     /**

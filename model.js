@@ -680,6 +680,17 @@ export class Section {
     }
 
     /**
+     * Returns the first external binding for a provider, or null when this section is not integrated with it.
+     * Provider names are normalized to lowercase in the constructor, so callers may use human-entered casing safely.
+     * @param {string} provider External system identifier such as `github-label` or `todoist`.
+     * @returns {ExternalReferenceRaw | null}
+     */
+    getExternalReference(provider) {
+        const normalized = String(provider || "").trim().toLowerCase();
+        return this.externalRefs.find((reference) => reference.provider === normalized) || null;
+    }
+
+    /**
      * Returns the stable JSON representation persisted beneath its parent project.
      * Explicit null overrides mean inherit and keep project-dialog serialization deterministic.
      * @returns {SectionRaw}
@@ -715,6 +726,17 @@ export class Project {
         this.sections = (Array.isArray(raw?.sections) ? raw.sections : []).map((section) => new Section(section));
         this.externalRefs = normalizeExternalReferences(raw?.external_refs);
         this.sectionsByKey = new Map(this.sections.map((section) => [section.key, section]));
+    }
+
+    /**
+     * Returns the first external binding for a provider, or null when the project has no such integration.
+     * This is used both by importers and optional live integrations without coupling the canonical project model to a particular service.
+     * @param {string} provider External system identifier such as `github` or `todoist`.
+     * @returns {ExternalReferenceRaw | null}
+     */
+    getExternalReference(provider) {
+        const normalized = String(provider || "").trim().toLowerCase();
+        return this.externalRefs.find((reference) => reference.provider === normalized) || null;
     }
 
     /**

@@ -1,6 +1,13 @@
 import { AppState } from "./appstate.js";
 import { ChunkCache, DraftJournal } from "./cache.js";
-import { ConfigService, DEFAULT_CONFIG, getEffectiveUiViewportWidth, getRecommendedUiZoom } from "./config.js";
+import {
+    ConfigService,
+    DEFAULT_CONFIG,
+    formatGitHubRepositoryUrl,
+    getEffectiveUiViewportWidth,
+    getRecommendedUiZoom,
+    parseGitHubRepository,
+} from "./config.js";
 import { GitHubDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore, TodoStore } from "./store.js";
 import { SearchView } from "./search.view.js";
@@ -613,8 +620,7 @@ class App {
         this.todoLabelsInput = getRequiredElement("todoLabels", HTMLInputElement);
         this.todoDialogMetaEl = getRequiredElement("todoDialogMeta", HTMLElement);
 
-        this.ownerInput = getRequiredElement("ownerInput", HTMLInputElement);
-        this.repoInput = getRequiredElement("repoInput", HTMLInputElement);
+        this.repositoryInput = getRequiredElement("repositoryInput", HTMLInputElement);
         this.refInput = getRequiredElement("refInput", HTMLInputElement);
         this.tokenInput = getRequiredElement("tokenInput", HTMLInputElement);
         this.rememberInput = getRequiredElement("rememberInput", HTMLInputElement);
@@ -873,8 +879,7 @@ class App {
      * @returns {void}
      */
     start() {
-        this.ownerInput.value = this.config.owner;
-        this.repoInput.value = this.config.repo;
+        this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
         this.refInput.value = this.config.ref;
         this.rememberInput.checked = this.configService.isTokenRemembered();
 
@@ -1107,18 +1112,24 @@ class App {
         ev.preventDefault();
         this.setError(this.loginErrorEl, "");
 
-        const owner = this.ownerInput.value.trim();
-        const repo = this.repoInput.value.trim();
         const ref = this.refInput.value.trim();
         const tok = this.tokenInput.value.trim();
         const remember = this.rememberInput.checked;
 
-        if (!owner || !repo || !ref || !tok) {
-            this.setError(this.loginErrorEl, "Please fill in owner, repo, ref, and token.");
+        if (!this.repositoryInput.value.trim() || !ref || !tok) {
+            this.setError(this.loginErrorEl, "Please fill in the repository URL, ref, and token.");
             return;
         }
 
-        this.config = { ...this.config, owner, repo, ref };
+        let repository;
+        try {
+            repository = parseGitHubRepository(this.repositoryInput.value);
+        } catch (error) {
+            this.setError(this.loginErrorEl, safeText(error));
+            return;
+        }
+
+        this.config = { ...this.config, owner: repository.owner, repo: repository.repo, ref };
         this.state.setConfig(this.config);
         this.configService.saveConfig(this.config);
         this.configService.saveToken(tok, remember);
@@ -1146,8 +1157,7 @@ class App {
         this.setAutomaticAppZoom(false);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
-        this.ownerInput.value = this.config.owner;
-        this.repoInput.value = this.config.repo;
+        this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
         this.refInput.value = this.config.ref;
         this.tokenInput.value = "";
         this.rememberInput.checked = false;

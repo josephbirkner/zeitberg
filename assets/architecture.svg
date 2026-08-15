@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 620" role="img" aria-labelledby="title description">
+  <title id="title">planplural static workspace architecture</title>
+  <desc id="description">The public static application runs in the browser and reads and writes a private workspace through the chosen Git provider API. There is no planplural backend.</desc>
+  <defs>
+    <pattern id="dots" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#d5d9dd" />
+    </pattern>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#315e9d" />
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ee6a3b" />
+    </marker>
+    <style>
+      .eyebrow { font: 600 14px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 3px; fill: #637087; }
+      .title { font: 44px Georgia, 'Times New Roman', serif; fill: #272a3b; }
+      .box-title { font: 700 22px ui-sans-serif, system-ui, sans-serif; fill: #272a3b; }
+      .box-copy { font: 500 16px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #637087; }
+      .tag { font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 1px; fill: #637087; }
+      .flow { font: 700 12px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 1.5px; fill: #637087; }
+      .note { font: 500 14px ui-sans-serif, system-ui, sans-serif; fill: #637087; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="620" fill="#f7f7f4" />
+  <rect x="60" y="145" width="1320" height="365" fill="url(#dots)" opacity="0.72" />
+  <text x="64" y="58" class="eyebrow">ARCHITECTURE · STATIC BY DESIGN</text>
+  <text x="64" y="112" class="title">Your workspace, not our database.</text>
+
+  <g transform="translate(70 250)">
+    <rect width="245" height="132" rx="9" fill="#e9ebed" stroke="#7a879a" stroke-width="2" />
+    <rect x="18" y="18" width="58" height="24" rx="4" fill="none" stroke="#9ba5b2" />
+    <text x="30" y="35" class="tag">PUBLIC</text>
+    <text x="122.5" y="76" text-anchor="middle" class="box-title">Static host</text>
+    <text x="122.5" y="103" text-anchor="middle" class="box-copy">HTML · CSS · JS</text>
+  </g>
+
+  <line x1="315" y1="316" x2="420" y2="316" stroke="#315e9d" stroke-width="3" marker-end="url(#arrow-blue)" />
+  <text x="366" y="299" text-anchor="middle" class="flow">LOAD</text>
+
+  <g transform="translate(430 230)">
+    <rect width="280" height="172" rx="9" fill="#f4e8e2" stroke="#ee6a3b" stroke-width="3" />
+    <rect x="18" y="18" width="72" height="24" rx="4" fill="none" stroke="#ee6a3b" />
+    <text x="28" y="35" class="tag" fill="#ee6a3b">LOCAL</text>
+    <text x="140" y="78" text-anchor="middle" class="box-title">Your browser</text>
+    <text x="140" y="107" text-anchor="middle" class="box-copy">planplural runtime</text>
+    <text x="140" y="139" text-anchor="middle" class="note">Credential stays here</text>
+  </g>
+
+  <line x1="710" y1="316" x2="815" y2="316" stroke="#ee6a3b" stroke-width="3" marker-end="url(#arrow-orange)" />
+  <text x="762" y="299" text-anchor="middle" class="flow">HTTPS</text>
+
+  <g transform="translate(825 250)">
+    <rect width="245" height="132" rx="9" fill="#eef0f1" stroke="#aab1b8" stroke-width="2" />
+    <rect x="18" y="18" width="52" height="24" rx="4" fill="none" stroke="#aab1b8" />
+    <text x="29" y="35" class="tag">API</text>
+    <text x="122.5" y="76" text-anchor="middle" class="box-title">Git provider</text>
+    <text x="122.5" y="103" text-anchor="middle" class="box-copy">GitHub · more soon</text>
+  </g>
+
+  <line x1="1070" y1="316" x2="1175" y2="316" stroke="#315e9d" stroke-width="3" marker-end="url(#arrow-blue)" />
+  <text x="1122" y="299" text-anchor="middle" class="flow">READ / WRITE</text>
+
+  <g transform="translate(1185 230)">
+    <rect width="190" height="172" rx="9" fill="#fff" stroke="#3e4657" stroke-width="2.5" />
+    <rect x="18" y="18" width="66" height="24" rx="4" fill="none" stroke="#7a879a" />
+    <text x="28" y="35" class="tag">PRIVATE</text>
+    <text x="95" y="77" text-anchor="middle" class="box-title">Workspace</text>
+    <text x="95" y="105" text-anchor="middle" class="box-copy">your Git repo</text>
+    <text x="95" y="139" text-anchor="middle" class="note">data + history</text>
+  </g>
+
+  <line x1="70" y1="493" x2="1375" y2="493" stroke="#d5d9dd" />
+  <circle cx="86" cy="548" r="6" fill="#ee6a3b" />
+  <text x="104" y="553" class="note">No planplural backend</text>
+  <circle cx="330" cy="548" r="6" fill="#315e9d" />
+  <text x="348" y="553" class="note">Direct provider requests</text>
+  <rect x="586" y="542" width="13" height="13" rx="2" fill="#fff" stroke="#3e4657" />
+  <text x="610" y="553" class="note">Private data under your control</text>
+</svg>

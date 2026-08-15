@@ -21,6 +21,53 @@ export const DEFAULT_CONFIG = {
 };
 
 /**
+ * Parses a GitHub repository locator into the owner and repository values used by the API data source.
+ * The public connection form accepts the canonical HTTPS URL promised by the onboarding copy as well as the compact `owner/repo` form for experienced users.
+ * Query strings, fragments, extra path segments, and non-GitHub hosts are rejected so a credential can never be redirected to an unexpected origin.
+ * @param {string} value User-entered GitHub repository URL or `owner/repo` shorthand.
+ * @returns {{owner: string, repo: string}}
+ */
+export function parseGitHubRepository(value) {
+    const raw = String(value || "").trim();
+    if (!raw) throw new Error("Enter a GitHub workspace repository URL.");
+
+    let path = raw;
+    if (/^https?:\/\//i.test(raw)) {
+        let url;
+        try {
+            url = new URL(raw);
+        } catch {
+            throw new Error("Enter a valid GitHub repository URL.");
+        }
+        if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "github.com") {
+            throw new Error("The current connector accepts HTTPS github.com repository URLs.");
+        }
+        if (url.search || url.hash) throw new Error("The repository URL must not contain a query or fragment.");
+        path = url.pathname;
+    }
+
+    const parts = path.replace(/^\/+|\/+$/g, "").split("/");
+    if (parts.length !== 2) throw new Error("Use a repository URL such as https://github.com/you/planplural-data.");
+    const owner = parts[0];
+    const repo = parts[1].replace(/\.git$/i, "");
+    const segmentPattern = /^[A-Za-z0-9_.-]+$/;
+    if (!segmentPattern.test(owner) || !segmentPattern.test(repo) || !repo) {
+        throw new Error("The GitHub owner or repository name is invalid.");
+    }
+    return { owner, repo };
+}
+
+/**
+ * Formats stored owner/repository configuration as the canonical public connection URL.
+ * @param {string} owner GitHub account or organization name.
+ * @param {string} repo GitHub repository name.
+ * @returns {string}
+ */
+export function formatGitHubRepositoryUrl(owner, repo) {
+    return `https://github.com/${String(owner || "").trim()}/${String(repo || "").trim()}`;
+}
+
+/**
  * Returns the default application zoom for automatic mode.
  * Browser and operating-system page zoom already express the user's preferred physical size, so automatic mode deliberately leaves the application at its natural 100% scale on every viewport.
  * @returns {number}

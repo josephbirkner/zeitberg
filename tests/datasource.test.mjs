@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { GitHubDataSource } from "../datasource.js";
+import {
+    buildGitHubIssueUrl,
+    GitHubDataSource,
+    parseGitHubRepositoryId,
+} from "../datasource.js";
 import { Workspace } from "../model.js";
 
 const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -37,6 +41,43 @@ function jsonResponse(body, status = 200) {
         headers: { "Content-Type": "application/json" },
     });
 }
+
+test("GitHub issue repository identities are strictly bounded", () => {
+    assert.deepEqual(parseGitHubRepositoryId("owner/repo"), { owner: "owner", repo: "repo" });
+    assert.equal(buildGitHubIssueUrl("owner/repo", 42), "https://github.com/owner/repo/issues/42");
+    assert.throws(() => parseGitHubRepositoryId("owner/repo/issues"), /Invalid GitHub repository binding/);
+    assert.throws(() => buildGitHubIssueUrl("owner/repo", 0), /Invalid GitHub issue number/);
+});
+
+test("GitHub issue writes can target a repository other than the workspace", async (context) => {
+    const requests = [];
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        requests.push({ url: String(url), options });
+        const requestBody = JSON.parse(String(options?.body || "{}"));
+        return jsonResponse({ number: requestBody.title ? 17 : 17, ...requestBody });
+    });
+
+    const source = new GitHubDataSource({ owner: "workspace-owner", repo: "workspace-data", ref: "main" }, "secret");
+    const created = await source.createGitHubIssue("app-owner/planplural", {
+        title: "Issue-backed TODO",
+        body: "Details",
+        labels: ["type/feature"],
+        state: "open",
+    });
+    await source.updateGitHubIssue("app-owner/planplural", created.number, { state: "closed" });
+
+    assert.equal(requests[0].url, "https://api.github.com/repos/app-owner/planplural/issues");
+    assert.equal(requests[0].options?.method, "POST");
+    assert.deepEqual(JSON.parse(String(requests[0].options?.body)), {
+        title: "Issue-backed TODO",
+        body: "Details",
+        labels: ["type/feature"],
+    });
+    assert.equal(requests[0].options?.headers?.Authorization, "Bearer secret");
+    assert.equal(requests[1].url, "https://api.github.com/repos/app-owner/planplural/issues/17");
+    assert.equal(requests[1].options?.method, "PATCH");
+    assert.deepEqual(JSON.parse(String(requests[1].options?.body)), { state: "closed" });
+});
 
 test("GitHub data source bootstraps configured workspace document paths", async (context) => {
     const workspaceRaw = {
