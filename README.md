@@ -35,7 +35,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual Git commits. |
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, and direct browser-to-provider persistence. |
-| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/8), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [capability links](https://github.com/josephbirkner/zeitplural/issues/19), [URL routing](https://github.com/josephbirkner/zeitplural/issues/16), and [agent integration](https://github.com/josephbirkner/zeitplural/issues/9). |
+| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [capability links](https://github.com/josephbirkner/zeitplural/issues/19), [URL routing](https://github.com/josephbirkner/zeitplural/issues/16), and [agent integration](https://github.com/josephbirkner/zeitplural/issues/9). |
 
 The project is intentionally one application: time, tasks, and future components share a project inventory and workspace identity while retaining separate documents and views.
 
