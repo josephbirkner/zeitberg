@@ -526,6 +526,8 @@ class App {
         this.appZoomResetBtn = getRequiredElement("appZoomResetBtn", HTMLButtonElement);
         this.appZoomLabelEl = getRequiredElement("appZoomLabel", HTMLElement);
         this.appZoomInBtn = getRequiredElement("appZoomInBtn", HTMLButtonElement);
+        this.appThemeToggleBtn = getRequiredElement("appThemeToggleBtn", HTMLButtonElement);
+        this.landingThemeToggleBtn = getRequiredElement("landingThemeToggleBtn", HTMLButtonElement);
         this.weekControlsEl = getRequiredElement("weekControls", HTMLElement);
         this.projectsBtn = getRequiredElement("projectsBtn", HTMLButtonElement);
 
@@ -762,7 +764,49 @@ class App {
         this.uiZoomMode = this.config.uiZoomMode === "manual" ? "manual" : "auto";
         const initialUiZoom = this.uiZoomMode === "auto" ? this.getRecommendedAppZoom() : this.config.uiZoom;
         this.uiZoom = this.normalizeAppZoom(initialUiZoom);
+        /** @type {"dark" | "light"} */
+        this.theme = this.config.theme === "light" ? "light" : "dark";
+        this.setTheme(this.theme, false);
         this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
+    }
+
+    /**
+     * Applies one shared color theme to the public landing page and initialized application.
+     * The preference is stored with other non-workspace UI configuration; dark remains the default when no valid preference exists.
+     * @param {"dark" | "light"} theme Requested theme name.
+     * @param {boolean} [shouldPersist] Whether to persist the preference immediately.
+     * @returns {void}
+     */
+    setTheme(theme, shouldPersist = true) {
+        this.theme = theme === "light" ? "light" : "dark";
+        this.config = { ...this.config, theme: this.theme };
+        this.state.setConfig(this.config);
+        document.documentElement.dataset.theme = this.theme;
+
+        const useLight = this.theme === "dark";
+        const actionLabel = useLight ? "Use light theme" : "Use dark theme";
+        for (const button of [this.appThemeToggleBtn, this.landingThemeToggleBtn]) {
+            button.title = actionLabel;
+            button.setAttribute("aria-label", actionLabel);
+            button.setAttribute("aria-pressed", this.theme === "light" ? "true" : "false");
+        }
+        const landingLabel = this.landingThemeToggleBtn.querySelector("span");
+        if (landingLabel) landingLabel.textContent = useLight ? "Light" : "Dark";
+
+        const themeMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeMeta instanceof HTMLMetaElement) {
+            themeMeta.content = this.theme === "dark" ? "#17191f" : "#f7f7f4";
+        }
+        if (shouldPersist) this.configService.saveConfig(this.config);
+    }
+
+    /**
+     * Switches between the supported light and dark themes.
+     * Both landing-page and application controls invoke this method so appearance never depends on authentication state.
+     * @returns {void}
+     */
+    toggleTheme() {
+        this.setTheme(this.theme === "dark" ? "light" : "dark");
     }
 
     /**
@@ -894,6 +938,8 @@ class App {
         this.appZoomOutBtn.addEventListener("click", () => this.nudgeAppZoom(-1));
         this.appZoomResetBtn.addEventListener("click", () => this.setAutomaticAppZoom());
         this.appZoomInBtn.addEventListener("click", () => this.nudgeAppZoom(1));
+        this.appThemeToggleBtn.addEventListener("click", () => this.toggleTheme());
+        this.landingThemeToggleBtn.addEventListener("click", () => this.toggleTheme());
         this.projectsBtn.addEventListener("click", () => this.projectDialog.open());
         this.logoutBtn.addEventListener("click", () => this.logout());
         this.reloadDataBtn.addEventListener("click", () => void this.reloadData());
@@ -1154,6 +1200,7 @@ class App {
         this.chunkCache.clearAll();
         this.config = { ...DEFAULT_CONFIG };
         this.state.setConfig(this.config);
+        this.setTheme(this.config.theme, false);
         this.setAutomaticAppZoom(false);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());

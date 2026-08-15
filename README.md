@@ -5,27 +5,27 @@
 <h1 align="center">planplural</h1>
 
 <p align="center">
-  <strong>Many plans. One place you own.</strong><br />
-  A static personal-operations workspace whose data lives in your Git repository.
+  <strong>Time · Tasks · Expenses → Git</strong><br />
+  A static browser application whose data lives in your Git repository.
 </p>
 
 <p align="center">
-  <img alt="Runtime: static HTML5" src="https://img.shields.io/badge/runtime-static%20HTML5-315e9d?style=flat-square" />
-  <img alt="Backend: none" src="https://img.shields.io/badge/planplural%20backend-none-ee6a3b?style=flat-square" />
-  <img alt="Workspace: Git repository" src="https://img.shields.io/badge/workspace-your%20Git%20repo-272a3b?style=flat-square" />
-  <img alt="Data format: versioned JSON" src="https://img.shields.io/badge/data-versioned%20JSON-637087?style=flat-square" />
+  <a href="https://github.com/josephbirkner/planplural/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/josephbirkner/planplural/actions/workflows/test.yml/badge.svg?branch=main" /></a>
 </p>
 
 ---
 
-planplural is a keyboard-first home for time tracking, TODOs, and the other small systems that make up everyday life. The public application is plain HTML, CSS, and JavaScript. It has no planplural-operated application server and no database.
+planplural manages time and TODOs today, with expenses planned next. The public application is plain HTML, CSS, and JavaScript. It has no planplural-operated application server or database.
 
-Instead, you choose a private Git repository as a workspace. The browser reads and writes its versioned documents directly through your Git provider API. You can inspect the data, clone the entire history, make independent backups, or move it elsewhere without asking planplural for an export.
+You choose a Git repository as the workspace. The browser reads and writes versioned documents directly through the provider API. The repository remains independently inspectable, cloneable, and portable.
 
-> Your tools may be hosted. Your life should not be.
+**Your data, your Git repo.**
 
 <p align="center">
-  <img src="./assets/architecture.svg" alt="The static planplural application runs in the browser and connects directly through a Git provider API to a private workspace repository." />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/architecture.svg" />
+    <img src="./assets/architecture-light.svg" alt="The static planplural application runs in the browser and connects directly through a Git provider API to a private workspace repository." />
+  </picture>
 </p>
 
 ## What it gives you
@@ -33,11 +33,20 @@ Instead, you choose a private Git repository as a workspace. The browser reads a
 | Component | Today |
 | --- | --- |
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual Git commits. |
-| **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, Todoist import, and optional GitHub issue linkage. |
+| **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, and direct browser-to-provider persistence. |
-| **Next** | Finances, additional providers, capability links, restorable URL routing, and agent integration are tracked in [GitHub Issues](https://github.com/josephbirkner/planplural/issues). |
+| **Next** | [Finances](https://github.com/josephbirkner/planplural/issues/8), [additional providers](https://github.com/josephbirkner/planplural/issues/18), [capability links](https://github.com/josephbirkner/planplural/issues/19), [URL routing](https://github.com/josephbirkner/planplural/issues/16), and [agent integration](https://github.com/josephbirkner/planplural/issues/9). |
 
 The project is intentionally one application: time, tasks, and future components share a project inventory and workspace identity while retaining separate documents and views.
+
+## Similar projects
+
+No direct equivalent surfaced in our review. The closest projects each overlap with one part of planplural:
+
+- [GitJournal](https://github.com/GitJournal/GitJournal) stores Markdown notes in a Git repository of the user's choice.
+- [TaskRepo](https://github.com/HenriquesLab/TaskRepo) stores tasks as Markdown files in Git repositories.
+- [ActivityWatch](https://github.com/ActivityWatch/activitywatch) is an automated time tracker with user-controlled local data, but is not Git-backed.
+- [Actual Budget](https://github.com/actualbudget/actual) is a local-first personal-finance application with its own synchronization model rather than Git storage.
 
 ## Workspace setup
 

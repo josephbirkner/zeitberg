@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    DEFAULT_CONFIG,
     formatGitHubRepositoryUrl,
     getEffectiveUiViewportWidth,
     getRecommendedUiZoom,
     parseGitHubRepository,
 } from "../config.js";
+
+test("dark is the default application theme", () => {
+    assert.equal(DEFAULT_CONFIG.theme, "dark");
+});
 
 test("automatic app zoom remains at 100%", () => {
     assert.equal(getRecommendedUiZoom(), 1);

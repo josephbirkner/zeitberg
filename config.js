@@ -8,6 +8,7 @@
  * @property {string} timezone
  * @property {number} uiZoom
  * @property {"auto" | "manual"} uiZoomMode
+ * @property {"dark" | "light"} theme
  */
 
 export const DEFAULT_CONFIG = {
@@ -18,6 +19,7 @@ export const DEFAULT_CONFIG = {
     timezone: "Europe/Berlin",
     uiZoom: 1,
     uiZoomMode: "auto",
+    theme: "dark",
 };
 
 /**
