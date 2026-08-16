@@ -58,6 +58,30 @@ test("all recurrence phrases currently imported from Todoist normalize", () => {
     }
 });
 
+test("German recurrence phrases normalize into language-neutral schedule fields", () => {
+    const cases = [
+        ["täglich", "daily", 1, "scheduled", []],
+        ["jeden Freitag", "weekly", 1, "scheduled", [5]],
+        ["jeden Dienstag um 06:00", "weekly", 1, "scheduled", [2]],
+        ["jede Woche", "weekly", 1, "scheduled", [3]],
+        ["jeden Monat", "monthly", 1, "scheduled", []],
+        ["jedes Jahr", "yearly", 1, "scheduled", []],
+        ["alle 3 Tage", "daily", 3, "scheduled", []],
+        ["alle 2 Wochen nach Abschluss", "weekly", 2, "after_completion", [3]],
+        ["jeden Monat nach Abschluss", "monthly", 1, "after_completion", []],
+    ];
+
+    for (const [text, frequency, interval, basis, weekdays] of cases) {
+        const recurrence = Recurrence.fromText(text, "2026-08-19");
+        assert.ok(recurrence, text);
+        assert.equal(recurrence.frequency, frequency, text);
+        assert.equal(recurrence.interval, interval, text);
+        assert.equal(recurrence.basis, basis, text);
+        assert.deepEqual(recurrence.weekdays, weekdays, text);
+        assert.equal(recurrence.source_text, text, text);
+    }
+});
+
 test("legacy Todoist due metadata normalizes into the schema v3 recurrence fields", () => {
     const todo = new Todo(
         makeTodo({

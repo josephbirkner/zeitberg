@@ -26,6 +26,7 @@ import {
     utcNowIso,
 } from "./utils.js";
 import { Manifest, ProjectList, TodoList, WeekRequirements, Workspace } from "./model.js";
+import { LocaleService, resolveLocale } from "./locale.js";
 import {
     consumeOAuthCallback,
     readOAuthClientId,
@@ -134,6 +135,7 @@ function parseWeekChunkEntries(chunk, raw) {
  * @typedef {Object} ProjectDialogOptions
  * @property {import("./store.js").EntryStore} store
  * @property {import("./datasource.js").DataSource} dataSource
+ * @property {import("./locale.js").LocaleService} locale
  * @property {Object} elements
  * @property {HTMLDialogElement} elements.dialog
  * @property {HTMLFormElement} elements.form
@@ -159,6 +161,7 @@ class ProjectDialog {
     constructor(options) {
         this.store = options.store;
         this.dataSource = options.dataSource;
+        this.locale = options.locale;
         this.dialog = options.elements.dialog;
         this.form = options.elements.form;
         this.closeBtn = options.elements.closeBtn;
@@ -180,6 +183,15 @@ class ProjectDialog {
      */
     setDataSource(dataSource) {
         this.dataSource = dataSource;
+    }
+
+    /**
+     * Rebuilds an open project editor with labels and sort order from the active locale.
+     * The language setting lives in a separate modal, so no in-progress project form can be discarded by this refresh.
+     * @returns {void}
+     */
+    refreshLocale() {
+        if (this.dialog.open) this.renderList();
     }
 
     /**
@@ -229,7 +241,7 @@ class ProjectDialog {
         const projects = this.store.getProjects();
         const sorted = projects.slice().sort((a, b) => {
             if (a.archived !== b.archived) return a.archived ? 1 : -1;
-            return a.name.localeCompare(b.name);
+            return this.locale.compare(a.name, b.name);
         });
 
         const frag = document.createDocumentFragment();
@@ -275,7 +287,7 @@ class ProjectDialog {
         const nameWrap = document.createElement("label");
         nameWrap.className = "project-field";
         const nameSpan = document.createElement("span");
-        nameSpan.textContent = "Name";
+        nameSpan.textContent = this.locale.t("projects.name");
         const nameInput = document.createElement("input");
         nameInput.type = "text";
         nameInput.className = "project-name";
@@ -286,7 +298,7 @@ class ProjectDialog {
         const colorWrap = document.createElement("label");
         colorWrap.className = "project-field";
         const colorSpan = document.createElement("span");
-        colorSpan.textContent = "Color";
+        colorSpan.textContent = this.locale.t("projects.color");
         const colorInput = document.createElement("input");
         colorInput.type = "color";
         colorInput.className = "project-color";
@@ -300,7 +312,7 @@ class ProjectDialog {
         billableInput.className = "project-billable";
         billableInput.checked = project.billable === true;
         const billableSpan = document.createElement("span");
-        billableSpan.textContent = "Billable";
+        billableSpan.textContent = this.locale.t("projects.billable");
         billableWrap.append(billableInput, billableSpan);
 
         const archivedWrap = document.createElement("label");
@@ -310,7 +322,7 @@ class ProjectDialog {
         archivedInput.className = "project-archived";
         archivedInput.checked = project.archived === true;
         const archivedSpan = document.createElement("span");
-        archivedSpan.textContent = "Archived";
+        archivedSpan.textContent = this.locale.t("projects.archived");
         archivedWrap.append(archivedInput, archivedSpan);
 
         fields.append(nameWrap, colorWrap, billableWrap, archivedWrap);
@@ -318,11 +330,11 @@ class ProjectDialog {
         const sectionsHead = document.createElement("div");
         sectionsHead.className = "project-sections-head";
         const sectionsTitle = document.createElement("span");
-        sectionsTitle.textContent = "Sections";
+        sectionsTitle.textContent = this.locale.t("projects.sections");
         const addSectionBtn = document.createElement("button");
         addSectionBtn.type = "button";
         addSectionBtn.className = "btn btn-secondary project-add-section";
-        addSectionBtn.textContent = "Add section";
+        addSectionBtn.textContent = this.locale.t("projects.addSection");
         sectionsHead.append(sectionsTitle, addSectionBtn);
 
         const sectionsEl = document.createElement("div");
@@ -362,7 +374,7 @@ class ProjectDialog {
         const nameWrap = document.createElement("label");
         nameWrap.className = "project-field section-name-field";
         const nameLabel = document.createElement("span");
-        nameLabel.textContent = "Name";
+        nameLabel.textContent = this.locale.t("projects.name");
         const nameInput = document.createElement("input");
         nameInput.type = "text";
         nameInput.className = "section-name";
@@ -373,7 +385,7 @@ class ProjectDialog {
         const colorWrap = document.createElement("label");
         colorWrap.className = "project-field section-color-field";
         const colorLabel = document.createElement("span");
-        colorLabel.textContent = "Color override";
+        colorLabel.textContent = this.locale.t("projects.colorOverride");
         const colorControls = document.createElement("span");
         colorControls.className = "section-color-controls";
         const useColor = document.createElement("input");
@@ -394,10 +406,14 @@ class ProjectDialog {
         const billableWrap = document.createElement("label");
         billableWrap.className = "project-field";
         const billableLabel = document.createElement("span");
-        billableLabel.textContent = "Billable";
+        billableLabel.textContent = this.locale.t("projects.billable");
         const billableSelect = document.createElement("select");
         billableSelect.className = "section-billable";
-        billableSelect.append(new Option("Inherit", "inherit"), new Option("Billable", "true"), new Option("Not billable", "false"));
+        billableSelect.append(
+            new Option(this.locale.t("projects.inherit"), "inherit"),
+            new Option(this.locale.t("projects.billable"), "true"),
+            new Option(this.locale.t("projects.notBillable"), "false"),
+        );
         billableSelect.value = typeof section.billable === "boolean" ? String(section.billable) : "inherit";
         billableWrap.append(billableLabel, billableSelect);
 
@@ -408,7 +424,7 @@ class ProjectDialog {
         archivedInput.className = "section-archived";
         archivedInput.checked = section.archived === true;
         const archivedLabel = document.createElement("span");
-        archivedLabel.textContent = "Archived";
+        archivedLabel.textContent = this.locale.t("projects.archived");
         archivedWrap.append(archivedInput, archivedLabel);
 
         row.append(nameWrap, colorWrap, billableWrap, archivedWrap);
@@ -440,17 +456,17 @@ class ProjectDialog {
 
             const name = nameInput.value.trim();
             if (!name) {
-                return { projects: [], error: "Every project needs a name." };
+                return { projects: [], error: this.locale.t("projects.everyProjectName") };
             }
             const nameIdentity = name.toLowerCase();
             if (seenNames.has(nameIdentity)) {
-                return { projects: [], error: `Duplicate project name: ${name}` };
+                return { projects: [], error: this.locale.t("projects.duplicateProject", { name }) };
             }
             seenNames.add(nameIdentity);
 
             const color = colorInput.value.trim();
             if (!/^#[0-9a-f]{6}$/i.test(color)) {
-                return { projects: [], error: `Invalid color for ${name}.` };
+                return { projects: [], error: this.locale.t("projects.invalidColor", { name }) };
             }
 
             const existingKey = row instanceof HTMLElement ? row.dataset.projectKey || "" : "";
@@ -482,17 +498,25 @@ class ProjectDialog {
                 if (!(sectionArchivedInput instanceof HTMLInputElement)) continue;
 
                 const sectionName = sectionNameInput.value.trim();
-                if (!sectionName) return { projects: [], error: `Every section in ${name} needs a name.` };
+                if (!sectionName) {
+                    return { projects: [], error: this.locale.t("projects.everySectionName", { project: name }) };
+                }
                 const sectionNameIdentity = sectionName.toLowerCase();
                 if (seenSectionNames.has(sectionNameIdentity)) {
-                    return { projects: [], error: `Duplicate section in ${name}: ${sectionName}` };
+                    return {
+                        projects: [],
+                        error: this.locale.t("projects.duplicateSection", { project: name, section: sectionName }),
+                    };
                 }
                 seenSectionNames.add(sectionNameIdentity);
                 const existingSectionKey = sectionRow.dataset.sectionKey || "";
                 const sectionKey = existingSectionKey || ProjectList.reserveKey(sectionName, usedSectionKeys);
                 const sectionColor = useColorInput.checked ? sectionColorInput.value.trim() : null;
                 if (sectionColor !== null && !/^#[0-9a-f]{6}$/i.test(sectionColor)) {
-                    return { projects: [], error: `Invalid color for ${name} / ${sectionName}.` };
+                    return {
+                        projects: [],
+                        error: this.locale.t("projects.invalidSectionColor", { project: name, section: sectionName }),
+                    };
                 }
                 const billableValue = sectionBillableInput.value;
                 const sectionBillable = billableValue === "true" ? true : billableValue === "false" ? false : null;
@@ -588,6 +612,15 @@ class App {
         this.activeGlobalPanel = null;
         this.workspaceDialogOpenedByPush = false;
         this.configService = new ConfigService();
+        const persistedLocale = this.configService.loadLocale();
+        const browserLanguages = Array.isArray(navigator.languages)
+            ? navigator.languages
+            : navigator.language
+              ? [navigator.language]
+              : [];
+        this.locale = new LocaleService(resolveLocale(persistedLocale, browserLanguages));
+        if (!persistedLocale) this.configService.saveLocale(this.locale.locale);
+        this.locale.applyDocument(document);
         this.isLocalMode = this.initialRoute.workspace?.provider === "local" || getSourceMode() === "local";
         const storedConfig = this.configService.loadConfig();
         this.workspaceRegistry = this.isLocalMode
@@ -718,6 +751,8 @@ class App {
         this.globalSearchEl = getRequiredElement("globalSearch", HTMLElement);
         this.searchInput = getRequiredElement("searchInput", HTMLInputElement);
         this.projectSelect = getRequiredElement("projectSelect", HTMLSelectElement);
+        this.searchFromLabelEl = getRequiredElement("searchFromLabel", HTMLElement);
+        this.searchToLabelEl = getRequiredElement("searchToLabel", HTMLElement);
         this.fromDateInput = getRequiredElement("fromDate", HTMLInputElement);
         this.toDateInput = getRequiredElement("toDate", HTMLInputElement);
         this.maxRowsInput = getRequiredElement("maxRows", HTMLInputElement);
@@ -757,6 +792,7 @@ class App {
 
         this.workspaceDialog = getRequiredElement("workspaceDialog", HTMLDialogElement);
         this.workspaceDialogCloseBtn = getRequiredElement("workspaceDialogCloseBtn", HTMLButtonElement);
+        this.workspaceLanguageSelect = getRequiredElement("workspaceLanguage", HTMLSelectElement);
         this.workspaceListEl = getRequiredElement("workspaceList", HTMLElement);
         this.workspaceAddForm = getRequiredElement("workspaceAddForm", HTMLFormElement);
         this.workspaceProviderInput = getRequiredElement("workspaceProvider", HTMLSelectElement);
@@ -809,6 +845,7 @@ class App {
             appState: this.state,
             timeContext: this.timeContext,
             dataSource: this.dataSource,
+            locale: this.locale,
             elements: {
                 weekViewSection: this.weekViewSection,
                 weekControls: this.weekControlsEl,
@@ -857,6 +894,7 @@ class App {
         this.searchView = new SearchView({
             store: this.store,
             timeContext: this.timeContext,
+            locale: this.locale,
             elements: {
                 searchView: this.searchViewEl,
                 searchInput: this.searchInput,
@@ -883,6 +921,7 @@ class App {
             draftJournal: this.draftJournal,
             draftNamespace: this.buildDraftNamespace(),
             timeContext: this.timeContext,
+            locale: this.locale,
             elements: {
                 todoView: this.todoViewEl,
                 todoList: this.todoListEl,
@@ -921,6 +960,7 @@ class App {
         this.projectDialog = new ProjectDialog({
             store: this.store,
             dataSource: this.dataSource,
+            locale: this.locale,
             elements: {
                 dialog: this.projectsDialog,
                 form: this.projectsForm,
@@ -945,6 +985,33 @@ class App {
         this.theme = this.config.theme === "light" ? "light" : "dark";
         this.setTheme(this.theme, false);
         this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
+        this.applyLocale(this.locale.locale, false);
+    }
+
+    /**
+     * Applies one interface language across declarative markup, dynamic views, formatters, and accessibility labels.
+     * The preference is browser-local and never written into a workspace repository; changing it preserves all selected records and route state.
+     * @param {unknown} locale Requested supported language.
+     * @param {boolean} [shouldPersist] Whether ConfigService should retain the selection for later visits.
+     * @returns {void}
+     */
+    applyLocale(locale, shouldPersist = true) {
+        this.locale.setLocale(locale);
+        if (shouldPersist) this.configService.saveLocale(this.locale.locale);
+        this.locale.applyDocument(document);
+        this.workspaceLanguageSelect.value = this.locale.locale;
+        this.setTheme(this.theme, false);
+        this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
+        this.updateProviderForm(this.providerInput, this.repositoryInput);
+        this.updateProviderForm(this.workspaceProviderInput, this.workspaceRepositoryInput);
+        this.refreshOAuthControls();
+        this.updateSearchControls();
+        this.projectDialog.refreshLocale();
+        this.weekView.refreshLocale();
+        this.searchView.refreshLocale();
+        this.todoView.refreshLocale();
+        this.renderWorkspaceRegistry();
+        this.refreshRepoLabel();
     }
 
     /**
@@ -961,14 +1028,14 @@ class App {
         document.documentElement.dataset.theme = this.theme;
 
         const useLight = this.theme === "dark";
-        const actionLabel = useLight ? "Use light theme" : "Use dark theme";
+        const actionLabel = this.locale.t(useLight ? "nav.useLightTheme" : "nav.useDarkTheme");
         for (const button of [this.appThemeToggleBtn, this.landingThemeToggleBtn]) {
             button.title = actionLabel;
             button.setAttribute("aria-label", actionLabel);
             button.setAttribute("aria-pressed", this.theme === "light" ? "true" : "false");
         }
         const landingLabel = this.landingThemeToggleBtn.querySelector("span");
-        if (landingLabel) landingLabel.textContent = useLight ? "Light" : "Dark";
+        if (landingLabel) landingLabel.textContent = this.locale.t(useLight ? "nav.light" : "nav.dark");
 
         const themeMeta = document.querySelector('meta[name="theme-color"]');
         if (themeMeta instanceof HTMLMetaElement) {
@@ -1047,11 +1114,12 @@ class App {
         this.uiZoom = this.normalizeAppZoom(value);
         this.uiZoomMode = mode === "auto" ? "auto" : "manual";
         document.body.style.setProperty("zoom", String(this.uiZoom));
-        this.appZoomLabelEl.textContent = `${Math.round(this.uiZoom * 100)}%`;
+        const zoomPercent = this.locale.formatNumber(Math.round(this.uiZoom * 100));
+        this.appZoomLabelEl.textContent = `${zoomPercent}%`;
         this.appZoomResetBtn.title =
             this.uiZoomMode === "auto"
-                ? `Automatic app zoom (${Math.round(this.uiZoom * 100)}%)`
-                : `Restore automatic app zoom (currently ${Math.round(this.uiZoom * 100)}%)`;
+                ? this.locale.t("nav.zoomAutomatic", { percent: zoomPercent })
+                : this.locale.t("nav.zoomRestoreAutomatic", { percent: zoomPercent });
         this.appZoomOutBtn.disabled = this.uiZoom <= MIN_APP_ZOOM;
         this.appZoomInBtn.disabled = this.uiZoom >= MAX_APP_ZOOM;
         this.config = { ...this.config, uiZoom: this.uiZoom, uiZoomMode: this.uiZoomMode };
@@ -1092,10 +1160,10 @@ class App {
             gitlab: "GitLab.com",
             codeberg: "Codeberg",
             forgejo: "Forgejo",
-            custom: "Self-hosted Git",
-            local: "Local server",
+            custom: this.locale.t("provider.selfHosted"),
+            local: this.locale.t("provider.local"),
         };
-        return labels[provider] || "Git provider";
+        return labels[provider] || this.locale.t("provider.generic");
     }
 
     /**
@@ -1149,18 +1217,18 @@ class App {
             button.hidden = !supported;
             button.disabled = supported && !clientId;
             button.title = !supported
-                ? "OAuth is available for GitLab.com and Codeberg."
+                ? this.locale.t("workspace.oauthAvailable")
                 : clientId
-                  ? `Authorize with ${this.providerDisplayName(provider)} using PKCE`
-                  : `${this.providerDisplayName(provider)} OAuth needs a public client id in this deployment; use a scoped token for now.`;
+                  ? this.locale.t("workspace.oauthAuthorize", { provider: this.providerDisplayName(provider) })
+                  : this.locale.t("workspace.oauthUnavailable", { provider: this.providerDisplayName(provider) });
         };
         configure(this.loginOAuthBtn, this.providerInput.value);
         configure(this.workspaceOAuthBtn, this.workspaceProviderInput.value);
         configure(this.workspaceCreateOAuthBtn, this.workspaceCreateProviderInput.value);
         this.workspaceCreateProviderNoteEl.textContent =
             this.workspaceCreateProviderInput.value === "codeberg"
-                ? "Forgejo OAuth grants are not fine-grained today. Prefer a repository-scoped Codeberg token when least privilege is important."
-                : "GitLab OAuth requests API access so zeitplural can create, initialize, read, and write the private project.";
+                ? this.locale.t("workspace.codebergScope")
+                : this.locale.t("workspace.gitlabScope");
     }
 
     /**
@@ -1366,7 +1434,12 @@ class App {
             await this.connectWithToken(accessToken);
         } catch (error) {
             if (repositoryUrl) {
-                throw new Error(`The private repository was created at ${repositoryUrl}, but initialization failed: ${safeText(error)}`);
+                throw new Error(
+                    this.locale.t("workspace.createdInitializationFailed", {
+                        repository: repositoryUrl,
+                        error: this.locale.localizeError(error),
+                    }),
+                );
             }
             throw error;
         }
@@ -1382,7 +1455,7 @@ class App {
         this.setError(this.workspaceCreateErrorEl, "");
         const token = this.workspaceCreateTokenInput.value.trim();
         if (!token) {
-            this.setError(this.workspaceCreateErrorEl, "Enter a provider token or use OAuth.");
+            this.setError(this.workspaceCreateErrorEl, this.locale.t("workspace.tokenOrOAuth"));
             return;
         }
         this.setBusy(true);
@@ -1479,7 +1552,7 @@ class App {
         if (!connections.length) {
             const empty = document.createElement("p");
             empty.className = "workspace-empty muted";
-            empty.textContent = "No saved workspace connections.";
+            empty.textContent = this.locale.t("workspace.none");
             this.workspaceListEl.append(empty);
             return;
         }
@@ -1502,12 +1575,16 @@ class App {
             if (isActive) {
                 const badge = document.createElement("span");
                 badge.className = "workspace-active-badge";
-                badge.textContent = "Active";
+                badge.textContent = this.locale.t("workspace.active");
                 heading.append(badge);
             }
             const credentialBadge = document.createElement("span");
             credentialBadge.className = "workspace-credential-badge muted";
-            credentialBadge.textContent = connection.provider === "local" ? "Local server" : hasCredential ? "Authenticated" : "Token required";
+            credentialBadge.textContent = connection.provider === "local"
+                ? this.locale.t("workspace.localServer")
+                : hasCredential
+                  ? this.locale.t("workspace.authenticated")
+                  : this.locale.t("workspace.tokenRequired");
             heading.append(credentialBadge);
 
             const meta = document.createElement("div");
@@ -1530,16 +1607,27 @@ class App {
             actions.className = "workspace-row-actions";
             actions.append(
                 this.createWorkspaceActionButton(
-                    isActive && this.workspace ? "Open" : hasCredential ? "Switch" : "Authenticate",
+                    isActive && this.workspace
+                        ? this.locale.t("workspace.open")
+                        : hasCredential
+                          ? this.locale.t("workspace.switch")
+                          : this.locale.t("workspace.authenticate"),
                     "open",
                     connection.id,
                     isActive && Boolean(this.workspace),
                 ),
-                this.createWorkspaceActionButton("Earlier", "up", connection.id, index === 0),
-                this.createWorkspaceActionButton("Later", "down", connection.id, index === connections.length - 1),
+                this.createWorkspaceActionButton(this.locale.t("workspace.earlier"), "up", connection.id, index === 0),
+                this.createWorkspaceActionButton(
+                    this.locale.t("workspace.later"),
+                    "down",
+                    connection.id,
+                    index === connections.length - 1,
+                ),
             );
             if (connection.provider !== "local") {
-                actions.append(this.createWorkspaceActionButton("Disconnect", "disconnect", connection.id));
+                actions.append(
+                    this.createWorkspaceActionButton(this.locale.t("workspace.disconnect"), "disconnect", connection.id),
+                );
             }
             row.append(info, actions);
             this.workspaceListEl.append(row);
@@ -1627,7 +1715,10 @@ class App {
         this.workspaceTokenInput.value = "";
         this.workspaceRememberInput.checked = false;
         this.updateProviderForm(this.workspaceProviderInput, this.workspaceRepositoryInput);
-        this.setError(this.workspaceErrorEl, `Enter a token to authenticate ${connection.displayName}.`);
+        this.setError(
+            this.workspaceErrorEl,
+            this.locale.t("workspace.enterTokenFor", { workspace: connection.displayName }),
+        );
         queueMicrotask(() => this.workspaceTokenInput.focus());
     }
 
@@ -1735,7 +1826,7 @@ class App {
             return;
         }
         if (this.weekView.saveInFlight || this.todoView.saveInFlight) {
-            this.toast("Wait for the active save to finish before switching workspaces.", 4000);
+            this.toast(this.locale.t("toast.waitSaveSwitch"), 4000);
             return;
         }
         if (connection.provider === "local") {
@@ -1762,7 +1853,10 @@ class App {
             }
             connectionInfo = await this.preflightWorkspaceConnection(connection, credential);
         } catch (error) {
-            const message = `Could not open ${connection.displayName}: ${safeText(error)}`;
+            const message = this.locale.t("workspace.couldNotOpen", {
+                workspace: connection.displayName,
+                error: this.locale.localizeError(error),
+            });
             this.setError(this.workspaceErrorEl, message);
             this.toast(message, 6000);
             return;
@@ -1793,7 +1887,7 @@ class App {
 
         const token = this.workspaceTokenInput.value.trim();
         if (!token) {
-            this.setError(this.workspaceErrorEl, "Enter a token for this workspace.");
+            this.setError(this.workspaceErrorEl, this.locale.t("toast.enterToken"));
             return;
         }
         try {
@@ -1822,7 +1916,7 @@ class App {
      */
     disconnectWorkspace(connectionId) {
         if (this.weekView.saveInFlight || this.todoView.saveInFlight) {
-            this.toast("Wait for the active save to finish before disconnecting a workspace.", 4000);
+            this.toast(this.locale.t("toast.waitSaveDisconnect"), 4000);
             return;
         }
         const wasActive = connectionId === this.activeWorkspaceConnection?.id;
@@ -1860,7 +1954,7 @@ class App {
      * @returns {string}
      */
     describeWorkspaceLocator(locator) {
-        const repository = locator.provider === "local" ? "Local server" : locator.repositoryUrl;
+        const repository = locator.provider === "local" ? this.locale.t("workspace.localServer") : locator.repositoryUrl;
         const details = [locator.provider, repository, locator.ref, locator.workspacePath, locator.expectedWorkspaceId];
         return details.filter(Boolean).join(" · ");
     }
@@ -1881,7 +1975,7 @@ class App {
         this.workspaceCopyCapabilityBtn.disabled = route.workspace.provider === "local";
         this.setError(
             this.workspaceShareErrorEl,
-            route.workspace.provider === "local" ? "Local workspaces can only produce locator links for this server." : "",
+            route.workspace.provider === "local" ? this.locale.t("workspace.localLocatorOnly") : "",
         );
         if (!this.workspaceShareDialog.open) this.workspaceShareDialog.showModal();
     }
@@ -1907,9 +2001,9 @@ class App {
         const url = new URL(relative, window.location.origin).toString();
         try {
             await navigator.clipboard.writeText(url);
-            this.toast("Workspace link copied.", 2400, "success");
+            this.toast(this.locale.t("workspace.linkCopied"), 2400, "success");
         } catch {
-            window.prompt("Copy this workspace link:", url);
+            window.prompt(this.locale.t("workspace.copyPrompt"), url);
         }
     }
 
@@ -1930,7 +2024,7 @@ class App {
             );
             await navigator.clipboard.writeText(link);
             this.workspaceShareTokenInput.value = "";
-            this.toast("Capability link copied. Share it as securely as the token itself.", 4500, "success");
+            this.toast(this.locale.t("workspace.capabilityCopied"), 4500, "success");
         } catch (error) {
             this.setError(this.workspaceShareErrorEl, safeText(error));
         }
@@ -1956,7 +2050,7 @@ class App {
             } catch {
                 // Locator validation already bounded the repository text.
             }
-            this.capabilityHostConfirmTextEl.textContent = `I trust ${host} and permit sending the credential to this custom provider host.`;
+            this.capabilityHostConfirmTextEl.textContent = this.locale.t("workspace.trustNamedHost", { host });
         }
         this.setError(this.capabilityImportErrorEl, "");
         if (!this.capabilityImportDialog.open) this.capabilityImportDialog.showModal();
@@ -1970,7 +2064,7 @@ class App {
         this.capabilityImport = null;
         if (this.capabilityImportDialog.open) this.capabilityImportDialog.close();
         this.showLoginScreen();
-        this.setError(this.loginErrorEl, "Capability not imported. Enter your own credential to open this workspace.");
+        this.setError(this.loginErrorEl, this.locale.t("workspace.notImported"));
     }
 
     /**
@@ -1983,7 +2077,7 @@ class App {
         const locator = capability?.route.workspace || null;
         if (!capability || !locator) return;
         if (capability.requiresHostConfirmation && !this.capabilityHostConfirmInput.checked) {
-            this.setError(this.capabilityImportErrorEl, "Confirm the custom provider host before opening this capability.");
+            this.setError(this.capabilityImportErrorEl, this.locale.t("workspace.confirmHost"));
             return;
         }
         try {
@@ -2229,7 +2323,7 @@ class App {
                     return;
                 }
                 this.routeController.write(this.buildCurrentRoute(), "replace");
-                this.toast("That workspace is not exposed by the local server.", 5000);
+                this.toast(this.locale.t("workspace.localUnavailable"), 5000);
                 return;
             }
             if (route.workspace && route.workspace.provider !== "local") {
@@ -2250,7 +2344,7 @@ class App {
                 }
             }
             this.showLoginScreen();
-            this.setError(this.loginErrorEl, "Authenticate to open the workspace named in this link.");
+            this.setError(this.loginErrorEl, this.locale.t("workspace.authenticateLink"));
             return;
         }
 
@@ -2275,7 +2369,7 @@ class App {
      * @returns {Promise<void>}
      */
     async initializeLocalMode() {
-        this.showLoadingScreen("Discovering local workspaces…");
+        this.showLoadingScreen(this.locale.t("loading.discoverLocal"));
         try {
             const discoverySource = new LocalDataSource(this.config);
             const catalog = await discoverySource.fetchAvailableWorkspaces();
@@ -2334,7 +2428,7 @@ class App {
                       workspace: selected.toLocator(),
                       state: {},
                   };
-            this.setAuthStatus("Local mode");
+            this.setAuthStatus(this.locale.t("status.localMode"));
             await this.reloadData();
         } catch (error) {
             this.showLoadingError(safeText(error));
@@ -2394,6 +2488,9 @@ class App {
             else this.openWorkspaceSettings();
         });
         this.workspaceDialogCloseBtn.addEventListener("click", () => this.closeWorkspaceSettings());
+        this.workspaceLanguageSelect.addEventListener("change", () =>
+            this.applyLocale(this.workspaceLanguageSelect.value),
+        );
         this.workspaceDialog.addEventListener("cancel", (ev) => {
             ev.preventDefault();
             this.closeWorkspaceSettings();
@@ -2448,7 +2545,7 @@ class App {
         setVisible(this.loadingSection, false);
 
         if (this.oauthCallbackRequested) {
-            this.showLoadingScreen("Completing provider authorization…");
+            this.showLoadingScreen(this.locale.t("loading.completeAuthorization"));
             try {
                 const result = await this.oauthCallbackPromise;
                 if (!result) throw new Error("The provider authorization callback is incomplete.");
@@ -2472,7 +2569,7 @@ class App {
         }
 
         if (this.isLocalMode) {
-            this.setAuthStatus("Local mode");
+            this.setAuthStatus(this.locale.t("status.localMode"));
             setVisible(this.logoutBtn, false);
             setVisible(this.reloadDataBtn, true);
             setVisible(this.projectsBtn, true);
@@ -2485,16 +2582,20 @@ class App {
         setVisible(this.projectsBtn, false);
 
         if (!this.pendingRoute) {
-            this.setAuthStatus(this.token ? "Saved connection available" : "Not logged in");
+            this.setAuthStatus(
+                this.locale.t(this.token ? "status.savedConnection" : "status.notLoggedIn"),
+            );
             this.showLoginScreen();
         } else if (this.token) {
-            this.showLoadingScreen(`Connecting to ${this.providerDisplayName(initialProvider)}…`);
+            this.showLoadingScreen(
+                this.locale.t("loading.connectProvider", { provider: this.providerDisplayName(initialProvider) }),
+            );
             this.connectWithToken(this.token).catch((err) => {
                 this.showLoginScreen();
                 this.setError(this.loginErrorEl, safeText(err));
             });
         } else {
-            this.setAuthStatus("Not logged in");
+            this.setAuthStatus(this.locale.t("status.notLoggedIn"));
             this.showLoginScreen();
         }
     }
@@ -2554,7 +2655,7 @@ class App {
     /**
      * Keeps the loading screen visible and presents retry controls after initialization fails.
      * GitHub mode also offers a route back to login, while local mode can only retry the local server request.
-     * @param {string} message
+     * @param {unknown} message Error or already localized message.
      * @returns {void}
      */
     showLoadingError(message) {
@@ -2682,7 +2783,7 @@ class App {
         const remember = this.rememberInput.checked;
 
         if (!this.repositoryInput.value.trim() || !ref || !tok) {
-            this.setError(this.loginErrorEl, "Please fill in the repository URL, ref, and token.");
+            this.setError(this.loginErrorEl, this.locale.t("workspace.completeConnection"));
             return;
         }
 
@@ -2754,7 +2855,7 @@ class App {
         this.updateProviderForm(this.providerInput, this.repositoryInput);
         this.tokenInput.value = "";
         this.rememberInput.checked = false;
-        this.setAuthStatus("Cleared");
+        this.setAuthStatus(this.locale.t("status.cleared"));
         this.pendingRoute = null;
         this.routeController.write({ version: 1, component: null, panel: "main", workspace: null, state: {} }, "replace");
     }
@@ -2774,23 +2875,24 @@ class App {
      * Writes an error message into the provided element.
      * Keeps the main UI flow and data loading coordinated.
      * @param {HTMLElement} el
-     * @param {string} message
+     * @param {unknown} message Error value or already localized message.
      * @returns {void}
      */
     setError(el, message) {
-        if (!message) {
+        const localized = this.locale.localizeError(message);
+        if (!localized) {
             el.textContent = "";
             setVisible(el, false);
             return;
         }
-        el.textContent = message;
+        el.textContent = localized;
         setVisible(el, true);
     }
 
     /**
      * Shows a temporary toast-style message with optional success styling.
      * Keeps the main UI flow and data loading coordinated.
-     * @param {string} message
+     * @param {unknown} message Error or already localized message.
      * @param {number} timeoutMs
      * @param {"error" | "success"} [tone]
      * @returns {void}
@@ -2803,7 +2905,7 @@ class App {
             return;
         }
         this.dataErrorEl.classList.toggle("is-success", tone === "success");
-        this.setError(this.dataErrorEl, String(message));
+        this.setError(this.dataErrorEl, message);
         this.toastTimer = window.setTimeout(() => {
             this.dataErrorEl.classList.remove("is-success");
             this.setError(this.dataErrorEl, "");
@@ -2899,6 +3001,28 @@ class App {
     }
 
     /**
+     * Synchronizes the shared search field and time-search labels with the active component and interface language.
+     * Keeping this independent from tab navigation lets a locale change refresh accessible text without changing browser history or view state.
+     * @returns {void}
+     */
+    updateSearchControls() {
+        const searchesTodos = this.state.activeTab === "todos";
+        this.searchInput.value = searchesTodos ? this.todoView.getSearchQuery() : this.searchView.getSearchQuery();
+        this.searchInput.placeholder = this.locale.t(
+            searchesTodos ? "topbar.searchTodosPlaceholder" : "topbar.searchTimePlaceholder",
+        );
+        this.searchInput.setAttribute(
+            "aria-label",
+            this.locale.t(searchesTodos ? "topbar.searchTodos" : "topbar.searchTime"),
+        );
+        this.globalSearchEl.title = this.locale.t(
+            searchesTodos ? "topbar.searchTodosTitle" : "topbar.searchTimeTitle",
+        );
+        this.searchFromLabelEl.textContent = this.locale.t("search.from", { timezone: this.timeContext.timeZone });
+        this.searchToLabelEl.textContent = this.locale.t("search.to", { timezone: this.timeContext.timeZone });
+    }
+
+    /**
      * Switches between Week, TODO, and Search tabs.
      * Keeps the main UI flow and data loading coordinated.
      * @param {"week" | "todos" | "search"} tab
@@ -2907,13 +3031,8 @@ class App {
      */
     setTab(tab, historyMode = "push") {
         const next = tab === "search" || tab === "todos" ? tab : "week";
-        const searchesTodos = next === "todos";
-        const searchQuery = searchesTodos ? this.todoView.getSearchQuery() : this.searchView.getSearchQuery();
-        this.searchInput.value = searchQuery;
-        this.searchInput.placeholder = searchesTodos ? "Search TODOs…" : "Search time entries…";
-        this.searchInput.setAttribute("aria-label", searchesTodos ? "Search TODOs" : "Search time entries");
-        this.globalSearchEl.title = searchesTodos ? "Search TODOs (Ctrl+K)" : "Search time entries (Ctrl+K)";
         this.state.setActiveTab(next);
+        this.updateSearchControls();
         this.topbarEl.dataset.activeTab = next;
         for (const [button, isCurrent] of [
             [this.menuWeekBtn, next === "week"],
@@ -2984,16 +3103,29 @@ class App {
         }
 
         const totals = [];
-        totals.push(`${manifest.chunks.length} week file(s)`);
+        totals.push(
+            this.locale.t("data.weekFiles", { count: this.locale.formatNumber(manifest.chunks.length) }),
+        );
         if (typeof manifest.total_entries === "number" && Number.isFinite(manifest.total_entries)) {
-            totals.push(`${manifest.total_entries} entries`);
+            totals.push(this.locale.t("data.entries", { count: this.locale.formatNumber(manifest.total_entries) }));
         }
-        totals.push(`${this.todoStore.getTodos().length} TODOs`);
-        if (manifest.generated_at) totals.push(`manifest @ ${manifest.generated_at}`);
+        totals.push(
+            this.locale.t("data.todos", { count: this.locale.formatNumber(this.todoStore.getTodos().length) }),
+        );
+        if (manifest.generated_at) {
+            totals.push(
+                this.locale.t("data.manifestAt", {
+                    date: this.locale.formatDate(manifest.generated_at, this.timeContext.timeZone, {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                    }),
+                }),
+            );
+        }
 
         const workspaceName = this.workspace?.name ? `${this.workspace.name} • ` : "";
         if (this.isLocalMode) {
-            this.repositorySummary = `${workspaceName}Local data • ${totals.join(" • ")}`;
+            this.repositorySummary = `${workspaceName}${this.locale.t("data.local")} • ${totals.join(" • ")}`;
         } else {
             const repository =
                 this.activeWorkspaceConnection?.repositoryUrl ||
@@ -3026,7 +3158,11 @@ class App {
      * @returns {Promise<void>}
      */
     async fetchWorkspace() {
-        this.setProgress(0, 1, this.isLocalMode ? "Loading workspace (local)…" : "Loading workspace…");
+        this.setProgress(
+            0,
+            1,
+            this.locale.t(this.isLocalMode ? "loading.workspaceLocal" : "loading.workspace"),
+        );
         const raw = await this.dataSource.fetchWorkspace();
         const workspace = Workspace.fromRaw(raw);
         const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
@@ -3060,7 +3196,11 @@ class App {
      * @returns {Promise<void>}
      */
     async fetchManifest() {
-        this.setProgress(0, 1, this.isLocalMode ? "Loading manifest (local)…" : "Loading manifest…");
+        this.setProgress(
+            0,
+            1,
+            this.locale.t(this.isLocalMode ? "loading.manifestLocal" : "loading.manifest"),
+        );
         const raw = await this.dataSource.fetchManifest();
         const manifest = Manifest.fromRaw(raw, this.dataSource.getEntriesDirectory());
         this.store.setManifest(manifest);
@@ -3073,7 +3213,11 @@ class App {
      * @returns {Promise<void>}
      */
     async fetchProjects() {
-        this.setProgress(0, 1, this.isLocalMode ? "Loading projects (local)…" : "Loading projects…");
+        this.setProgress(
+            0,
+            1,
+            this.locale.t(this.isLocalMode ? "loading.projectsLocal" : "loading.projects"),
+        );
         const raw = await this.dataSource.fetchProjects();
         const projectList = ProjectList.fromRaw(raw || {});
         this.store.setProjectList(projectList);
@@ -3087,7 +3231,11 @@ class App {
      * @returns {Promise<void>}
      */
     async fetchWeekRequirements() {
-        this.setProgress(0, 1, this.isLocalMode ? "Loading week requirements (local)…" : "Loading week requirements…");
+        this.setProgress(
+            0,
+            1,
+            this.locale.t(this.isLocalMode ? "loading.requirementsLocal" : "loading.requirements"),
+        );
         try {
             const raw = await this.dataSource.fetchWeekRequirements();
             const requirements = WeekRequirements.fromRaw(raw || {});
@@ -3097,7 +3245,10 @@ class App {
             const defaults = WeekRequirements.createDefault();
             this.store.setWeekRequirements(defaults);
             this.weekView.setWeekRequirements(defaults);
-            this.toast(`Week requirements not loaded: ${safeText(err)}`, 5000);
+            this.toast(
+                this.locale.t("toast.requirementsNotLoaded", { error: this.locale.localizeError(err) }),
+                5000,
+            );
         }
     }
 
@@ -3107,7 +3258,11 @@ class App {
      * @returns {Promise<void>}
      */
     async fetchTodos() {
-        this.setProgress(0, 1, this.isLocalMode ? "Loading TODOs (local)…" : "Loading TODOs…");
+        this.setProgress(
+            0,
+            1,
+            this.locale.t(this.isLocalMode ? "loading.todosLocal" : "loading.todos"),
+        );
         const raw = await this.dataSource.fetchTodos();
         this.todoStore.setTodoList(TodoList.fromRaw(raw || {}));
         await this.todoView.initializeLoadedData();
@@ -3140,7 +3295,14 @@ class App {
             return;
         }
 
-        this.setProgress(0, chunkFiles.length, `Loading 0/${chunkFiles.length}…`);
+        this.setProgress(
+            0,
+            chunkFiles.length,
+            this.locale.t("loading.progress", {
+                loaded: this.locale.formatNumber(0),
+                total: this.locale.formatNumber(chunkFiles.length),
+            }),
+        );
 
         this.store.clear({ keepProjects: true, keepWeekRequirements: true });
         this.store.setManifest(manifest);
@@ -3163,7 +3325,11 @@ class App {
             }
         }
 
-        this.setProgress(memoryHits, chunkFiles.length, `Checking ${cacheCandidates.length} cached week files…`);
+        this.setProgress(
+            memoryHits,
+            chunkFiles.length,
+            this.locale.t("loading.checkCache", { count: this.locale.formatNumber(cacheCandidates.length) }),
+        );
         const cachedRawBySha = await this.chunkCache.getRawByShas(cacheCandidates.map((chunk) => chunk.sha));
         /** @type {import("./model.js").ManifestChunk[]} */
         const downloadChunks = [];
@@ -3190,7 +3356,7 @@ class App {
             this.setProgress(
                 memoryHits + cacheHits,
                 chunkFiles.length,
-                `Downloading ${downloadChunks.length} week files in bulk…`,
+                this.locale.t("loading.download", { count: this.locale.formatNumber(downloadChunks.length) }),
             );
             downloadedRawBySha = await this.dataSource.fetchChunkTexts(downloadChunks);
         }
@@ -3215,11 +3381,28 @@ class App {
             this.chunkCache.setMemory(key, { sha: chunk.sha, entriesRaw });
             const weekStart = isoWeekStartFromYearWeek(chunk.year, chunk.week);
             this.store.applyWeekSnapshot(weekStart, entriesRaw);
-            this.setProgress(index + 1, chunkFiles.length, `Preparing ${index + 1}/${chunkFiles.length} • ${key}`);
+            this.setProgress(
+                index + 1,
+                chunkFiles.length,
+                this.locale.t("loading.prepare", {
+                    loaded: this.locale.formatNumber(index + 1),
+                    total: this.locale.formatNumber(chunkFiles.length),
+                    week: key,
+                }),
+            );
         }
 
-        const cacheSummary = ` • memory ${memoryHits} • cached ${cacheHits} • downloaded ${downloadChunks.length}`;
-        this.setProgress(chunkFiles.length, chunkFiles.length, `Loaded ${chunkFiles.length}/${chunkFiles.length} week files${cacheSummary}`);
+        this.setProgress(
+            chunkFiles.length,
+            chunkFiles.length,
+            this.locale.t("loading.complete", {
+                loaded: this.locale.formatNumber(chunkFiles.length),
+                total: this.locale.formatNumber(chunkFiles.length),
+                memory: this.locale.formatNumber(memoryHits),
+                cached: this.locale.formatNumber(cacheHits),
+                downloaded: this.locale.formatNumber(downloadChunks.length),
+            }),
+        );
 
         await this.finalizeLoadedEntries();
     }
@@ -3257,7 +3440,9 @@ class App {
      * @returns {Promise<boolean>}
      */
     async reloadData() {
-        this.showLoadingScreen(this.isLocalMode ? "Preparing local data…" : "Preparing repository data…");
+        this.showLoadingScreen(
+            this.locale.t(this.isLocalMode ? "loading.prepareLocal" : "loading.prepareRepository"),
+        );
         this.setBusy(true);
         this.setError(this.dataErrorEl, "");
         this.entriesTbody.innerHTML = "";
@@ -3311,24 +3496,32 @@ class App {
         this.todoView.setDataSource(this.dataSource);
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.projectDialog.setDataSource(this.dataSource);
-        this.setAuthStatus("Connecting…");
-        const providerLabel = this.activeWorkspaceConnection?.provider || this.config.provider || "Git provider";
-        this.showLoadingScreen(`Connecting to ${providerLabel}…`);
+        this.setAuthStatus(this.locale.t("status.connecting"));
+        const provider = this.activeWorkspaceConnection?.provider || this.config.provider || "custom";
+        this.showLoadingScreen(
+            this.locale.t("loading.connectProvider", { provider: this.providerDisplayName(provider) }),
+        );
         this.setBusy(true);
         try {
             const { repoInfo, userInfo } = connectionInfo || (await this.dataSource.checkConnection());
             const repoLabel = repoInfo?.full_name
                 ? repoInfo.full_name
-                : this.activeWorkspaceConnection?.repositoryUrl || this.config.repositoryUrl || "workspace repository";
+                : this.activeWorkspaceConnection?.repositoryUrl ||
+                  this.config.repositoryUrl ||
+                  this.locale.t("landing.workspaceRepository");
             this.state.ghUser = userInfo;
-            this.setAuthStatus(userInfo?.login ? `Logged in as ${userInfo.login}` : `Connected to ${repoLabel}`);
+            this.setAuthStatus(
+                userInfo?.login
+                    ? this.locale.t("status.loggedInAs", { user: userInfo.login })
+                    : this.locale.t("status.connectedTo", { repository: repoLabel }),
+            );
             setVisible(this.logoutBtn, true);
             setVisible(this.reloadDataBtn, true);
             setVisible(this.projectsBtn, true);
             await this.reloadData();
         } catch (err) {
             this.state.ghUser = null;
-            this.setAuthStatus("Not logged in");
+            this.setAuthStatus(this.locale.t("status.notLoggedIn"));
             this.showLoginScreen();
             throw err;
         } finally {
@@ -3361,7 +3554,7 @@ class App {
         this.searchView.reset();
         this.searchInput.value = "";
         this.setProgress(0, 1, "");
-        this.setAuthStatus("Not logged in");
+        this.setAuthStatus(this.locale.t("status.notLoggedIn"));
         this.repositorySummary = "";
         this.todoSummary = "";
         this.refreshDataBadge();

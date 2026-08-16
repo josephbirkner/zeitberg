@@ -1,4 +1,4 @@
-import { cloneJson, createMaterialIcon, setVisible, utcNowIso } from "./utils.js";
+import { cloneJson, createMaterialIcon, hhmmToMinutes, setVisible, utcNowIso } from "./utils.js";
 import { Recurrence } from "./model.js";
 import { buildGitHubIssueUrl } from "./datasource.js";
 
@@ -39,6 +39,7 @@ const TODO_DOCUMENT_NAME = "todos";
  * @property {import("./cache.js").DraftJournal} draftJournal
  * @property {string} draftNamespace
  * @property {import("./utils.js").TimeContext} timeContext
+ * @property {import("./locale.js").LocaleService} locale
  * @property {TodoViewElements} elements
  * @property {(message: string, timeout?: number, tone?: "error" | "success") => void} onToast
  * @property {(isBusy: boolean) => void} onBusy
@@ -180,6 +181,7 @@ export class TodoView {
         this.draftJournal = options.draftJournal;
         this.draftNamespace = options.draftNamespace;
         this.timeContext = options.timeContext;
+        this.locale = options.locale;
         this.onToast = options.onToast;
         this.onBusy = options.onBusy;
         this.onSaved = options.onSaved;
@@ -237,6 +239,17 @@ export class TodoView {
         this.bindEvents();
         this.populateProjectControls({ projectKey: null, sectionKey: null });
         this.updateFilterButtons();
+        this.updateSaveState();
+    }
+
+    /**
+     * Rebuilds locale-sensitive project controls, task summaries, dates, recurrence descriptions, and save state.
+     * Stable filter values and selected task ids survive because only presentation nodes are regenerated.
+     * @returns {void}
+     */
+    refreshLocale() {
+        this.populateProjectControls();
+        this.render();
         this.updateSaveState();
     }
 
@@ -472,7 +485,7 @@ export class TodoView {
         const projects = this.projectStore
             .getProjects()
             .slice()
-            .sort((left, right) => left.name.localeCompare(right.name));
+            .sort((left, right) => this.locale.compare(left.name, right.name));
 
         const activeKeys = new Set(projects.filter((project) => !project.archived).map((project) => project.key));
         if (this.projectFilterKey !== "*" && this.projectFilterKey !== "" && !activeKeys.has(this.projectFilterKey)) {
@@ -480,8 +493,8 @@ export class TodoView {
         }
         this.projectFiltersEl.innerHTML = "";
         const filterOptions = [
-            { key: "*", label: "All" },
-            { key: "", label: "No project" },
+            { key: "*", label: this.locale.t("todo.all") },
+            { key: "", label: this.locale.t("search.noProject") },
             ...projects.filter((project) => !project.archived).map((project) => ({ key: project.key, label: project.name })),
         ];
         for (const filter of filterOptions) {
@@ -504,7 +517,9 @@ export class TodoView {
             if (assignment.archived && !isSelected) continue;
             const option = document.createElement("option");
             option.value = assignment.label;
-            option.label = assignment.archived ? `${assignment.label} (archived)` : assignment.label;
+            option.label = assignment.archived
+                ? `${assignment.label} (${this.locale.t("search.archived")})`
+                : assignment.label;
             this.assignmentListEl.append(option);
         }
         this.assignmentInput.value = selectedKeys
@@ -577,7 +592,7 @@ export class TodoView {
         if (!visible.length) {
             const empty = document.createElement("div");
             empty.className = "todo-empty";
-            empty.textContent = "No TODOs match this view.";
+            empty.textContent = this.locale.t("todo.empty");
             this.listEl.append(empty);
         } else {
             const fragment = document.createDocumentFragment();
@@ -590,7 +605,13 @@ export class TodoView {
         const all = this.store.getTodos().filter((todo) => !todo.archived);
         const openCount = all.filter((todo) => !todo.isCompleted()).length;
         const completedCount = all.length - openCount;
-        this.onStatsChanged(`${visible.length} shown • ${openCount} open • ${completedCount} completed`);
+        this.onStatsChanged(
+            this.locale.t("todo.stats", {
+                shown: this.locale.formatNumber(visible.length),
+                open: this.locale.formatNumber(openCount),
+                completed: this.locale.formatNumber(completedCount),
+            }),
+        );
         this.updateSaveState();
         this.notifyStateChange();
     }
@@ -613,7 +634,7 @@ export class TodoView {
                 const project = this.projectStore.getProjectByKey(projectKey);
                 group = {
                     projectKey: project?.key || null,
-                    projectName: project?.name || "No project",
+                    projectName: project?.name || this.locale.t("search.noProject"),
                     color: project?.color || "",
                     rootTodos: [],
                     sectionsByKey: new Map(),
@@ -657,7 +678,7 @@ export class TodoView {
                         (left, right) =>
                             (sectionOrder.get(left.sectionKey) ?? Number.MAX_SAFE_INTEGER) -
                                 (sectionOrder.get(right.sectionKey) ?? Number.MAX_SAFE_INTEGER) ||
-                            left.sectionName.localeCompare(right.sectionName),
+                            this.locale.compare(left.sectionName, right.sectionName),
                     ),
                 };
             });
@@ -681,8 +702,16 @@ export class TodoView {
         const count = document.createElement("span");
         count.className = "todo-group-count";
         const total = group.rootTodos.length + group.sections.reduce((sum, section) => sum + section.todos.length, 0);
-        count.textContent = String(total);
-        header.append(title, count, this.buildTodoGroupAddButton(group.projectKey, null, `Add TODO to ${group.projectName}`));
+        count.textContent = this.locale.formatNumber(total);
+        header.append(
+            title,
+            count,
+            this.buildTodoGroupAddButton(
+                group.projectKey,
+                null,
+                this.locale.t("todo.addTo", { assignment: group.projectName }),
+            ),
+        );
         container.append(header);
 
         for (const todo of group.rootTodos) container.append(this.buildTodoRow(todo));
@@ -695,14 +724,14 @@ export class TodoView {
             sectionTitle.textContent = section.sectionName;
             const sectionCount = document.createElement("span");
             sectionCount.className = "todo-group-count";
-            sectionCount.textContent = String(section.todos.length);
+            sectionCount.textContent = this.locale.formatNumber(section.todos.length);
             sectionHeader.append(
                 sectionTitle,
                 sectionCount,
                 this.buildTodoGroupAddButton(
                     group.projectKey,
                     section.sectionKey,
-                    `Add TODO to ${group.projectName} / ${section.sectionName}`,
+                    this.locale.t("todo.addTo", { assignment: `${group.projectName} / ${section.sectionName}` }),
                 ),
             );
             sectionContainer.append(sectionHeader);
@@ -752,7 +781,10 @@ export class TodoView {
         check.type = "button";
         check.className = "todo-check";
         check.dataset.todoAction = "toggle";
-        check.setAttribute("aria-label", todo.isCompleted() ? `Reopen ${todo.content}` : `Complete ${todo.content}`);
+        check.setAttribute(
+            "aria-label",
+            this.locale.t(todo.isCompleted() ? "todo.reopen" : "todo.complete", { task: todo.content }),
+        );
         if (todo.isCompleted()) check.append(createMaterialIcon("check", "app-icon todo-check-icon"));
 
         const body = document.createElement("div");
@@ -775,10 +807,13 @@ export class TodoView {
         if (todo.completion_history.length) {
             const completionCount = document.createElement("span");
             completionCount.className = "todo-completion-count";
-            completionCount.textContent = `${todo.completion_history.length} done`;
-            completionCount.title = `${todo.completion_history.length} recurring occurrence${
-                todo.completion_history.length === 1 ? "" : "s"
-            } completed`;
+            completionCount.textContent = this.locale.t("todo.doneCount", {
+                count: this.locale.formatNumber(todo.completion_history.length),
+            });
+            completionCount.title = this.locale.plural(
+                "todo.occurrencesCompleted",
+                todo.completion_history.length,
+            );
             meta.append(completionCount);
         }
         if (todo.priority > 1) {
@@ -799,8 +834,11 @@ export class TodoView {
             issueLink.href = issueUrl;
             issueLink.target = "_blank";
             issueLink.rel = "noreferrer";
-            issueLink.title = `Open GitHub issue #${todo.source?.id}`;
-            issueLink.setAttribute("aria-label", `Open linked GitHub issue #${todo.source?.id}`);
+            issueLink.title = this.locale.t("todo.openIssue", { number: todo.source?.id });
+            issueLink.setAttribute(
+                "aria-label",
+                this.locale.t("todo.openLinkedIssue", { number: todo.source?.id }),
+            );
             issueLink.append(createMaterialIcon("open_in_new", "app-icon todo-issue-icon"));
             issueLink.append(document.createTextNode(`#${todo.source?.id}`));
             meta.append(issueLink);
@@ -859,9 +897,17 @@ export class TodoView {
         if (!todo.isCompleted() && key < today) due.classList.add("is-overdue");
         if (!todo.isCompleted() && key === today) due.classList.add("is-today");
         const fields = splitDue(todo.due);
+        const minutes = fields.time ? hhmmToMinutes(fields.time) ?? 0 : 12 * 60;
+        const date = this.timeContext.dateFromLocalDayMinutes(key, minutes);
         if (todo.isRecurring()) due.append(createMaterialIcon("repeat", "app-icon todo-recurrence-icon"));
-        due.append(document.createTextNode(`${key}${fields.time ? ` ${fields.time}` : ""}`));
-        if (todo.recurrence) due.title = todo.recurrence.describe();
+        due.append(
+            document.createTextNode(
+                `${this.locale.formatDate(date, this.timeContext.timeZone)}${
+                    fields.time ? ` ${this.locale.formatTime(date, this.timeContext.timeZone)}` : ""
+                }`,
+            ),
+        );
+        if (todo.recurrence) due.title = this.locale.describeRecurrence(todo.recurrence, this.timeContext.timeZone);
         return due;
     }
 
@@ -1049,8 +1095,8 @@ export class TodoView {
     openCreateDialog(selectedAssignment = undefined) {
         if (this.busy || this.saveInFlight) return;
         this.editingTodoId = null;
-        this.dialogTitleEl.textContent = "Add TODO";
-        this.dialogMetaEl.textContent = "New task";
+        this.dialogTitleEl.textContent = this.locale.t("todo.addTitle");
+        this.dialogMetaEl.textContent = this.locale.t("todo.newTask");
         this.contentInput.value = "";
         this.descriptionInput.value = "";
         const defaultAssignment = selectedAssignment || {
@@ -1079,11 +1125,16 @@ export class TodoView {
     openEditDialog(todo) {
         if (this.busy || this.saveInFlight) return;
         this.editingTodoId = todo.id;
-        this.dialogTitleEl.textContent = "Edit TODO";
-        const hierarchy = todo.parent_id ? " • subtask" : "";
-        const source = todo.source?.provider && todo.source.provider !== "github" ? ` • imported from ${todo.source.provider}` : "";
+        this.dialogTitleEl.textContent = this.locale.t("todo.editTitle");
+        const hierarchy = todo.parent_id ? ` • ${this.locale.t("todo.subtask")}` : "";
+        const source =
+            todo.source?.provider && todo.source.provider !== "github"
+                ? ` • ${this.locale.t("todo.importedFrom", { provider: todo.source.provider })}`
+                : "";
         this.dialogMetaEl.replaceChildren(
-            document.createTextNode(`${todo.isCompleted() ? "Completed" : "Open"}${hierarchy}${source}`),
+            document.createTextNode(
+                `${this.locale.t(todo.isCompleted() ? "todo.completed" : "todo.open")}${hierarchy}${source}`,
+            ),
         );
         const issueUrl = this.getTodoIssueUrl(todo);
         if (issueUrl) {
@@ -1093,7 +1144,9 @@ export class TodoView {
             issueLink.target = "_blank";
             issueLink.rel = "noreferrer";
             issueLink.append(createMaterialIcon("open_in_new", "app-icon todo-issue-icon"));
-            issueLink.append(document.createTextNode(`GitHub issue #${todo.source?.id}`));
+            issueLink.append(
+                document.createTextNode(this.locale.t("todo.githubIssue", { number: todo.source?.id })),
+            );
             this.dialogMetaEl.append(document.createTextNode(" • "), issueLink);
         }
         this.contentInput.value = todo.content;
@@ -1102,7 +1155,7 @@ export class TodoView {
         this.originalDue = todo.due ? cloneJson(todo.due) : null;
         this.originalDueFields = splitDue(todo.due);
         this.originalRecurrence = todo.recurrence ? todo.recurrence.toRaw() : null;
-        this.originalRecurrenceText = todo.recurrence?.describe() || "";
+        this.originalRecurrenceText = this.locale.describeRecurrence(todo.recurrence, this.timeContext.timeZone);
         this.dueDateInput.value = this.originalDueFields.date;
         this.dueTimeInput.value = this.originalDueFields.time;
         this.recurrenceInput.value = this.originalRecurrenceText;
@@ -1156,7 +1209,7 @@ export class TodoView {
         const text = this.recurrenceInput.value.trim();
         if (!text) return null;
         if (!due) {
-            throw new Error("A recurring TODO needs a due date.");
+            throw new Error(this.locale.t("toast.recurrenceDue"));
         }
         const dueFields = splitDue(due);
         const scheduleUntouched =
@@ -1168,9 +1221,7 @@ export class TodoView {
         }
         const recurrence = Recurrence.fromText(text, due.date);
         if (!recurrence) {
-            throw new Error(
-                'Unsupported recurrence. Try “every day”, “every Friday”, “every 2 weeks”, or “every! month”.',
-            );
+            throw new Error(this.locale.t("toast.unsupportedRecurrence"));
         }
         return recurrence.toRaw();
     }
@@ -1182,7 +1233,7 @@ export class TodoView {
     collectDetails() {
         const assignment = this.projectStore.findAssignmentByLabel(this.assignmentInput.value);
         if (!assignment) {
-            throw new Error("Please select a project or section from the list (or clear the field for No project).");
+            throw new Error(this.locale.t("toast.invalidAssignment"));
         }
         const labels = this.labelsInput.value
             .split(",")
@@ -1222,7 +1273,7 @@ export class TodoView {
             return;
         }
         if (!details.content) {
-            this.onToast("A TODO needs a title.");
+            this.onToast(this.locale.t("toast.todoTitle"));
             this.contentInput.focus();
             return;
         }
@@ -1366,13 +1417,20 @@ export class TodoView {
      * @returns {void}
      */
     updateSaveState() {
-        const status = this.saveInFlight ? "Saving…" : this.dirty ? "Changed" : "Saved";
+        const status = this.locale.t(
+            this.saveInFlight ? "status.saving" : this.dirty ? "status.changed" : "status.saved",
+        );
         this.viewEl.classList.toggle("is-dirty", this.dirty);
         if (this.active) {
             this.editorBadgeEl.classList.toggle("is-dirty", this.dirty);
             this.editorBadgeEl.disabled = this.busy || this.saveInFlight;
-            this.editorBadgeEl.title = this.dirty ? "Save changes (Ctrl+S)" : "No unsaved TODO changes";
-            this.editorBadgeEl.setAttribute("aria-label", this.dirty ? "Save changed TODOs" : "TODO changes saved");
+            this.editorBadgeEl.title = this.dirty
+                ? this.locale.t("topbar.saveTitle")
+                : this.locale.t("status.todoNoUnsaved");
+            this.editorBadgeEl.setAttribute(
+                "aria-label",
+                this.locale.t(this.dirty ? "status.todoSaveChanged" : "status.todoChangesSaved"),
+            );
             this.editorBadgeEl.innerHTML = `<span class="dot"></span><span class="save">${status}</span>`;
         }
     }
@@ -1393,7 +1451,7 @@ export class TodoView {
                     value,
                     updatedAt: Date.now(),
                 }),
-            "Browser draft storage is unavailable; unsaved TODO edits may not survive a reload.",
+            this.locale.t("toast.todoDraftUnavailable"),
         );
     }
 
@@ -1406,7 +1464,7 @@ export class TodoView {
         if (!namespace) return;
         this.enqueueDraftOperation(
             () => this.draftJournal.deleteDocumentDraft(namespace, TODO_DOCUMENT_NAME),
-            "The saved TODO browser draft could not be cleaned up.",
+            this.locale.t("toast.todoDraftCleanup"),
         );
     }
 
@@ -1494,7 +1552,11 @@ export class TodoView {
         this.store.applySnapshot(restored);
         this.dirty = !todoSnapshotsEqual(this.cleanSnapshot, restored);
         if (this.dirty) this.queueDraftWrite();
-        this.onToast(baseStillCurrent ? "Restored unsaved TODO edits." : "Restored TODO edits and merged newer data.", 5000, "success");
+        this.onToast(
+            this.locale.t(baseStillCurrent ? "toast.todoRestored" : "toast.todoRestoredMerged"),
+            5000,
+            "success",
+        );
         this.updateSaveState();
         return true;
     }
@@ -1606,7 +1668,7 @@ export class TodoView {
     async saveNow() {
         if (this.busy || this.saveInFlight) return;
         if (!this.dirty) {
-            this.onToast("Nothing to save.");
+            this.onToast(this.locale.t("toast.nothingToSave"));
             return;
         }
         this.saveInFlight = true;
@@ -1622,7 +1684,7 @@ export class TodoView {
             this.queueDraftDelete();
             await this.flushDraftWrites();
             this.onSaved();
-            this.onToast("TODOs saved.", 2400, "success");
+            this.onToast(this.locale.t("toast.todoSaved"), 2400, "success");
         } catch (error) {
             this.onToast(String(error), 5000);
         } finally {

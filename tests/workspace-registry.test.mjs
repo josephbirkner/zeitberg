@@ -111,6 +111,19 @@ test("ConfigService isolates session and remembered credentials by workspace", (
     assert.equal(service.loadWorkspaceCredential(shared.id), "remembered-secret");
 });
 
+test("ConfigService persists interface language independently from workspace logout", (testContext) => {
+    installBrowserStorage(testContext);
+    const service = new ConfigService();
+
+    assert.equal(service.loadLocale(), "");
+    service.saveLocale("de");
+    assert.equal(service.loadLocale(), "de");
+    assert.throws(() => service.saveLocale("fr"), /Unsupported interface language/);
+
+    service.clearSaved();
+    assert.equal(service.loadLocale(), "de");
+});
+
 test("ConfigService preserves refreshable OAuth grants without exposing them through the registry", (testContext) => {
     const { local } = installBrowserStorage(testContext);
     const service = new ConfigService();

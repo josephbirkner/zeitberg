@@ -2,7 +2,6 @@ import {
     addIsoDays,
     cloneJson,
     createMaterialIcon,
-    formatDuration,
     parseHexColor,
     hhmmToMinutes,
     chunkKey,
@@ -11,11 +10,11 @@ import {
     isoWeekdayIndex,
     isEditableTarget,
     jsonStringifySorted,
-    minutesToHHMM,
     safeText,
     setVisible,
     utcNowIso,
 } from "./utils.js";
+import { BALANCE_ACCUMULATION_START } from "./store.js";
 
 const MIN_ENTRY_MINUTES = 15;
 const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
@@ -26,7 +25,6 @@ const ENTRY_DOUBLE_TAP_MAX_DELAY_MS = 450;
 const ENTRY_DOUBLE_TAP_MAX_DISTANCE_PX = 28;
 const ENTRY_TAP_MOVE_TOLERANCE_PX = 10;
 
-const DOW_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DESC_SUGGEST_MIN_CHARS = 2;
 const DESC_SUGGEST_LIMIT = 8;
 
@@ -298,6 +296,7 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {import("./appstate.js").AppState} appState
  * @property {import("./utils.js").TimeContext} timeContext
  * @property {import("./datasource.js").DataSource} dataSource
+ * @property {import("./locale.js").LocaleService} locale
  * @property {Object} elements
  * @property {HTMLElement} elements.weekViewSection
  * @property {HTMLElement} elements.weekControls
@@ -360,6 +359,7 @@ export class WeekView {
         this.appState = options.appState;
         this.timeContext = options.timeContext;
         this.dataSource = options.dataSource;
+        this.locale = options.locale;
 
         this.weekViewSection = options.elements.weekViewSection;
         this.weekControlsEl = options.elements.weekControls;
@@ -456,6 +456,34 @@ export class WeekView {
 
         this.bindEvents();
         this.updateTopbarActions();
+    }
+
+    /**
+     * Rebuilds locale-sensitive timeline headers, entry metadata, summaries, and save labels without changing editor state.
+     * Week rendering already restores scroll coordinates, so a language switch does not disturb the user's position.
+     * @returns {void}
+     */
+    refreshLocale() {
+        this.rebuildWeekView();
+        this.updateEditorBadge();
+        if (this.weekReqDialog.open && this.appState.weekStart) {
+            this.renderWeekRequirementsSummary(this.getWeekSummaryData(this.appState.weekStart));
+        }
+    }
+
+    /**
+     * Formats local minutes after midnight with active-locale digits while retaining the timeline's explicit 24:00 endpoint.
+     * @param {number} minutes Wall-clock minutes in the inclusive 0–1440 range.
+     * @returns {string}
+     */
+    formatWallMinutes(minutes) {
+        const clamped = Math.max(0, Math.min(1440, Math.round(Number(minutes) || 0)));
+        const hours = Math.floor(clamped / 60);
+        const mins = clamped % 60;
+        return `${this.locale.formatNumber(hours, { minimumIntegerDigits: 2, useGrouping: false })}:${this.locale.formatNumber(
+            mins,
+            { minimumIntegerDigits: 2, useGrouping: false },
+        )}`;
     }
 
     /**
@@ -673,7 +701,7 @@ export class WeekView {
             this.weekBillableEl.replaceChildren();
         }
         this.weekReqBtn.removeAttribute("aria-label");
-        this.weekReqBtn.title = "Edit required hours";
+        this.weekReqBtn.title = this.locale.t("topbar.requiredHours");
         this.weekDom = null;
         this.segmentsIndex = new Map();
         this.projectColorCache.clear();
@@ -1113,11 +1141,14 @@ export class WeekView {
         const dirty = this.dirtyWeekStarts.size > 0;
         this.updateTopbarActions();
         if (!this.active) return;
-        const save = this.saveInFlight ? "Saving…" : dirty ? "Changed" : "Saved";
+        const save = this.locale.t(this.saveInFlight ? "week.saving" : dirty ? "week.changed" : "week.saved");
         this.editorBadgeEl.classList.toggle("is-dirty", dirty);
         this.editorBadgeEl.disabled = this.busy || this.saveInFlight;
-        this.editorBadgeEl.title = dirty ? "Save changes (Ctrl+S)" : "No unsaved week changes";
-        this.editorBadgeEl.setAttribute("aria-label", dirty ? "Save changed weeks" : "Week changes saved");
+        this.editorBadgeEl.title = dirty ? this.locale.t("topbar.saveTitle") : this.locale.t("week.noUnsaved");
+        this.editorBadgeEl.setAttribute(
+            "aria-label",
+            this.locale.t(dirty ? "week.saveChanged" : "week.changesSaved"),
+        );
         this.editorBadgeEl.innerHTML = `<span class="dot"></span><span class="save">${save}</span>`;
     }
 
@@ -1489,7 +1520,7 @@ export class WeekView {
             const top = hour * 60 * pxPerMinute;
             const label = document.createElement("div");
             label.className = "wg-time-label";
-            label.textContent = `${String(hour).padStart(2, "0")}:00`;
+            label.textContent = this.formatWallMinutes(hour * 60);
             label.style.top = `${top}px`;
             label.style.transform = hour === 0 ? "translateY(0)" : "translateY(-50%)";
             this.weekDom.timeAxisEl.append(label);
@@ -1611,13 +1642,25 @@ export class WeekView {
         timeHeader.className = "wg-header wg-week-summary";
         const weekNumberEl = document.createElement("div");
         weekNumberEl.className = "wg-week-number";
-        weekNumberEl.textContent = `W${String(week).padStart(2, "0")}`;
+        const localizedWeek = this.locale.formatNumber(week, { minimumIntegerDigits: 2, useGrouping: false });
+        weekNumberEl.textContent = this.locale.t("week.number", { week: localizedWeek });
         const trackedSeconds = this.store.getWeekTrackedSeconds(weekStart);
         const weekTrackedEl = document.createElement("div");
         weekTrackedEl.className = "wg-week-tracked";
-        weekTrackedEl.textContent = formatTrackedHours(trackedSeconds);
-        timeHeader.title = `${formatDuration(trackedSeconds)} tracked in week ${week}`;
-        timeHeader.setAttribute("aria-label", `Week ${week}, ${formatDuration(trackedSeconds)} tracked`);
+        const trackedHours = Math.round((Math.max(0, trackedSeconds) / 3600) * 10) / 10;
+        weekTrackedEl.textContent = `${this.locale.formatNumber(trackedHours, { maximumFractionDigits: 1 })}h`;
+        const trackedDuration = this.locale.formatDuration(trackedSeconds);
+        timeHeader.title = this.locale.t("week.trackedTitle", {
+            duration: trackedDuration,
+            week: this.locale.formatNumber(week),
+        });
+        timeHeader.setAttribute(
+            "aria-label",
+            this.locale.t("week.trackedAria", {
+                duration: trackedDuration,
+                week: this.locale.formatNumber(week),
+            }),
+        );
         timeHeader.append(weekNumberEl, weekTrackedEl);
         gridEl.append(timeHeader);
 
@@ -1630,19 +1673,25 @@ export class WeekView {
 
             const dowEl = document.createElement("div");
             dowEl.className = "wg-dow";
-            dowEl.textContent = DOW_LABELS[i];
+            const dayDate = this.timeContext.dateFromLocalDayMinutes(days[i], 12 * 60);
+            dowEl.textContent = this.locale.formatWeekday(dayDate, this.timeContext.timeZone, "short");
             const totalEl = document.createElement("div");
             totalEl.className = "wg-day-total";
             const billableSeconds = this.store.getDayBillableSeconds(weekStart, days[i]);
             totalEl.classList.toggle("is-empty", billableSeconds === 0);
-            totalEl.textContent = `€ ${formatDuration(billableSeconds)}`;
-            totalEl.title = `${formatDuration(billableSeconds)} billable`;
+            totalEl.textContent = `€ ${this.locale.formatDuration(billableSeconds)}`;
+            totalEl.title = this.locale.t("week.billableTitle", {
+                duration: this.locale.formatDuration(billableSeconds),
+            });
             const headerTopEl = document.createElement("div");
             headerTopEl.className = "wg-header-top";
             headerTopEl.append(dowEl, totalEl);
             const dateEl = document.createElement("div");
             dateEl.className = "wg-date";
-            dateEl.textContent = days[i];
+            dateEl.textContent = this.locale.formatDate(dayDate, this.timeContext.timeZone, {
+                day: "2-digit",
+                month: "2-digit",
+            });
 
             header.append(headerTopEl, dateEl);
             header.addEventListener("click", () => {
@@ -1739,7 +1788,9 @@ export class WeekView {
             for (let idx = 0; idx < assigned.length; idx++) {
                 const { lane, seg } = assigned[idx];
                 const entry = seg.entry || {};
-                const projectLabel = this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) || "No project";
+                const projectLabel =
+                    this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) ||
+                    this.locale.t("search.noProject");
                 const description = entry.description || "";
 
                 dayKeys[dayIdx].push(seg.key);
@@ -1777,7 +1828,9 @@ export class WeekView {
                 descEl.textContent = description;
                 const timeEl = document.createElement("div");
                 timeEl.className = "entry-times";
-                timeEl.textContent = `${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)}`;
+                const entryStart = this.formatWallMinutes(seg.startMinutes);
+                const entryEnd = this.formatWallMinutes(seg.endMinutes);
+                timeEl.textContent = `${entryStart}–${entryEnd}`;
                 const contentEl = document.createElement("div");
                 contentEl.className = "entry-content";
                 contentEl.append(projectEl, descEl);
@@ -1790,9 +1843,16 @@ export class WeekView {
                 });
                 this.appendEntryPointerControls(el, seg, dateStr);
 
-                el.title = `${dateStr} ${minutesToHHMM(seg.startMinutes)}–${minutesToHHMM(seg.endMinutes)} • ${projectLabel}${
-                    description ? ` • ${description}` : ""
-                }`;
+                el.title = this.locale.t("week.entryTitle", {
+                    date: this.locale.formatDate(
+                        this.timeContext.dateFromLocalDayMinutes(dateStr, seg.startMinutes),
+                        this.timeContext.timeZone,
+                    ),
+                    start: entryStart,
+                    end: entryEnd,
+                    project: projectLabel,
+                    description: description ? ` • ${description}` : "",
+                });
 
                 el.addEventListener("click", (ev) => {
                     ev.stopPropagation();
@@ -1935,8 +1995,8 @@ export class WeekView {
             const startHandle = document.createElement("button");
             startHandle.type = "button";
             startHandle.className = "entry-resize-handle entry-resize-start";
-            startHandle.setAttribute("aria-label", "Drag entry start");
-            startHandle.title = "Drag start";
+            startHandle.setAttribute("aria-label", this.locale.t("entry.dragStart"));
+            startHandle.title = this.locale.t("entry.dragStartShort");
             startHandle.addEventListener("click", (ev) => ev.stopPropagation());
             startHandle.addEventListener("pointerdown", (ev) => {
                 this.selectRenderedSegment(dayIdx, segment.key);
@@ -1949,8 +2009,8 @@ export class WeekView {
             const endHandle = document.createElement("button");
             endHandle.type = "button";
             endHandle.className = "entry-resize-handle entry-resize-end";
-            endHandle.setAttribute("aria-label", "Drag entry end");
-            endHandle.title = "Drag end";
+            endHandle.setAttribute("aria-label", this.locale.t("entry.dragEnd"));
+            endHandle.title = this.locale.t("entry.dragEndShort");
             endHandle.addEventListener("click", (ev) => ev.stopPropagation());
             endHandle.addEventListener("pointerdown", (ev) => {
                 this.selectRenderedSegment(dayIdx, segment.key);
@@ -1961,22 +2021,26 @@ export class WeekView {
 
         const actions = document.createElement("div");
         actions.className = "entry-action-rail";
-        const editButton = this.createEntryControlButton("edit", "Edit entry", "entry-control");
+        const editButton = this.createEntryControlButton("edit", this.locale.t("entry.edit"), "entry-control");
         editButton.addEventListener("click", (ev) => {
             ev.stopPropagation();
             this.selectRenderedSegment(dayIdx, segment.key);
             this.openEntryDialog(Number(entry.id));
         });
-        const splitButton = this.createEntryControlButton("split", "Split entry", "entry-control");
+        const splitButton = this.createEntryControlButton("split", this.locale.t("entry.split"), "entry-control");
         splitButton.addEventListener("click", (ev) => {
             ev.stopPropagation();
             this.selectRenderedSegment(dayIdx, segment.key);
             this.enterSplitMode();
             if (this.editMode === "split") {
-                this.onToast("Tap the desired split point inside the entry.", 3000, "success");
+                this.onToast(this.locale.t("toast.tapSplit"), 3000, "success");
             }
         });
-        const deleteButton = this.createEntryControlButton("trash", "Delete entry", "entry-control entry-delete-control");
+        const deleteButton = this.createEntryControlButton(
+            "trash",
+            this.locale.t("entry.delete"),
+            "entry-control entry-delete-control",
+        );
         deleteButton.addEventListener("click", (ev) => {
             ev.stopPropagation();
             this.selectRenderedSegment(dayIdx, segment.key);
@@ -2028,10 +2092,17 @@ export class WeekView {
 
         for (const range of ranges) {
             if (range.endMinutes - range.startMinutes < MIN_ENTRY_MINUTES) continue;
-            const intervalLabel = `${minutesToHHMM(range.startMinutes)}–${minutesToHHMM(range.endMinutes)}`;
+            const intervalLabel = `${this.formatWallMinutes(range.startMinutes)}–${this.formatWallMinutes(range.endMinutes)}`;
             const button = this.createEntryControlButton(
                 "plus",
-                `Add ${intervalLabel} entry on ${dayStr}`,
+                this.locale.t("entry.addHere", {
+                    interval: intervalLabel,
+                    date: this.locale.formatDate(
+                        this.timeContext.dateFromLocalDayMinutes(dayStr, 0),
+                        this.timeContext.timeZone,
+                        { dateStyle: "medium" },
+                    ),
+                }),
                 `entry-gap-add${range.empty ? " is-empty-day" : ""}`,
             );
             button.dataset.midpoint = String(range.midpoint);
@@ -2103,18 +2174,18 @@ export class WeekView {
      */
     createEntryAt(startMs, endMs) {
         if (this.busy || this.saveInFlight) {
-            this.onToast("Saving in progress…");
+            this.onToast(this.locale.t("toast.saving"));
             return null;
         }
         const weekStart = this.appState.weekStart;
         const bounds = this.timeContext.weekBoundsMs(weekStart);
         if (!weekStart || !bounds) return null;
         if (startMs < bounds.startMs || endMs > bounds.endMs) {
-            this.onToast("Cannot create entry outside the current week.");
+            this.onToast(this.locale.t("toast.outsideWeek"));
             return null;
         }
         if (endMs - startMs < MIN_ENTRY_MS) {
-            this.onToast("Entry shorter than 15 minutes.");
+            this.onToast(this.locale.t("toast.shortEntry"));
             return null;
         }
 
@@ -2236,7 +2307,10 @@ export class WeekView {
             el.style.height = `${Math.max(1, (endMinutes - startMinutes) * this.weekDom.metrics.pxPerMinute)}px`;
             const timesEl = el.querySelector(".entry-times");
             if (timesEl instanceof HTMLElement) {
-                timesEl.textContent = `${this.timeContext.formatTime(new Date(startMs))}–${this.timeContext.formatTime(new Date(endMs))}`;
+                timesEl.textContent = `${this.locale.formatTime(
+                    new Date(startMs),
+                    this.timeContext.timeZone,
+                )}–${this.locale.formatTime(new Date(endMs), this.timeContext.timeZone)}`;
             }
         }
     }
@@ -2347,7 +2421,7 @@ export class WeekView {
             el.style.height = `${Math.max(1, (endMinutes - startMinutes) * this.weekDom.metrics.pxPerMinute)}px`;
             const timesEl = el.querySelector(".entry-times");
             if (timesEl instanceof HTMLElement) {
-                timesEl.textContent = `${minutesToHHMM(startMinutes)}–${minutesToHHMM(endMinutes)}`;
+                timesEl.textContent = `${this.formatWallMinutes(startMinutes)}–${this.formatWallMinutes(endMinutes)}`;
             }
         }
     }
@@ -2910,7 +2984,7 @@ export class WeekView {
         const startMinutes = Math.min(draft.anchorMinutes, nextMinutes);
         const endMinutes = Math.max(draft.anchorMinutes, nextMinutes);
         if (endMinutes - startMinutes < MIN_ENTRY_MINUTES) {
-            this.onToast("Entry shorter than 15 minutes.");
+            this.onToast(this.locale.t("toast.shortEntry"));
             return;
         }
 
@@ -3031,22 +3105,24 @@ export class WeekView {
      * @returns {void}
      */
     enterSplitMode() {
-        if (!this.selectedEntryId) return this.onToast("Select an entry first.");
+        if (!this.selectedEntryId) return this.onToast(this.locale.t("toast.selectEntry"));
         const entry = this.store.getEntryById(this.selectedEntryId);
         if (!entry) return;
         if (!(entry.startDate instanceof Date) || Number.isNaN(entry.startDate.getTime())) return;
         if (!(entry.endDate instanceof Date) || Number.isNaN(entry.endDate.getTime())) return;
-        if (this.appState.weekStart && entry.weekStart !== this.appState.weekStart) return this.onToast("Split works only for entries in this week.");
+        if (this.appState.weekStart && entry.weekStart !== this.appState.weekStart) {
+            return this.onToast(this.locale.t("toast.splitThisWeek"));
+        }
 
         const startMs = entry.startDate.getTime();
         const endMs = entry.endDate.getTime();
-        if (endMs - startMs < 2 * MIN_ENTRY_MS) return this.onToast("Entry too short to split (min 30 min).");
+        if (endMs - startMs < 2 * MIN_ENTRY_MS) return this.onToast(this.locale.t("toast.tooShortSplit"));
 
         const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
         if (!bounds) return;
         const minMs = Math.max(bounds.startMs, startMs + MIN_ENTRY_MS);
         const maxMs = Math.min(bounds.endMs, endMs - MIN_ENTRY_MS);
-        if (maxMs < minMs) return this.onToast("Cannot split outside the current week.");
+        if (maxMs < minMs) return this.onToast(this.locale.t("toast.splitOutsideWeek"));
 
         let ms = this.cursor && this.cursor.kind === "split" ? this.cursor.ms : startMs + MIN_ENTRY_MS;
         ms = Math.max(minMs, Math.min(maxMs, ms));
@@ -3081,7 +3157,7 @@ export class WeekView {
         const endMs = entry.endDate.getTime();
         const minMs = Math.max(bounds.startMs, startMs + MIN_ENTRY_MS);
         const maxMs = Math.min(bounds.endMs, endMs - MIN_ENTRY_MS);
-        if (maxMs < minMs) return this.onToast("Entry too short to split (min 30 min).");
+        if (maxMs < minMs) return this.onToast(this.locale.t("toast.tooShortSplit"));
 
         let nextMs = this.cursor.ms + deltaSteps * MIN_ENTRY_MS;
         nextMs = Math.max(minMs, Math.min(maxMs, nextMs));
@@ -3256,7 +3332,7 @@ export class WeekView {
      * @returns {void}
      */
     applyWeekEdit(params) {
-        if (this.saveInFlight) return this.onToast("Saving in progress…");
+        if (this.saveInFlight) return this.onToast(this.locale.t("toast.saving"));
         const before = this.store.snapshotWeekRaw(params.weekStart);
         const focusBefore = this.selectedEntryId;
         let after;
@@ -3268,7 +3344,7 @@ export class WeekView {
         }
 
         if (!Array.isArray(after)) {
-            this.onToast("Invalid edit payload.");
+            this.onToast(this.locale.t("toast.invalidEditPayload"));
             return;
         }
 
@@ -3425,7 +3501,7 @@ export class WeekView {
         };
         this.enqueueDraftOperation(
             () => this.draftJournal.putWeekDraft(namespace, draft),
-            "Browser draft storage is unavailable; unsaved edits may not survive a reload.",
+            this.locale.t("toast.weekDraftUnavailable"),
         );
     }
 
@@ -3440,7 +3516,7 @@ export class WeekView {
         if (!namespace || !weekStart) return;
         this.enqueueDraftOperation(
             () => this.draftJournal.deleteWeekDraft(namespace, weekStart),
-            "The saved browser draft could not be cleaned up.",
+            this.locale.t("toast.weekDraftCleanup"),
         );
     }
 
@@ -3561,8 +3637,15 @@ export class WeekView {
         this.store.recomputeNextEntryId();
         await this.flushDraftWrites();
         if (restored > 0) {
-            const mergedLabel = mergedCount > 0 ? `; merged newer data in ${mergedCount}` : "";
-            this.onToast(`Restored unsaved edits for ${restored} week(s)${mergedLabel}.`, 5000, "success");
+            const mergedLabel =
+                mergedCount > 0
+                    ? this.locale.t("toast.mergedNewer", { count: this.locale.formatNumber(mergedCount) })
+                    : "";
+            this.onToast(
+                this.locale.plural("toast.restoredWeeks", restored, { merged: mergedLabel }),
+                5000,
+                "success",
+            );
             this.onSearchDirty();
         }
         return { restored, merged: mergedCount };
@@ -3577,7 +3660,7 @@ export class WeekView {
         if (this.saveInFlight) return;
         const weekStarts = Array.from(this.dirtyWeekStarts).filter(Boolean);
         if (!weekStarts.length) {
-            this.onToast("Nothing to save.");
+            this.onToast(this.locale.t("toast.nothingToSave"));
             return;
         }
 
@@ -3598,7 +3681,7 @@ export class WeekView {
             }
             await this.flushDraftWrites();
             if (this.appState.weekStart) this.rebuildWeekView();
-            this.onToast("Saved.", 2400, "success");
+            this.onToast(this.locale.t("toast.saved"), 2400, "success");
         } catch (err) {
             this.onToast(String(err), 5000);
         } finally {
@@ -3733,12 +3816,7 @@ export class WeekView {
      * @returns {string}
      */
     formatSignedDuration(seconds) {
-        const num = Number(seconds);
-        if (!Number.isFinite(num)) {
-            return "—";
-        }
-        const sign = num < 0 ? "-" : "+";
-        return `${sign}${formatDuration(Math.abs(num))}`;
+        return this.locale.formatDuration(seconds, { signDisplay: "always" });
     }
 
     /**
@@ -3776,10 +3854,12 @@ export class WeekView {
         const weekDeltaSeconds = this.store.getWeekBalanceSeconds(weekStart, today);
         const accumulatedSeconds = this.store.getAccumulatedBalanceSeconds(weekStart, today);
         const comment = this.store.getWeekComment(weekStart);
-        const configuredText = this.formatRequiredHours(configuredRequiredHours);
-        const dueText = this.formatRequiredHours(dueRequiredHours);
+        const configuredText = this.locale.formatNumber(configuredRequiredHours, { maximumFractionDigits: 2 });
+        const dueText = this.locale.formatNumber(dueRequiredHours, { maximumFractionDigits: 2 });
         const requirementText =
-            dueRequiredHours < configuredRequiredHours ? `Due ${dueText}/${configuredText}h` : `Required ${configuredText}h`;
+            dueRequiredHours < configuredRequiredHours
+                ? this.locale.t("requirements.due", { due: dueText, configured: configuredText })
+                : this.locale.t("requirements.full", { configured: configuredText });
         return {
             billableSeconds,
             configuredRequiredHours,
@@ -3828,15 +3908,17 @@ export class WeekView {
         this.weekBillableEl.replaceChildren(totalEl, directionEl, deltaEl);
 
         const fullSummary = [
-            `Billable ${formatDuration(summary.billableSeconds)}`,
+            this.locale.t("week.summaryBillable", { duration: this.locale.formatDuration(summary.billableSeconds) }),
             summary.requirementText,
-            `Week ${this.formatSignedDuration(summary.weekDeltaSeconds)}`,
-            `Total ${this.formatSignedDuration(summary.accumulatedSeconds)}`,
+            this.locale.t("week.summaryDelta", { duration: this.formatSignedDuration(summary.weekDeltaSeconds) }),
+            this.locale.t("week.summaryAccumulated", {
+                duration: this.formatSignedDuration(summary.accumulatedSeconds),
+            }),
         ];
         if (summary.comment) fullSummary.push(summary.comment);
         const summaryText = fullSummary.join(" • ");
-        this.weekReqBtn.setAttribute("aria-label", `${summaryText}. Edit required hours.`);
-        this.weekReqBtn.title = `${summaryText} • Edit required hours`;
+        this.weekReqBtn.setAttribute("aria-label", this.locale.t("week.summaryAria", { summary: summaryText }));
+        this.weekReqBtn.title = this.locale.t("week.summaryTitle", { summary: summaryText });
         this.renderWeekRequirementsSummary(summary);
     }
 
@@ -3851,11 +3933,18 @@ export class WeekView {
      * @returns {void}
      */
     renderWeekRequirementsSummary(summary) {
+        const accumulationDate = this.locale.formatDate(
+            this.timeContext.dateFromLocalDayMinutes(BALANCE_ACCUMULATION_START, 0),
+            this.timeContext.timeZone,
+        );
         const rows = [
-            ["Billable through current day", formatDuration(summary.billableSeconds)],
-            ["Requirement", summary.requirementText],
-            ["This week", this.formatSignedDuration(summary.weekDeltaSeconds)],
-            ["Accumulated overtime", this.formatSignedDuration(summary.accumulatedSeconds)],
+            [this.locale.t("requirements.billableCurrent"), this.locale.formatDuration(summary.billableSeconds)],
+            [this.locale.t("requirements.requiredCurrent"), summary.requirementText],
+            [this.locale.t("requirements.weekDelta"), this.formatSignedDuration(summary.weekDeltaSeconds)],
+            [
+                this.locale.t("requirements.accumulated", { date: accumulationDate }),
+                this.formatSignedDuration(summary.accumulatedSeconds),
+            ],
         ];
         const elements = rows.map(([label, value]) => {
             const row = document.createElement("div");
@@ -3878,12 +3967,17 @@ export class WeekView {
     openWeekRequirementsDialog() {
         const weekStart = this.appState.weekStart;
         if (!weekStart) {
-            this.onToast("No week selected.");
+            this.onToast(this.locale.t("toast.noWeek"));
             return;
         }
 
         const info = isoWeekInfo(weekStart);
-        this.weekReqMetaEl.textContent = `${info.isoYear}-W${String(info.week).padStart(2, "0")} • ${weekStart}`;
+        this.weekReqMetaEl.textContent = `${info.isoYear} • ${this.locale.t("week.number", {
+            week: this.locale.formatNumber(info.week),
+        })} • ${this.locale.formatDate(
+            this.timeContext.dateFromLocalDayMinutes(weekStart, 0),
+            this.timeContext.timeZone,
+        )}`;
         this.renderWeekRequirementsSummary(this.getWeekSummaryData(weekStart));
         this.weekReqHoursInput.value = this.formatRequiredHours(this.store.getWeekRequiredHours(weekStart));
         this.weekReqCommentInput.value = this.store.getWeekComment(weekStart);
@@ -3928,7 +4022,7 @@ export class WeekView {
     async handleWeekRequirementsSubmit(ev) {
         ev.preventDefault();
         if (this.saveInFlight) {
-            this.onToast("Saving in progress…");
+            this.onToast(this.locale.t("toast.saving"));
             return;
         }
 
@@ -3940,7 +4034,7 @@ export class WeekView {
 
         const requiredHours = Number.parseFloat(this.weekReqHoursInput.value || "");
         if (!Number.isFinite(requiredHours) || requiredHours < 0 || requiredHours > 168) {
-            this.onToast("Required hours must be between 0 and 168.");
+            this.onToast(this.locale.t("toast.requirementRange"));
             return;
         }
 
@@ -3957,7 +4051,7 @@ export class WeekView {
             this.store.setWeekRequirements(nextWeekRequirements);
             this.updateWeekSummary(weekStart);
             this.closeWeekRequirementsDialog();
-            this.onToast("Week requirements saved.", 2400, "success");
+            this.onToast(this.locale.t("toast.requirementsSaved"), 2400, "success");
         } catch (err) {
             this.onToast(String(err), 5000);
         } finally {
@@ -4143,7 +4237,7 @@ export class WeekView {
 
             const projectEl = document.createElement("span");
             projectEl.className = "suggestion-project";
-            projectEl.textContent = suggestion.label || "No project";
+            projectEl.textContent = suggestion.label || this.locale.t("entry.noProject");
 
             const descEl = document.createElement("span");
             descEl.className = "suggestion-desc";
@@ -4209,14 +4303,14 @@ export class WeekView {
 
         const selectedKeys = this.store.findAssignmentByLabel(this.entryAssignmentInput.value);
         if (!selectedKeys) {
-            this.onToast("Please select a project or section from the list (or clear the field for No project).");
+            this.onToast(this.locale.t("toast.invalidAssignment"));
             this.entryAssignmentInput.focus();
             return;
         }
         const { projectKey, sectionKey } = selectedKeys;
         const assignment = this.store.resolveAssignment(projectKey, sectionKey);
         if (!assignment) {
-            this.onToast("The selected project or section no longer exists.");
+            this.onToast(this.locale.t("toast.missingAssignment"));
             this.entryAssignmentInput.focus();
             return;
         }
@@ -4275,7 +4369,9 @@ export class WeekView {
             if (assignment.archived && !isSelected) continue;
             const opt = document.createElement("option");
             opt.value = assignment.label;
-            opt.label = assignment.archived ? `${assignment.label} (archived)` : assignment.label;
+            opt.label = assignment.archived
+                ? `${assignment.label} (${this.locale.t("entry.archived")})`
+                : assignment.label;
             this.entryAssignmentListEl.append(opt);
         }
         this.entryAssignmentInput.value = selectedLabel.startsWith("[Missing:") ? "" : selectedLabel;
@@ -4314,7 +4410,13 @@ export class WeekView {
         if (!(entry.endDate instanceof Date) || Number.isNaN(entry.endDate.getTime())) return;
         if (this.appState.weekStart && entry.weekStart !== this.appState.weekStart) {
             const info = isoWeekInfo(entry.weekStart);
-            this.onToast(`This entry belongs to ${info.isoYear}-W${String(info.week).padStart(2, "0")}; open that week to edit.`);
+            this.onToast(
+                this.locale.t("entry.belongsToWeek", {
+                    week: `${info.isoYear} ${this.locale.t("week.number", {
+                        week: this.locale.formatNumber(info.week),
+                    })}`,
+                }),
+            );
             return;
         }
 
@@ -4326,11 +4428,11 @@ export class WeekView {
         });
         this.entryDescInput.value = safeText(entry.description);
 
-        const day = this.timeContext.formatDate(entry.startDate);
-        const start = this.timeContext.formatTime(entry.startDate);
-        const end = this.timeContext.formatTime(entry.endDate);
-        const dur = formatDuration(entry.durationSeconds);
-        this.entryMetaEl.textContent = `${day} ${start}–${end} • ${dur} • id ${id}`;
+        const day = this.locale.formatDate(entry.startDate, this.timeContext.timeZone);
+        const start = this.locale.formatTime(entry.startDate, this.timeContext.timeZone);
+        const end = this.locale.formatTime(entry.endDate, this.timeContext.timeZone);
+        const dur = this.locale.formatDuration(entry.durationSeconds);
+        this.entryMetaEl.textContent = this.locale.t("entry.meta", { date: day, start, end, duration: dur, id });
 
         this.clearDescriptionSuggestions();
         if (!this.entryDialog.open) this.entryDialog.showModal();
@@ -4383,12 +4485,12 @@ export class WeekView {
 
         this.ensureEditableNode(node);
         if (splitMs <= node.startMs || splitMs >= node.endMs) {
-            return this.onToast("Invalid split position.");
+            return this.onToast(this.locale.t("toast.invalidSplit"));
         }
         const minMs = node.startMs + MIN_ENTRY_MS;
         const maxMs = node.endMs - MIN_ENTRY_MS;
         if (splitMs < minMs || splitMs > maxMs) {
-            return this.onToast("Entry too short to split (min 30 min).");
+            return this.onToast(this.locale.t("toast.tooShortSplit"));
         }
 
         const secondId = this.store.reserveEntryId();
@@ -4425,7 +4527,7 @@ export class WeekView {
         const id = Number(entryId);
         if (!Number.isFinite(id)) return false;
         if (this.busy || this.saveInFlight) {
-            this.onToast("Saving in progress…");
+            this.onToast(this.locale.t("toast.saving"));
             return false;
         }
         const weekStart = this.appState.weekStart;

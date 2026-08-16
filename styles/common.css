@@ -743,6 +743,21 @@ body.is-entry-moving * {
   margin: 14px 0;
 }
 
+.workspace-language-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-faint);
+}
+
+.workspace-language-setting span {
+  font-weight: 700;
+}
+
 .workspace-empty {
   padding: 18px;
   border: 1px dashed var(--border);

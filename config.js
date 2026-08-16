@@ -163,6 +163,7 @@ const STORAGE_KEYS = {
     workspaceRegistry: "zeitplural:workspace-registry:v1",
     rememberedWorkspaceCredentials: "zeitplural:workspace-credentials:local:v1",
     sessionWorkspaceCredentials: "zeitplural:workspace-credentials:session:v1",
+    locale: "zeitplural:locale:v1",
 };
 
 /**
@@ -463,6 +464,27 @@ export class ConfigService {
     }
 
     /**
+     * Loads the explicitly persisted application language independently from workspace and credential state.
+     * An empty result means LocaleService may consult the browser language for this first choice.
+     * @returns {"en" | "de" | ""}
+     */
+    loadLocale() {
+        const locale = String(localStorage.getItem(this.storageKeys.locale) || "").trim().toLowerCase();
+        return locale === "en" || locale === "de" ? locale : "";
+    }
+
+    /**
+     * Persists one supported interface language without adding locale-specific values to workspace data.
+     * @param {unknown} locale Requested language code.
+     * @returns {void}
+     */
+    saveLocale(locale) {
+        const normalized = String(locale || "").trim().toLowerCase();
+        if (normalized !== "en" && normalized !== "de") throw new Error("Unsupported interface language.");
+        localStorage.setItem(this.storageKeys.locale, normalized);
+    }
+
+    /**
      * Parses one credential map from browser storage.
      * Corrupt values are treated as empty and never leak into connection or route metadata.
      * @param {Storage} storage Browser storage area.
@@ -753,8 +775,8 @@ export class ConfigService {
     }
 
     /**
-     * Clears all saved config and token state from storage.
-     * Keeps storage logic separated from the UI.
+     * Clears repository connections, credentials, and legacy UI config from storage.
+     * The dedicated interface language is a device preference rather than workspace/authentication state, so logout deliberately preserves it.
      * @returns {void}
      */
     clearSaved() {

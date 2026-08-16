@@ -1118,6 +1118,20 @@ const WEEKDAY_BY_NAME = new Map([
     ["sat", 6],
     ["sunday", 7],
     ["sun", 7],
+    ["montag", 1],
+    ["montags", 1],
+    ["dienstag", 2],
+    ["dienstags", 2],
+    ["mittwoch", 3],
+    ["mittwochs", 3],
+    ["donnerstag", 4],
+    ["donnerstags", 4],
+    ["freitag", 5],
+    ["freitags", 5],
+    ["samstag", 6],
+    ["samstags", 6],
+    ["sonntag", 7],
+    ["sonntags", 7],
 ]);
 const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -1258,7 +1272,8 @@ export class Recurrence {
     }
 
     /**
-     * Converts the supported natural-language subset used by the editor and Todoist import into structured fields.
+     * Converts the supported English and German natural-language subsets used by the editor and legacy imports into structured fields.
+     * German completion-relative rules use a trailing “nach Abschluss”; time suffixes beginning with “at” or “um” do not alter recurrence dates.
      * Unsupported phrases return null rather than creating a task that cannot advance safely.
      * @param {string} text
      * @param {string} anchorDate
@@ -1274,22 +1289,30 @@ export class Recurrence {
         if (normalized.startsWith("every!")) {
             basis = "after_completion";
             normalized = normalized.slice("every!".length).trim();
-        } else if (normalized.startsWith("every ")) {
-            normalized = normalized.slice("every ".length).trim();
+        } else if (normalized.endsWith(" nach abschluss")) {
+            basis = "after_completion";
+            normalized = normalized.slice(0, -" nach abschluss".length).trim();
         }
-        normalized = normalized.replace(/\s+at\s+.+$/, "").trim();
+        if (normalized.startsWith("every ")) {
+            normalized = normalized.slice("every ".length).trim();
+        } else if (normalized.startsWith("alle ")) {
+            normalized = normalized.slice("alle ".length).trim();
+        } else {
+            normalized = normalized.replace(/^(?:jeden|jede|jedes)\s+/, "");
+        }
+        normalized = normalized.replace(/\s+(?:at|um)\s+.+$/, "").trim();
 
         const anchorDateText = formatTodoCalendarDate(anchor.year, anchor.month, anchor.day);
         const anchorWeekday = isoWeekdayIndex(anchorDateText) + 1;
         const common = { basis, source_text: sourceText };
 
-        if (normalized === "daily" || normalized === "day") {
+        if (normalized === "daily" || normalized === "day" || normalized === "täglich" || normalized === "tag") {
             return new Recurrence({ ...common, frequency: "daily", interval: 1 });
         }
-        if (normalized === "weekly" || normalized === "week") {
+        if (normalized === "weekly" || normalized === "week" || normalized === "wöchentlich" || normalized === "woche") {
             return new Recurrence({ ...common, frequency: "weekly", interval: 1, weekdays: [anchorWeekday] });
         }
-        if (normalized === "monthly" || normalized === "month") {
+        if (normalized === "monthly" || normalized === "month" || normalized === "monatlich" || normalized === "monat") {
             return new Recurrence({
                 ...common,
                 frequency: "monthly",
@@ -1297,7 +1320,13 @@ export class Recurrence {
                 month_day: anchor.day,
             });
         }
-        if (normalized === "yearly" || normalized === "annually" || normalized === "year") {
+        if (
+            normalized === "yearly" ||
+            normalized === "annually" ||
+            normalized === "year" ||
+            normalized === "jährlich" ||
+            normalized === "jahr"
+        ) {
             return new Recurrence({
                 ...common,
                 frequency: "yearly",
@@ -1312,17 +1341,19 @@ export class Recurrence {
             return new Recurrence({ ...common, frequency: "weekly", interval: 1, weekdays: [weekday] });
         }
 
-        const intervalMatch = /^(\d+)\s+(days?|weeks?|months?|years?)$/.exec(normalized);
+        const intervalMatch = /^(\d+)\s+(days?|weeks?|months?|years?|tage?n?|wochen?|monate?n?|jahre?n?)$/.exec(
+            normalized,
+        );
         if (!intervalMatch) return null;
         const interval = Number(intervalMatch[1]);
         const unit = intervalMatch[2];
-        if (unit.startsWith("day")) {
+        if (unit.startsWith("day") || unit.startsWith("tag")) {
             return new Recurrence({ ...common, frequency: "daily", interval });
         }
-        if (unit.startsWith("week")) {
+        if (unit.startsWith("week") || unit.startsWith("woch")) {
             return new Recurrence({ ...common, frequency: "weekly", interval, weekdays: [anchorWeekday] });
         }
-        if (unit.startsWith("month")) {
+        if (unit.startsWith("month") || unit.startsWith("monat")) {
             return new Recurrence({ ...common, frequency: "monthly", interval, month_day: anchor.day });
         }
         return new Recurrence({

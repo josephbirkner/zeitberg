@@ -421,8 +421,8 @@ export function getSourceMode() {
 }
 
 /**
- * Provides timezone-aware formatting utilities.
- * Encapsulates date math so views can operate in a single locale.
+ * Provides machine-stable timezone arithmetic and workspace-local calendar keys.
+ * Its Swedish/English formatter locales intentionally produce ISO-compatible dates and times for filtering, week lookup, and persistence; user-facing presentation belongs to LocaleService.
  */
 export class TimeContext {
     /**
@@ -435,7 +435,7 @@ export class TimeContext {
     }
 
     /**
-     * Rebuilds all locale formatters for a newly loaded workspace timezone.
+     * Rebuilds all machine-format helpers for a newly loaded workspace timezone.
      * Views and stores retain one shared TimeContext instance, so changing it here updates every date calculation without reconstructing the application graph.
      * @param {string} timeZone IANA timezone declared by the active workspace.
      * @returns {void}

@@ -55,7 +55,7 @@ import { Entry, Manifest, ProjectList, TodoList, Week, WeekRequirements } from "
  */
 
 const LONG_ENTRY_MS = 7 * 24 * 60 * 60 * 1000;
-const BALANCE_ACCUMULATION_START = "2025-09-01";
+export const BALANCE_ACCUMULATION_START = "2025-09-01";
 
 /**
  * @typedef {Object} TodoDetails
