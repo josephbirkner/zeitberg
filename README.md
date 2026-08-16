@@ -11,6 +11,8 @@
 
 <p align="center">
   <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Coverage: at least 90%" src="https://img.shields.io/badge/coverage-%E2%89%A590%25-2b9c68" /></a>
+  <a href="https://github.com/josephbirkner/zeitplural/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/josephbirkner/zeitplural?display_name=tag&amp;sort=semver" /></a>
 </p>
 
 ---
@@ -36,7 +38,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
 | **Expenses** | Exact multi-currency splits, participant balances, deterministic settlement suggestions, categories, shared project assignments, durable drafts, and atomic Git saves. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, direct browser-to-provider persistence, and English/German UI. |
-| **Next** | [Bidirectional issue projects](https://github.com/josephbirkner/zeitplural/issues/26) and [test coverage](https://github.com/josephbirkner/zeitplural/issues/29). |
+| **Quality** | Bidirectional GitHub issue projects, deterministic unit tests, browser-level smoke tests, static type checking, and an enforced 90% production-logic line-coverage gate. |
 
 The project is intentionally one application: time, tasks, and expenses share a project inventory and workspace identity while retaining separate documents and views.
 
@@ -164,6 +166,20 @@ python3 server.py --workspace ../zeitplural-data
 Open <http://127.0.0.1:8000/time?source=local>. When the sibling is named `zeitplural-data`, `--workspace` may be omitted.
 
 Local mode serves application files from this checkout and maps workspace reads plus `POST /save` to the separate data checkout. It writes JSON without committing; review, commit, and push data changes from that repository independently.
+
+### Test coverage
+
+Run the same quality gate used by GitHub Actions:
+
+```bash
+npm run coverage
+```
+
+The command runs every deterministic Node test under c8 and a headless Chromium smoke suite against `workspace-template`. Both layers run even if one fails. It prints statement, branch, function, and line coverage; enforces at least 90% aggregate line coverage; and writes an HTML report, LCOV data, and `coverage-summary.json` under the ignored `coverage/` directory. CI retains that directory as an artifact even when the gate fails.
+
+The measured first-party production scope is explicit in `package.json`: `appstate.js`, `cache.js`, `config.js`, `datasource.js`, `locale.js`, `model.js`, `oauth.js`, `routing.js`, `store.js`, and `utils.js`. This includes domain models, persistence and cache behavior, provider adapters, workspace switching, localization, routing, and shared utilities. Tests, generated or vendored assets, and one-off repository/import/build scripts are outside the production metric.
+
+The DOM composition entry points (`app.js`, `theme-init.js`, and the four `*.view.js` controllers) are excluded from the Node/V8 percentage because the application is served as unbundled browser modules under its production CSP. They are not excluded from automated validation: every coverage run launches the real static application in Chromium and checks local workspace initialization, component navigation, browser-history restoration, project/workspace/task/expense dialogs, and narrow full-screen layouts without credentials or private workspace data.
 
 Repeat `--workspace` to test the multi-workspace switcher against several local repositories:
 

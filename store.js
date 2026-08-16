@@ -2047,6 +2047,7 @@ export class EntryStore {
         const { entries } = this.collectEntriesForWeekWindow(weekStart, bounds);
         const nodes = [];
         for (const entry of entries) {
+            if (!this.entryIntersectsRange(entry, bounds.startMs, bounds.endMs)) continue;
             const startMs = entry.startDate.getTime();
             const endMs = entry.endDate.getTime();
             const editable = entry.weekStart === weekStart;

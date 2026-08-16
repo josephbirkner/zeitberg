@@ -2,7 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "release/**"
   pull_request:
 
 permissions:
@@ -21,11 +23,21 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
       - name: Verify generated install icons
         run: |
           npm run build:icons
           git diff --exit-code -- apple-touch-icon.png assets/apple-touch-icon.png assets/zeitplural-icon-192.png assets/zeitplural-icon-512.png assets/zeitplural-maskable-512.png
-      - name: Run tests
-        run: npm test
+      - name: Run browser tests and enforce coverage
+        run: npm run coverage
       - name: Type-check JavaScript
         run: npm run typecheck
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report-${{ github.sha }}
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
