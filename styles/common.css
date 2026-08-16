@@ -234,6 +234,34 @@ body.app-mode #searchView {
   gap: 6px;
 }
 
+.sidebar-brand {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+}
+
+.sidebar-brand:hover,
+.sidebar-brand:focus-visible {
+  outline: none;
+  background: var(--surface-soft);
+}
+
+.sidebar-brand img {
+  width: 29px;
+  height: 29px;
+  display: block;
+}
+
+.sidebar-separator {
+  width: 70%;
+  height: 1px;
+  margin: 1px 0;
+  background: var(--border);
+}
+
 .sidebar-spacer {
   flex: 1;
 }
@@ -695,6 +723,136 @@ body.is-entry-moving * {
   margin-right: auto;
 }
 
+.workspace-dialog {
+  max-width: min(780px, calc(100vw - 24px));
+}
+
+.workspace-dialog-card {
+  max-height: min(88vh, 820px);
+  overflow: auto;
+}
+
+.workspace-dialog .dialog-head > div:first-child {
+  min-width: 0;
+}
+
+.workspace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.workspace-empty {
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.workspace-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-faint);
+}
+
+.workspace-row.is-active {
+  border-color: rgba(var(--accent-rgb), 0.65);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.workspace-row-main {
+  min-width: 0;
+}
+
+.workspace-row-title,
+.workspace-row-location {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-row-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 800;
+}
+
+.workspace-active-badge,
+.workspace-credential-badge {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.workspace-active-badge {
+  color: var(--accent-strong);
+  background: rgba(var(--accent-rgb), 0.17);
+}
+
+.workspace-credential-badge {
+  margin-left: auto;
+}
+
+.workspace-row-location {
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.69rem;
+}
+
+.workspace-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspace-row-actions .btn {
+  min-height: 30px;
+  padding: 4px 8px;
+}
+
+.workspace-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 16px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.workspace-section-heading .muted {
+  font-size: 0.75rem;
+}
+
+.workspace-add-grid {
+  grid-template-columns: minmax(120px, 0.65fr) minmax(0, 1fr);
+}
+
+.workspace-remember {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-remember input {
+  width: auto;
+}
+
+.workspace-dialog-actions {
+  align-items: center;
+}
+
 .projects-toolbar {
   align-items: center;
   justify-content: space-between;
@@ -850,7 +1008,8 @@ html.ui-narrow textarea {
 
 html.ui-narrow #entryDialog,
 html.ui-narrow #todoDialog,
-html.ui-narrow #weekReqDialog {
+html.ui-narrow #weekReqDialog,
+html.ui-narrow #workspaceDialog {
   inset: 0;
   width: 100vw;
   max-width: none;
@@ -862,7 +1021,8 @@ html.ui-narrow #weekReqDialog {
 
 html.ui-narrow #entryDialog .dialog-card,
 html.ui-narrow #todoDialog .dialog-card,
-html.ui-narrow #weekReqDialog .dialog-card {
+html.ui-narrow #weekReqDialog .dialog-card,
+html.ui-narrow #workspaceDialog .dialog-card {
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
@@ -877,14 +1037,16 @@ html.ui-narrow #weekReqDialog .dialog-card {
 
 html.ui-narrow #entryDialog .dialog-grid,
 html.ui-narrow #todoDialog .dialog-grid,
-html.ui-narrow #weekReqDialog .dialog-grid {
+html.ui-narrow #weekReqDialog .dialog-grid,
+html.ui-narrow #workspaceDialog .dialog-grid {
   flex: 1;
   align-content: start;
 }
 
 html.ui-narrow #entryDialog .dialog-actions,
 html.ui-narrow #todoDialog .dialog-actions,
-html.ui-narrow #weekReqDialog .dialog-actions {
+html.ui-narrow #weekReqDialog .dialog-actions,
+html.ui-narrow #workspaceDialog .dialog-actions {
   position: sticky;
   bottom: -12px;
   margin: auto -12px -12px;
@@ -898,6 +1060,20 @@ html.ui-narrow .grid {
 }
 html.ui-narrow .col-span-2 {
   grid-column: span 1;
+}
+
+html.ui-narrow .workspace-row {
+  grid-template-columns: 1fr;
+}
+
+html.ui-narrow .workspace-row-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+html.ui-narrow .workspace-section-heading {
+  align-items: flex-start;
+  flex-direction: column;
 }
 
 html.ui-compact {

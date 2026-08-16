@@ -149,7 +149,9 @@ export function normalizeWorkspaceRouteLocator(value) {
 export function workspaceRouteLocatorKey(locator) {
     const normalized = normalizeWorkspaceRouteLocator(locator);
     if (!normalized) throw new Error("A valid workspace locator is required.");
-    if (normalized.provider === "local") return `local:${normalized.workspacePath}`;
+    if (normalized.provider === "local") {
+        return `local:${normalized.expectedWorkspaceId || "default"}:${normalized.workspacePath}`;
+    }
     return [
         normalized.provider,
         normalized.repositoryUrl.toLowerCase(),
@@ -239,6 +241,8 @@ function stringParameter(params, key, maxLength = 512) {
 function parseViewState(component, panel, params) {
     /** @type {Object.<string, string | number | boolean | null>} */
     const state = {};
+    const returnPanel = panel === "workspaces" ? stringParameter(params, "under", 32) : null;
+    if (component === "time" && returnPanel === "search") state.returnPanel = "search";
     if (component === "time") {
         const weekStart = stringParameter(params, "week", 10);
         if (weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart)) state.weekStart = weekStart;
@@ -251,7 +255,7 @@ function parseViewState(component, panel, params) {
         const scrollMinutes = numberParameter(params, "scroll", 0, 1440);
         if (scrollMinutes !== null) state.scrollMinutes = scrollMinutes;
 
-        if (panel === "search") {
+        if (panel === "search" || state.returnPanel === "search") {
             const query = stringParameter(params, "q", 1024);
             const project = stringParameter(params, "project", 256);
             const from = stringParameter(params, "from", 10);
@@ -415,13 +419,16 @@ export function formatAppRoute(route, basePath = "/") {
     }
 
     const state = route?.state || {};
+    if (panel === "workspaces" && component === "time" && state.returnPanel === "search") {
+        params.set("under", "search");
+    }
     if (component === "time") {
         setStateParameter(params, "week", state.weekStart);
         setStateParameter(params, "day", state.dayWindowStart);
         setStateParameter(params, "entry", state.selectedEntryId);
         setStateParameter(params, "zoom", state.zoom);
         setStateParameter(params, "scroll", state.scrollMinutes);
-        if (panel === "search") {
+        if (panel === "search" || state.returnPanel === "search") {
             setStateParameter(params, "q", state.query);
             setStateParameter(params, "project", state.project);
             setStateParameter(params, "from", state.from);

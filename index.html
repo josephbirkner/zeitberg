@@ -25,7 +25,14 @@
   </head>
   <body>
     <aside id="appSidebar" class="app-sidebar" aria-label="Application navigation" hidden>
+      <a id="appHomeLink" class="sidebar-brand" href="./" title="zeitplural home" aria-label="zeitplural home">
+        <img src="./assets/zeitplural-mark.svg" alt="" />
+      </a>
       <nav class="sidebar-nav" aria-label="Views">
+        <button id="workspaceSettingsBtn" class="sidebar-button" type="button" title="Workspaces" aria-label="Manage workspaces">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#account_tree"></use></svg>
+        </button>
+        <span class="sidebar-separator" aria-hidden="true"></span>
         <button id="menuWeekBtn" class="sidebar-button" type="button" title="Week (Ctrl+W)" aria-label="Week view">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#calendar_view_week"></use></svg>
         </button>
@@ -213,7 +220,7 @@
                 </label>
                 <label>
                   <span>Fine-grained personal access token</span>
-                  <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" required />
+                  <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" />
                 </label>
 
                 <label class="landing-remember">
@@ -395,6 +402,65 @@
 
     <pre id="dataError" class="error error-toast" hidden></pre>
     <div id="repoLabel" class="data-badge" aria-live="polite"></div>
+
+    <dialog id="workspaceDialog" class="dialog workspace-dialog">
+      <div class="dialog-card workspace-dialog-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title">Workspaces</div>
+            <div class="dialog-meta muted">Connections are stored in this browser. Credentials remain separate from workspace metadata.</div>
+          </div>
+          <button id="workspaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+          </button>
+        </div>
+
+        <div id="workspaceList" class="workspace-list" role="list"></div>
+
+        <form id="workspaceAddForm" class="workspace-add-form">
+          <div class="workspace-section-heading">
+            <strong>Add workspace</strong>
+            <span class="muted">Connect another repository without disconnecting the current one.</span>
+          </div>
+          <div class="grid dialog-grid workspace-add-grid">
+            <label>
+              <span>Provider</span>
+              <select id="workspaceProvider">
+                <option value="github">GitHub</option>
+                <option value="gitlab" disabled>GitLab (coming soon)</option>
+                <option value="codeberg" disabled>Codeberg (coming soon)</option>
+              </select>
+            </label>
+            <label class="col-span-2">
+              <span>Repository URL</span>
+              <input id="workspaceRepository" type="url" inputmode="url" placeholder="https://github.com/you/zeitplural-data" spellcheck="false" required />
+            </label>
+            <label>
+              <span>Branch / ref</span>
+              <input id="workspaceRef" type="text" value="main" spellcheck="false" required />
+            </label>
+            <label>
+              <span>Workspace config path</span>
+              <input id="workspacePath" type="text" value="zeitplural.json" spellcheck="false" required />
+            </label>
+            <label class="col-span-2">
+              <span>Fine-grained personal access token</span>
+              <input id="workspaceToken" type="password" autocomplete="current-password" spellcheck="false" required />
+            </label>
+            <label class="workspace-remember col-span-2">
+              <input id="workspaceRemember" type="checkbox" />
+              <span>Remember this token on this device</span>
+            </label>
+          </div>
+          <pre id="workspaceError" class="error" hidden></pre>
+          <div class="row dialog-actions workspace-dialog-actions">
+            <button id="workspaceShareBtn" class="btn btn-secondary" type="button">Share active workspace</button>
+            <span class="topbar-spacer"></span>
+            <button class="btn" type="submit">Connect</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
 
     <dialog id="entryDialog" class="dialog">
       <form id="entryForm" method="dialog" class="dialog-card">

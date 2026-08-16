@@ -7,6 +7,7 @@ import {
     getEffectiveUiViewportWidth,
     getRecommendedUiZoom,
     parseGitHubRepository,
+    WorkspaceRegistry,
 } from "./config.js";
 import { GitHubDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore, TodoStore } from "./store.js";
@@ -24,7 +25,7 @@ import {
     utcNowIso,
 } from "./utils.js";
 import { Manifest, ProjectList, TodoList, WeekRequirements, Workspace } from "./model.js";
-import { getApplicationBasePath, RouteController } from "./routing.js";
+import { formatAppRoute, getApplicationBasePath, RouteController } from "./routing.js";
 
 const MIN_APP_ZOOM = 0.8;
 const MAX_APP_ZOOM = 2;
@@ -518,10 +519,35 @@ class App {
         /** @type {import("./routing.js").AppRoute | null} */
         this.pendingRoute = this.initialRoute.component ? this.initialRoute : null;
         this.routeRestoreInProgress = false;
+        this.activeGlobalPanel = null;
+        this.workspaceDialogOpenedByPush = false;
         this.configService = new ConfigService();
-        this.config = configForRouteWorkspace(this.configService.loadConfig(), this.initialRoute.workspace);
-        this.token = this.configService.loadToken();
         this.isLocalMode = this.initialRoute.workspace?.provider === "local" || getSourceMode() === "local";
+        const storedConfig = this.configService.loadConfig();
+        this.workspaceRegistry = this.isLocalMode
+            ? new WorkspaceRegistry()
+            : this.configService.loadWorkspaceRegistry(storedConfig);
+        const routeConnection = this.workspaceRegistry.findByLocator(this.initialRoute.workspace);
+        if (routeConnection) {
+            this.workspaceRegistry.setActive(routeConnection.id);
+            this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+        }
+        this.activeWorkspaceConnection = this.isLocalMode
+            ? null
+            : routeConnection || (!this.initialRoute.workspace ? this.workspaceRegistry.getActive() : null);
+        const initialLocator = this.initialRoute.workspace || this.activeWorkspaceConnection?.toLocator() || null;
+        this.config = this.isLocalMode
+            ? {
+                  ...storedConfig,
+                  workspacePath: this.initialRoute.workspace?.workspacePath || storedConfig.workspacePath,
+                  localWorkspaceId: this.initialRoute.workspace?.expectedWorkspaceId || "",
+              }
+            : configForRouteWorkspace(storedConfig, initialLocator);
+        this.token = this.activeWorkspaceConnection
+            ? this.configService.loadWorkspaceCredential(this.activeWorkspaceConnection.id)
+            : this.initialRoute.workspace
+              ? ""
+              : this.configService.loadToken();
         this.state = new AppState(this.config, this.isLocalMode);
         this.state.setToken(this.token);
         this.timeContext = new TimeContext(this.config.timezone);
@@ -545,6 +571,8 @@ class App {
 
         this.sidebarEl = getRequiredElement("appSidebar", HTMLElement);
         this.topbarEl = getRequiredElement("topbar", HTMLElement);
+        this.appHomeLink = getRequiredElement("appHomeLink", HTMLAnchorElement);
+        this.workspaceSettingsBtn = getRequiredElement("workspaceSettingsBtn", HTMLButtonElement);
         this.menuWeekBtn = getRequiredElement("menuWeekBtn", HTMLButtonElement);
         this.menuTodoBtn = getRequiredElement("menuTodoBtn", HTMLButtonElement);
         this.menuSearchBtn = getRequiredElement("menuSearchBtn", HTMLButtonElement);
@@ -652,6 +680,19 @@ class App {
         this.refInput = getRequiredElement("refInput", HTMLInputElement);
         this.tokenInput = getRequiredElement("tokenInput", HTMLInputElement);
         this.rememberInput = getRequiredElement("rememberInput", HTMLInputElement);
+
+        this.workspaceDialog = getRequiredElement("workspaceDialog", HTMLDialogElement);
+        this.workspaceDialogCloseBtn = getRequiredElement("workspaceDialogCloseBtn", HTMLButtonElement);
+        this.workspaceListEl = getRequiredElement("workspaceList", HTMLElement);
+        this.workspaceAddForm = getRequiredElement("workspaceAddForm", HTMLFormElement);
+        this.workspaceProviderInput = getRequiredElement("workspaceProvider", HTMLSelectElement);
+        this.workspaceRepositoryInput = getRequiredElement("workspaceRepository", HTMLInputElement);
+        this.workspaceRefInput = getRequiredElement("workspaceRef", HTMLInputElement);
+        this.workspacePathInput = getRequiredElement("workspacePath", HTMLInputElement);
+        this.workspaceTokenInput = getRequiredElement("workspaceToken", HTMLInputElement);
+        this.workspaceRememberInput = getRequiredElement("workspaceRemember", HTMLInputElement);
+        this.workspaceErrorEl = getRequiredElement("workspaceError", HTMLElement);
+        this.workspaceShareBtn = getRequiredElement("workspaceShareBtn", HTMLButtonElement);
 
         this.weekView = new WeekView({
             store: this.store,
@@ -934,12 +975,410 @@ class App {
     }
 
     /**
+     * Creates one consistently styled action for a workspace registry row.
+     * Action names and connection ids are stored in data attributes so one delegated list listener can handle rows rebuilt after reordering.
+     * @param {string} label Visible action label.
+     * @param {string} action Stable action identifier.
+     * @param {string} connectionId Registry connection id.
+     * @param {boolean} [disabled] Whether the action is currently unavailable.
+     * @returns {HTMLButtonElement}
+     */
+    createWorkspaceActionButton(label, action, connectionId, disabled = false) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn btn-secondary workspace-row-action";
+        button.textContent = label;
+        button.dataset.workspaceAction = action;
+        button.dataset.workspaceId = connectionId;
+        button.disabled = disabled;
+        return button;
+    }
+
+    /**
+     * Rebuilds Workspace settings from the credential-free browser registry.
+     * Credentials are represented only by a remembered/session status label; token values are never inserted into the DOM or diagnostics.
+     * @returns {void}
+     */
+    renderWorkspaceRegistry() {
+        this.workspaceListEl.innerHTML = "";
+        this.workspaceAddForm.hidden = this.isLocalMode;
+        this.workspaceShareBtn.disabled = !this.workspace;
+
+        const connections = this.workspaceRegistry.list();
+        if (!connections.length) {
+            const empty = document.createElement("p");
+            empty.className = "workspace-empty muted";
+            empty.textContent = "No saved workspace connections.";
+            this.workspaceListEl.append(empty);
+            return;
+        }
+
+        connections.forEach((connection, index) => {
+            const isActive = connection.id === this.activeWorkspaceConnection?.id;
+            const hasCredential =
+                connection.provider === "local" || Boolean(this.configService.loadWorkspaceCredential(connection.id));
+            const row = document.createElement("div");
+            row.className = `workspace-row${isActive ? " is-active" : ""}`;
+            row.setAttribute("role", "listitem");
+
+            const info = document.createElement("div");
+            info.className = "workspace-row-main";
+            const heading = document.createElement("div");
+            heading.className = "workspace-row-title";
+            const name = document.createElement("strong");
+            name.textContent = connection.displayName;
+            heading.append(name);
+            if (isActive) {
+                const badge = document.createElement("span");
+                badge.className = "workspace-active-badge";
+                badge.textContent = "Active";
+                heading.append(badge);
+            }
+            const credentialBadge = document.createElement("span");
+            credentialBadge.className = "workspace-credential-badge muted";
+            credentialBadge.textContent = connection.provider === "local" ? "Local server" : hasCredential ? "Authenticated" : "Token required";
+            heading.append(credentialBadge);
+
+            const meta = document.createElement("div");
+            meta.className = "workspace-row-location muted";
+            let repository = connection.expectedWorkspaceId;
+            if (connection.provider !== "local") {
+                repository = connection.repositoryUrl;
+                try {
+                    repository = new URL(connection.repositoryUrl).pathname.replace(/^\/+/, "");
+                } catch {
+                    // Keep the already validated absolute URL if browser URL parsing is unavailable.
+                }
+            }
+            meta.textContent = [connection.provider, repository, connection.ref, connection.workspacePath]
+                .filter(Boolean)
+                .join(" · ");
+            info.append(heading, meta);
+
+            const actions = document.createElement("div");
+            actions.className = "workspace-row-actions";
+            actions.append(
+                this.createWorkspaceActionButton(
+                    isActive && this.workspace ? "Open" : hasCredential ? "Switch" : "Authenticate",
+                    "open",
+                    connection.id,
+                    isActive && Boolean(this.workspace),
+                ),
+                this.createWorkspaceActionButton("Earlier", "up", connection.id, index === 0),
+                this.createWorkspaceActionButton("Later", "down", connection.id, index === connections.length - 1),
+            );
+            if (connection.provider !== "local") {
+                actions.append(this.createWorkspaceActionButton("Disconnect", "disconnect", connection.id));
+            }
+            row.append(info, actions);
+            this.workspaceListEl.append(row);
+        });
+    }
+
+    /**
+     * Opens Workspace settings as a modal global panel and optionally records that navigation in browser history.
+     * The underlying component remains mounted, allowing Back or dialog close to return to its exact view state.
+     * @param {"push" | "none"} [historyMode] Whether opening should create a browser-history entry.
+     * @returns {void}
+     */
+    openWorkspaceSettings(historyMode = "push") {
+        if (this.appSection.hidden || !this.workspace) return;
+        this.activeGlobalPanel = "workspaces";
+        this.workspaceDialogOpenedByPush = historyMode === "push";
+        this.workspaceSettingsBtn.setAttribute("aria-current", "page");
+        this.setError(this.workspaceErrorEl, "");
+        this.renderWorkspaceRegistry();
+        if (!this.workspaceDialog.open) this.workspaceDialog.showModal();
+        if (historyMode === "push") this.writeCurrentRoute("push");
+    }
+
+    /**
+     * Closes Workspace settings and restores the route beneath it.
+     * A panel opened by an in-app push returns through browser history; a directly loaded settings URL is normalized in place.
+     * @param {"back" | "replace" | "none"} [historyMode] Route behavior used while closing.
+     * @returns {void}
+     */
+    closeWorkspaceSettings(historyMode = "back") {
+        const wasOpen = this.workspaceDialog.open;
+        if (wasOpen) this.workspaceDialog.close();
+        this.activeGlobalPanel = null;
+        this.workspaceSettingsBtn.removeAttribute("aria-current");
+        if (!wasOpen || historyMode === "none" || this.routeRestoreInProgress) {
+            if (historyMode === "none") this.workspaceDialogOpenedByPush = false;
+            return;
+        }
+        if (historyMode === "back" && this.workspaceDialogOpenedByPush) {
+            this.workspaceDialogOpenedByPush = false;
+            window.history.back();
+            return;
+        }
+        this.workspaceDialogOpenedByPush = false;
+        this.writeCurrentRoute("replace");
+    }
+
+    /**
+     * Handles a delegated click from one registry-row control.
+     * Reordering and disconnection are local browser operations; opening a row performs an authenticated, failure-isolated workspace switch.
+     * @param {Event} event Click event originating inside the workspace list.
+     * @returns {Promise<void>}
+     */
+    async handleWorkspaceListClick(event) {
+        const target = event.target instanceof Element ? event.target.closest("[data-workspace-action]") : null;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const action = target.dataset.workspaceAction || "";
+        const connectionId = target.dataset.workspaceId || "";
+        if (!connectionId) return;
+        if (action === "open") {
+            await this.switchWorkspace(connectionId);
+            return;
+        }
+        if (action === "up" || action === "down") {
+            if (this.workspaceRegistry.move(connectionId, action === "up" ? -1 : 1)) {
+                this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+                this.renderWorkspaceRegistry();
+            }
+            return;
+        }
+        if (action === "disconnect") this.disconnectWorkspace(connectionId);
+    }
+
+    /**
+     * Prefills the add/authentication form for an existing connection that lacks a stored token.
+     * Keeping the current workspace mounted prevents an unavailable or unauthenticated secondary repository from blocking the usable one.
+     * @param {import("./config.js").WorkspaceConnection} connection Connection requiring authentication.
+     * @returns {void}
+     */
+    requestWorkspaceCredential(connection) {
+        this.workspaceProviderInput.value = connection.provider;
+        this.workspaceRepositoryInput.value = connection.repositoryUrl;
+        this.workspaceRefInput.value = connection.ref;
+        this.workspacePathInput.value = connection.workspacePath;
+        this.workspaceTokenInput.value = "";
+        this.workspaceRememberInput.checked = false;
+        this.setError(this.workspaceErrorEl, `Enter a token to authenticate ${connection.displayName}.`);
+        queueMicrotask(() => this.workspaceTokenInput.focus());
+    }
+
+    /**
+     * Applies a registered GitHub connection to all runtime configuration holders without loading its documents.
+     * Callers preflight first when another usable workspace is mounted, then connect through the ordinary shared load pipeline.
+     * @param {import("./config.js").WorkspaceConnection} connection Connection becoming active.
+     * @param {string} token Credential scoped to that connection id.
+     * @returns {void}
+     */
+    activateWorkspaceConnection(connection, token) {
+        this.workspaceRegistry.setActive(connection.id);
+        this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+        this.activeWorkspaceConnection = connection;
+        this.config =
+            connection.provider === "local"
+                ? {
+                      ...this.config,
+                      workspacePath: connection.workspacePath,
+                      localWorkspaceId: connection.expectedWorkspaceId,
+                  }
+                : configForRouteWorkspace(this.config, connection.toLocator());
+        this.configService.saveConfig(this.config);
+        this.state.setConfig(this.config);
+        this.token = token;
+        this.state.setToken(token);
+        this.repositoryInput.value = connection.repositoryUrl;
+        this.refInput.value = connection.ref;
+        this.rememberInput.checked = this.configService.isWorkspaceCredentialRemembered(connection.id);
+        this.weekView.setDraftNamespace(this.buildDraftNamespace());
+        this.todoView.setDraftNamespace(this.buildDraftNamespace());
+    }
+
+    /**
+     * Builds the initial component route used after changing repositories.
+     * Component intent is retained, while record ids, week positions, and filters are reset because they belong to the previous workspace.
+     * @param {import("./config.js").WorkspaceConnection} connection Target connection.
+     * @returns {import("./routing.js").AppRoute}
+     */
+    routeForWorkspaceConnection(connection) {
+        const component = this.state.activeTab === "todos" ? "todos" : "time";
+        const panel = this.state.activeTab === "search" ? "search" : "main";
+        return {
+            version: 1,
+            component,
+            panel,
+            workspace: connection.toLocator(),
+            state: {},
+        };
+    }
+
+    /**
+     * Verifies repository access before an already loaded workspace is replaced.
+     * This deliberately uses a temporary data source, so failed credentials or an unavailable repository cannot mutate active stores or Git save state.
+     * @param {import("./config.js").WorkspaceConnection} connection Candidate connection.
+     * @param {string} token Candidate credential.
+     * @returns {Promise<{repoInfo: any, userInfo: any}>}
+     */
+    async preflightWorkspaceConnection(connection, token) {
+        const candidateConfig = configForRouteWorkspace(this.config, connection.toLocator());
+        const candidateSource = new GitHubDataSource(candidateConfig, token);
+        return await candidateSource.checkConnection();
+    }
+
+    /**
+     * Switches to a registered workspace while preserving unsaved work in its isolated draft journal.
+     * Active saves are never interrupted, and the current UI remains available when candidate preflight fails.
+     * @param {string} connectionId Registry connection id.
+     * @param {import("./routing.js").AppRoute | null} [requestedRoute] Route whose component state should be restored after switching.
+     * @returns {Promise<void>}
+     */
+    async switchWorkspace(connectionId, requestedRoute = null) {
+        const connection = this.workspaceRegistry.getById(connectionId);
+        if (!connection) return;
+        if (connection.id === this.activeWorkspaceConnection?.id && this.workspace) {
+            this.closeWorkspaceSettings();
+            return;
+        }
+        if (this.weekView.saveInFlight || this.todoView.saveInFlight) {
+            this.toast("Wait for the active save to finish before switching workspaces.", 4000);
+            return;
+        }
+        if (connection.provider === "local") {
+            await Promise.all([this.weekView.flushDraftWrites(), this.todoView.flushDraftWrites()]);
+            this.activateWorkspaceConnection(connection, "");
+            this.pendingRoute = requestedRoute || this.routeForWorkspaceConnection(connection);
+            this.dataSource = new LocalDataSource(this.config);
+            this.weekView.setDataSource(this.dataSource);
+            this.todoView.setDataSource(this.dataSource);
+            this.projectDialog.setDataSource(this.dataSource);
+            this.closeWorkspaceSettings("none");
+            await this.reloadData();
+            return;
+        }
+        const credential = this.configService.loadWorkspaceCredential(connection.id);
+        if (!credential) {
+            this.requestWorkspaceCredential(connection);
+            return;
+        }
+
+        this.setError(this.workspaceErrorEl, "");
+        this.setBusy(true);
+        let connectionInfo;
+        try {
+            connectionInfo = await this.preflightWorkspaceConnection(connection, credential);
+        } catch (error) {
+            const message = `Could not open ${connection.displayName}: ${safeText(error)}`;
+            this.setError(this.workspaceErrorEl, message);
+            this.toast(message, 6000);
+            return;
+        } finally {
+            this.setBusy(false);
+        }
+
+        await Promise.all([this.weekView.flushDraftWrites(), this.todoView.flushDraftWrites()]);
+        this.activateWorkspaceConnection(connection, credential);
+        this.pendingRoute = requestedRoute || this.routeForWorkspaceConnection(connection);
+        this.closeWorkspaceSettings("none");
+        try {
+            await this.connectWithToken(credential, connectionInfo);
+        } catch (error) {
+            this.setError(this.loginErrorEl, safeText(error));
+        }
+    }
+
+    /**
+     * Adds or re-authenticates a GitHub workspace from the settings form, then opens it through the same switch pipeline as registry rows.
+     * The new credential is persisted only in the selected browser tier and never in the registry record.
+     * @param {Event} event Workspace form submission.
+     * @returns {Promise<void>}
+     */
+    async handleWorkspaceAdd(event) {
+        event.preventDefault();
+        this.setError(this.workspaceErrorEl, "");
+        if (this.workspaceProviderInput.value !== "github") {
+            this.setError(this.workspaceErrorEl, "This provider is not available yet.");
+            return;
+        }
+
+        const token = this.workspaceTokenInput.value.trim();
+        if (!token) {
+            this.setError(this.workspaceErrorEl, "Enter a token for this workspace.");
+            return;
+        }
+        let locator;
+        try {
+            const repository = parseGitHubRepository(this.workspaceRepositoryInput.value);
+            locator = {
+                provider: "github",
+                repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
+                ref: this.workspaceRefInput.value.trim(),
+                workspacePath: this.workspacePathInput.value.trim(),
+                expectedWorkspaceId: "",
+            };
+            if (!locator.ref) throw new Error("Enter a branch or ref.");
+            const connection = this.workspaceRegistry.upsert(locator);
+            this.configService.saveWorkspaceCredential(connection.id, token, this.workspaceRememberInput.checked);
+            this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+            this.workspaceTokenInput.value = "";
+            this.renderWorkspaceRegistry();
+            await this.switchWorkspace(connection.id);
+        } catch (error) {
+            this.setError(this.workspaceErrorEl, safeText(error));
+        }
+    }
+
+    /**
+     * Removes one browser connection and both of its credential records without changing repository data.
+     * Disconnecting the mounted workspace returns to login; every other connection remains registered and independently usable.
+     * @param {string} connectionId Registry connection id.
+     * @returns {void}
+     */
+    disconnectWorkspace(connectionId) {
+        if (this.weekView.saveInFlight || this.todoView.saveInFlight) {
+            this.toast("Wait for the active save to finish before disconnecting a workspace.", 4000);
+            return;
+        }
+        const wasActive = connectionId === this.activeWorkspaceConnection?.id;
+        const removed = this.workspaceRegistry.remove(connectionId);
+        if (!removed) return;
+        this.configService.clearWorkspaceCredential(connectionId);
+        this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+        if (!wasActive) {
+            this.renderWorkspaceRegistry();
+            return;
+        }
+        this.activeWorkspaceConnection = null;
+        this.closeWorkspaceSettings("none");
+        this.logout(false);
+    }
+
+    /**
+     * Copies a credential-free route to the active workspace and underlying component state.
+     * Capability links with an intentionally embedded credential are handled by the dedicated share-link flow introduced separately.
+     * @returns {Promise<void>}
+     */
+    async copyActiveWorkspaceLink() {
+        if (!this.workspace) return;
+        const route = this.buildCurrentRoute();
+        if (route.panel === "workspaces") {
+            route.panel = route.component === "time" && route.state.returnPanel === "search" ? "search" : "main";
+            delete route.state.returnPanel;
+        }
+        const relative = formatAppRoute(route, this.routeController.basePath);
+        const url = new URL(relative, window.location.origin).toString();
+        try {
+            await navigator.clipboard.writeText(url);
+            this.toast("Workspace link copied.", 2400, "success");
+        } catch {
+            window.prompt("Copy this workspace link:", url);
+        }
+    }
+
+    /**
      * Builds the IndexedDB namespace used for unsaved week drafts.
      * Browser origins already isolate local servers, while GitHub mode additionally separates owner, repository, and branch.
      * @returns {string}
      */
     buildDraftNamespace() {
-        if (this.isLocalMode) return "local";
+        if (this.isLocalMode) {
+            return `local:${this.activeWorkspaceConnection?.expectedWorkspaceId || this.workspace?.workspace_id || "default"}`;
+        }
+        if (this.activeWorkspaceConnection) return `workspace:${this.activeWorkspaceConnection.id}`;
         const owner = String(this.config.owner || "").trim();
         const repo = String(this.config.repo || "").trim();
         const ref = String(this.config.ref || "").trim();
@@ -958,7 +1397,16 @@ class App {
                 repositoryUrl: "",
                 ref: "",
                 workspacePath: this.config.workspacePath || "zeitplural.json",
-                expectedWorkspaceId: this.workspace?.workspace_id || "",
+                expectedWorkspaceId:
+                    this.workspace?.workspace_id ||
+                    this.activeWorkspaceConnection?.expectedWorkspaceId ||
+                    String(this.config.localWorkspaceId || ""),
+            };
+        }
+        if (this.activeWorkspaceConnection) {
+            return {
+                ...this.activeWorkspaceConnection.toLocator(),
+                expectedWorkspaceId: this.workspace?.workspace_id || this.activeWorkspaceConnection.expectedWorkspaceId || "",
             };
         }
         return {
@@ -976,17 +1424,19 @@ class App {
      * @returns {import("./routing.js").AppRoute}
      */
     buildCurrentRoute() {
+        const globalPanel = this.activeGlobalPanel === "workspaces" ? "workspaces" : null;
         if (this.state.activeTab === "todos") {
             return {
                 version: 1,
                 component: "todos",
-                panel: "main",
+                panel: globalPanel || "main",
                 workspace: this.getCurrentWorkspaceRouteLocator(),
                 state: this.todoView.getRouteState(),
             };
         }
 
-        const panel = this.state.activeTab === "search" ? "search" : "main";
+        const underlyingPanel = this.state.activeTab === "search" ? "search" : "main";
+        const panel = globalPanel || underlyingPanel;
         return {
             version: 1,
             component: "time",
@@ -994,7 +1444,8 @@ class App {
             workspace: this.getCurrentWorkspaceRouteLocator(),
             state: {
                 ...this.weekView.getRouteState(),
-                ...(panel === "search" ? this.searchView.getRouteState() : {}),
+                ...(underlyingPanel === "search" ? this.searchView.getRouteState() : {}),
+                ...(globalPanel && underlyingPanel === "search" ? { returnPanel: "search" } : {}),
             },
         };
     }
@@ -1027,7 +1478,12 @@ class App {
      */
     tabForRoute(route) {
         if (route.component === "todos") return "todos";
-        if (route.component === "time" && route.panel === "search") return "search";
+        if (
+            route.component === "time" &&
+            (route.panel === "search" || (route.panel === "workspaces" && route.state.returnPanel === "search"))
+        ) {
+            return "search";
+        }
         return "week";
     }
 
@@ -1065,10 +1521,12 @@ class App {
         this.setTab(tab, "none");
         if (normalized.component === "time") {
             this.weekView.restoreRouteState(normalized.state);
-            if (normalized.panel === "search") this.searchView.restoreRouteState(normalized.state);
+            if (tab === "search") this.searchView.restoreRouteState(normalized.state);
         } else if (normalized.component === "todos") {
             this.todoView.restoreRouteState(normalized.state);
         }
+        if (normalized.panel === "workspaces") this.openWorkspaceSettings("none");
+        else this.closeWorkspaceSettings("none");
 
         window.requestAnimationFrame(() => {
             this.routeRestoreInProgress = false;
@@ -1084,7 +1542,14 @@ class App {
      */
     routeTargetsCurrentConnection(locator) {
         if (!locator) return true;
-        if (this.isLocalMode) return locator.provider === "local";
+        if (this.isLocalMode) {
+            return (
+                locator.provider === "local" &&
+                (!locator.expectedWorkspaceId ||
+                    locator.expectedWorkspaceId ===
+                        (this.activeWorkspaceConnection?.expectedWorkspaceId || this.workspace?.workspace_id || ""))
+            );
+        }
         if (locator.provider !== "github") return false;
         try {
             const repository = parseGitHubRepository(locator.repositoryUrl);
@@ -1118,11 +1583,30 @@ class App {
 
         this.pendingRoute = route;
         if (!this.routeTargetsCurrentConnection(route.workspace)) {
+            if (this.isLocalMode && route.workspace?.provider === "local") {
+                const localConnection = this.workspaceRegistry.findByLocator(route.workspace);
+                if (localConnection) {
+                    await this.switchWorkspace(localConnection.id, route);
+                    return;
+                }
+                this.routeController.write(this.buildCurrentRoute(), "replace");
+                this.toast("That workspace is not exposed by the local server.", 5000);
+                return;
+            }
             if (route.workspace?.provider === "github") {
-                this.config = configForRouteWorkspace(this.config, route.workspace);
-                this.state.setConfig(this.config);
                 this.repositoryInput.value = route.workspace.repositoryUrl;
                 this.refInput.value = route.workspace.ref;
+                const registered = this.workspaceRegistry.findByLocator(route.workspace);
+                if (registered) {
+                    const credential = this.configService.loadWorkspaceCredential(registered.id);
+                    this.rememberInput.checked = this.configService.isWorkspaceCredentialRemembered(registered.id);
+                    if (credential && this.workspace && !this.appSection.hidden) {
+                        await this.switchWorkspace(registered.id, route);
+                        return;
+                    }
+                } else {
+                    this.rememberInput.checked = false;
+                }
             }
             this.showLoginScreen();
             this.setError(this.loginErrorEl, "Authenticate to open the workspace named in this link.");
@@ -1145,6 +1629,78 @@ class App {
     }
 
     /**
+     * Discovers every repository exposed by server.py and builds a local workspace registry from their public ids.
+     * The server remains the sole authority over filesystem paths; browser routes and persisted records contain only workspace_id, display name, and bootstrap path.
+     * @returns {Promise<void>}
+     */
+    async initializeLocalMode() {
+        this.showLoadingScreen("Discovering local workspaces…");
+        try {
+            const discoverySource = new LocalDataSource(this.config);
+            const catalog = await discoverySource.fetchAvailableWorkspaces();
+            if (!catalog.workspaces.length) throw new Error("The local server exposes no workspaces.");
+
+            const persistedOrder = new Map(
+                this.configService
+                    .loadWorkspaceRegistry(this.config)
+                    .list()
+                    .filter((connection) => connection.provider === "local")
+                    .map((connection, index) => [connection.id, index]),
+            );
+            const registry = new WorkspaceRegistry();
+            const connections = catalog.workspaces.map((item) =>
+                registry.upsert(
+                    {
+                        provider: "local",
+                        repositoryUrl: "",
+                        ref: "",
+                        workspacePath: item.workspace_path,
+                        expectedWorkspaceId: item.workspace_id,
+                    },
+                    { displayName: item.name, expectedWorkspaceId: item.workspace_id },
+                ),
+            );
+            registry.connections.sort(
+                (left, right) =>
+                    (persistedOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+                        (persistedOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
+                    left.order - right.order,
+            );
+            registry.reindex();
+
+            const requestedWorkspaceId =
+                this.pendingRoute?.workspace?.expectedWorkspaceId ||
+                String(this.config.localWorkspaceId || "") ||
+                catalog.default_workspace_id;
+            const selected =
+                connections.find((connection) => connection.expectedWorkspaceId === requestedWorkspaceId) ||
+                connections.find((connection) => connection.expectedWorkspaceId === catalog.default_workspace_id) ||
+                connections[0];
+            if (!selected) throw new Error("The local server did not provide a selectable workspace.");
+
+            this.workspaceRegistry = registry;
+            this.activateWorkspaceConnection(selected, "");
+            this.dataSource = new LocalDataSource(this.config);
+            this.weekView.setDataSource(this.dataSource);
+            this.todoView.setDataSource(this.dataSource);
+            this.projectDialog.setDataSource(this.dataSource);
+            this.pendingRoute = this.pendingRoute
+                ? { ...this.pendingRoute, workspace: selected.toLocator() }
+                : {
+                      version: 1,
+                      component: "time",
+                      panel: "main",
+                      workspace: selected.toLocator(),
+                      state: {},
+                  };
+            this.setAuthStatus("Local mode");
+            await this.reloadData();
+        } catch (error) {
+            this.showLoadingError(safeText(error));
+        }
+    }
+
+    /**
      * Boots the application and triggers the initial load flow.
      * Keeps the main UI flow and data loading coordinated.
      * @returns {void}
@@ -1152,11 +1708,25 @@ class App {
     start() {
         this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
         this.refInput.value = this.config.ref;
-        this.rememberInput.checked = this.configService.isTokenRemembered();
+        this.rememberInput.checked = this.activeWorkspaceConnection
+            ? this.configService.isWorkspaceCredentialRemembered(this.activeWorkspaceConnection.id)
+            : this.configService.isTokenRemembered();
         if (this.pendingRoute) this.state.setActiveTab(this.tabForRoute(this.pendingRoute));
 
         this.loginForm.addEventListener("submit", (ev) => this.handleLoginSubmit(ev));
         this.clearSavedBtn.addEventListener("click", () => this.handleClearSaved());
+        this.workspaceSettingsBtn.addEventListener("click", () => {
+            if (this.workspaceDialog.open) this.closeWorkspaceSettings();
+            else this.openWorkspaceSettings();
+        });
+        this.workspaceDialogCloseBtn.addEventListener("click", () => this.closeWorkspaceSettings());
+        this.workspaceDialog.addEventListener("cancel", (ev) => {
+            ev.preventDefault();
+            this.closeWorkspaceSettings();
+        });
+        this.workspaceAddForm.addEventListener("submit", (ev) => void this.handleWorkspaceAdd(ev));
+        this.workspaceListEl.addEventListener("click", (ev) => void this.handleWorkspaceListClick(ev));
+        this.workspaceShareBtn.addEventListener("click", () => void this.copyActiveWorkspaceLink());
         this.menuWeekBtn.addEventListener("click", () => this.setTab("week"));
         this.menuTodoBtn.addEventListener("click", () => this.setTab("todos"));
         this.menuSearchBtn.addEventListener("click", () => {
@@ -1190,21 +1760,11 @@ class App {
         setVisible(this.loadingSection, false);
 
         if (this.isLocalMode) {
-            if (!this.pendingRoute) {
-                this.pendingRoute = {
-                    version: 1,
-                    component: "time",
-                    panel: "main",
-                    workspace: this.getCurrentWorkspaceRouteLocator(),
-                    state: {},
-                };
-            }
             this.setAuthStatus("Local mode");
             setVisible(this.logoutBtn, false);
             setVisible(this.reloadDataBtn, true);
             setVisible(this.projectsBtn, true);
-            this.showLoadingScreen("Preparing local data…");
-            void this.reloadData();
+            void this.initializeLocalMode();
             return;
         }
 
@@ -1400,7 +1960,13 @@ class App {
         this.setError(this.loginErrorEl, "");
 
         const ref = this.refInput.value.trim();
-        const tok = this.tokenInput.value.trim() || this.token;
+        const pendingConnection = this.workspaceRegistry.findByLocator(this.pendingRoute?.workspace || null);
+        const fallbackToken = pendingConnection
+            ? this.configService.loadWorkspaceCredential(pendingConnection.id)
+            : this.routeTargetsCurrentConnection(this.pendingRoute?.workspace || null)
+              ? this.token
+              : "";
+        const tok = this.tokenInput.value.trim() || fallbackToken;
         const remember = this.rememberInput.checked;
 
         if (!this.repositoryInput.value.trim() || !ref || !tok) {
@@ -1416,39 +1982,34 @@ class App {
             return;
         }
 
-        this.config = { ...this.config, owner: repository.owner, repo: repository.repo, ref };
-        this.state.setConfig(this.config);
-        this.configService.saveConfig(this.config);
-        this.configService.saveToken(tok, remember);
         const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
+        const workspacePath = String(this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath || "zeitplural.json");
+        const locator = {
+            provider: /** @type {const} */ ("github"),
+            repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
+            ref,
+            workspacePath,
+            expectedWorkspaceId,
+        };
+        const connection = this.workspaceRegistry.upsert(locator, { expectedWorkspaceId });
+        this.workspaceRegistry.setActive(connection.id);
+        this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+        this.configService.saveWorkspaceCredential(connection.id, tok, remember);
+        this.activateWorkspaceConnection(connection, tok);
         if (!this.pendingRoute) {
             this.pendingRoute = {
                 version: 1,
                 component: "time",
                 panel: "main",
-                workspace: {
-                    provider: "github",
-                    repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
-                    ref,
-                    workspacePath: this.config.workspacePath || "zeitplural.json",
-                    expectedWorkspaceId: "",
-                },
+                workspace: connection.toLocator(),
                 state: {},
             };
         } else {
             this.pendingRoute = {
                 ...this.pendingRoute,
-                workspace: {
-                    provider: "github",
-                    repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
-                    ref,
-                    workspacePath: this.config.workspacePath || "zeitplural.json",
-                    expectedWorkspaceId,
-                },
+                workspace: connection.toLocator(),
             };
         }
-        this.weekView.setDraftNamespace(this.buildDraftNamespace());
-        this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.tokenInput.value = "";
 
         try {
@@ -1469,6 +2030,8 @@ class App {
         this.token = "";
         this.state.setToken("");
         this.config = { ...DEFAULT_CONFIG };
+        this.workspaceRegistry = this.configService.loadWorkspaceRegistry(this.config);
+        this.activeWorkspaceConnection = null;
         this.state.setConfig(this.config);
         this.setTheme(this.config.theme, false);
         this.setAutomaticAppZoom(false);
@@ -1544,6 +2107,15 @@ class App {
         this.logoutBtn.disabled = isBusy;
         this.reloadDataBtn.disabled = isBusy;
         this.projectsBtn.disabled = isBusy;
+        this.workspaceSettingsBtn.disabled = isBusy;
+        this.workspaceDialogCloseBtn.disabled = isBusy;
+        this.workspaceProviderInput.disabled = isBusy;
+        this.workspaceRepositoryInput.disabled = isBusy;
+        this.workspaceRefInput.disabled = isBusy;
+        this.workspacePathInput.disabled = isBusy;
+        this.workspaceTokenInput.disabled = isBusy;
+        this.workspaceRememberInput.disabled = isBusy;
+        this.workspaceShareBtn.disabled = isBusy || !this.workspace;
         this.menuWeekBtn.disabled = isBusy;
         this.menuTodoBtn.disabled = isBusy;
         this.menuSearchBtn.disabled = isBusy;
@@ -1717,6 +2289,16 @@ class App {
         this.timeContext.setTimeZone(workspace.timezone);
         this.config = { ...this.config, timezone: workspace.timezone };
         this.state.setConfig(this.config);
+        if (!this.isLocalMode) {
+            const locator = this.activeWorkspaceConnection?.toLocator() || this.getCurrentWorkspaceRouteLocator();
+            const connection = this.workspaceRegistry.upsert(locator, {
+                displayName: workspace.name,
+                expectedWorkspaceId: workspace.workspace_id,
+            });
+            this.workspaceRegistry.setActive(connection.id);
+            this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+            this.activeWorkspaceConnection = connection;
+        }
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
     }
@@ -1932,6 +2514,7 @@ class App {
         await this.weekView.flushDraftWrites();
         await this.todoView.flushDraftWrites();
         this.weekView.reset();
+        this.store.clear();
         this.todoStore.clear();
         this.todoView.reset();
         try {
@@ -1961,9 +2544,10 @@ class App {
      * Connects to GitHub using the provided token and loads data.
      * Keeps the main UI flow and data loading coordinated.
      * @param {string} token
+     * @param {{repoInfo: any, userInfo: any} | null} [connectionInfo] Optional successful preflight result used to avoid duplicate provider checks while switching.
      * @returns {Promise<void>}
      */
-    async connectWithToken(token) {
+    async connectWithToken(token, connectionInfo = null) {
         this.token = token;
         this.state.setToken(token);
         this.dataSource = new GitHubDataSource(this.config, token);
@@ -1977,7 +2561,7 @@ class App {
         this.showLoadingScreen("Connecting to GitHub…");
         this.setBusy(true);
         try {
-            const { repoInfo, userInfo } = await this.dataSource.checkConnection();
+            const { repoInfo, userInfo } = connectionInfo || (await this.dataSource.checkConnection());
             const repoLabel = repoInfo?.full_name ? repoInfo.full_name : `${this.config.owner}/${this.config.repo}`;
             this.state.ghUser = userInfo;
             this.setAuthStatus(userInfo?.login ? `Logged in as ${userInfo.login}` : `Connected to ${repoLabel}`);
@@ -1996,11 +2580,15 @@ class App {
     }
 
     /**
-     * Clears user session state and resets the UI to login.
-     * Keeps the main UI flow and data loading coordinated.
+     * Clears the mounted workspace and returns to login.
+     * Ordinary logout forgets only the active workspace credential; disconnect callers can remove the registry row first and suppress duplicate credential cleanup.
+     * @param {boolean} [clearCredential] Whether to remove the active connection's stored credential.
      * @returns {void}
      */
-    logout() {
+    logout(clearCredential = true) {
+        if (clearCredential && this.activeWorkspaceConnection) {
+            this.configService.clearWorkspaceCredential(this.activeWorkspaceConnection.id);
+        }
         this.token = "";
         this.state.setToken("");
         this.state.ghUser = null;
@@ -2021,13 +2609,31 @@ class App {
         this.todoSummary = "";
         this.refreshDataBadge();
         this.projectDialog.close();
+        this.closeWorkspaceSettings("none");
         setVisible(this.weekControlsEl, false);
         setVisible(this.todoTopbarControlsEl, false);
         setVisible(this.reloadDataBtn, false);
         setVisible(this.logoutBtn, false);
         setVisible(this.projectsBtn, false);
         this.showLoginScreen();
-        this.configService.saveToken("", false);
+        const activeConnection = this.activeWorkspaceConnection || this.workspaceRegistry.getActive();
+        if (activeConnection) {
+            this.activeWorkspaceConnection = activeConnection;
+            this.config = configForRouteWorkspace(this.config, activeConnection.toLocator());
+            this.state.setConfig(this.config);
+            this.repositoryInput.value = activeConnection.repositoryUrl;
+            this.refInput.value = activeConnection.ref;
+            if (!clearCredential) {
+                this.token = this.configService.loadWorkspaceCredential(activeConnection.id);
+                this.state.setToken(this.token);
+            }
+        }
+        this.tokenInput.value = "";
+        this.rememberInput.checked = Boolean(
+            !clearCredential &&
+                activeConnection &&
+                this.configService.isWorkspaceCredentialRemembered(activeConnection.id),
+        );
         this.routeController.write({ version: 1, component: null, panel: "main", workspace: null, state: {} }, "replace");
     }
 }

@@ -75,6 +75,8 @@ gh repo create YOUR_ACCOUNT/zeitplural-data --private --source=. --push
 
 The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to `api.github.com`; the static host never receives the credential.
 
+After opening a workspace, use the first sidebar action beneath the owl to manage connections. The browser keeps an ordered registry of repository URL, branch, bootstrap path, verified workspace ID, and display name. Each workspace token is stored separately, and switching repositories preserves unsaved drafts in a workspace-specific IndexedDB journal. Disconnecting one workspace does not log out or clear credentials for the others.
+
 If a project is bound to another GitHub repository for issue synchronization, the token additionally needs `Issues: Read & write` for that repository. Workspaces without such a binding do not need issue access.
 
 ## How the workspace works
@@ -145,6 +147,16 @@ python3 server.py --workspace ../zeitplural-data
 Open <http://127.0.0.1:8000/time?source=local>. When the sibling is named `zeitplural-data`, `--workspace` may be omitted.
 
 Local mode serves application files from this checkout and maps workspace reads plus `POST /save` to the separate data checkout. It writes JSON without committing; review, commit, and push data changes from that repository independently.
+
+Repeat `--workspace` to test the multi-workspace switcher against several local repositories:
+
+```bash
+python3 server.py \
+    --workspace ../zeitplural-data \
+    --workspace ../zeitplural-shared-expenses
+```
+
+The server reads each repository's `workspace_id`, exposes only those explicitly selected roots, and keeps absolute filesystem paths out of browser routes. Local saves include the selected workspace ID so writes cannot cross into another exposed checkout.
 
 ### Stylesheet ownership
 

@@ -1,3 +1,5 @@
+import { normalizeWorkspaceRouteLocator, workspaceRouteLocatorKey } from "./routing.js";
+
 /**
  * @typedef {Object} AppConfig
  * @description Repository settings and user preferences for the viewer.
@@ -5,6 +7,7 @@
  * @property {string} repo
  * @property {string} ref
  * @property {string} workspacePath
+ * @property {string} [localWorkspaceId]
  * @property {string} timezone
  * @property {number} uiZoom
  * @property {"auto" | "manual"} uiZoomMode
@@ -113,7 +116,298 @@ const STORAGE_KEYS = {
     config: "tt_viewer:config:v1",
     token: "tt_viewer:token:v1",
     tokenRemembered: "tt_viewer:token_remembered:v1",
+    workspaceRegistry: "zeitplural:workspace-registry:v1",
+    rememberedWorkspaceCredentials: "zeitplural:workspace-credentials:local:v1",
+    sessionWorkspaceCredentials: "zeitplural:workspace-credentials:session:v1",
 };
+
+/**
+ * @typedef {Object} WorkspaceConnectionMetadata
+ * @description Optional user-facing metadata learned after a workspace repository has been opened.
+ * @property {string} [displayName]
+ * @property {string} [expectedWorkspaceId]
+ */
+
+/**
+ * Represents one credential-free connection in the browser's workspace registry.
+ * Its stable id derives only from provider/repository/ref/bootstrap coordinates; tokens are stored by ConfigService in a separate map keyed by that id.
+ */
+export class WorkspaceConnection {
+    /**
+     * Creates a normalized connection record.
+     * Callers normally use fromLocator() or fromRaw() so repository and path validation remains centralized in the route locator model.
+     * @param {import("./routing.js").WorkspaceRouteLocator} locator Public workspace coordinates.
+     * @param {string} displayName Human-readable label shown in Workspace settings.
+     * @param {number} order Persisted user-defined ordering index.
+     */
+    constructor(locator, displayName, order) {
+        const normalized = normalizeWorkspaceRouteLocator(locator);
+        if (!normalized) throw new Error("A valid workspace locator is required.");
+        this.id = workspaceRouteLocatorKey(normalized);
+        this.provider = normalized.provider;
+        this.repositoryUrl = normalized.repositoryUrl;
+        this.ref = normalized.ref;
+        this.workspacePath = normalized.workspacePath;
+        this.expectedWorkspaceId = normalized.expectedWorkspaceId;
+        this.displayName = String(displayName || WorkspaceConnection.defaultDisplayName(normalized)).trim();
+        this.order = Math.max(0, Math.round(Number(order) || 0));
+    }
+
+    /**
+     * Derives a concise fallback label before zeitplural.json supplies the workspace's own name.
+     * @param {import("./routing.js").WorkspaceRouteLocator} locator Validated locator.
+     * @returns {string}
+     */
+    static defaultDisplayName(locator) {
+        if (locator.provider === "local") return "Local workspace";
+        try {
+            const url = new URL(locator.repositoryUrl);
+            return url.pathname.replace(/^\/+|\/+$/g, "") || url.hostname;
+        } catch {
+            return "Workspace";
+        }
+    }
+
+    /**
+     * Creates a registry record from a validated locator and optional learned metadata.
+     * @param {import("./routing.js").WorkspaceRouteLocator} locator Public workspace coordinates.
+     * @param {WorkspaceConnectionMetadata} [metadata] Display name and verified workspace identity.
+     * @param {number} [order] Persisted ordering index.
+     * @returns {WorkspaceConnection}
+     */
+    static fromLocator(locator, metadata = {}, order = 0) {
+        const normalized = normalizeWorkspaceRouteLocator({
+            ...locator,
+            expectedWorkspaceId: metadata.expectedWorkspaceId ?? locator.expectedWorkspaceId,
+        });
+        if (!normalized) throw new Error("A valid workspace locator is required.");
+        return new WorkspaceConnection(normalized, metadata.displayName || "", order);
+    }
+
+    /**
+     * Parses one untrusted persisted registry row.
+     * The stored id is intentionally ignored and recomputed, preventing stale or hand-edited ids from crossing credential namespaces.
+     * @param {unknown} raw Candidate serialized row.
+     * @returns {WorkspaceConnection}
+     */
+    static fromRaw(raw) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Workspace connection must be an object.");
+        const value = /** @type {Record<string, unknown>} */ (raw);
+        return WorkspaceConnection.fromLocator(
+            {
+                provider: /** @type {import("./routing.js").WorkspaceRouteLocator["provider"]} */ (value.provider),
+                repositoryUrl: String(value.repository_url || ""),
+                ref: String(value.ref || ""),
+                workspacePath: String(value.workspace_path || "zeitplural.json"),
+                expectedWorkspaceId: String(value.expected_workspace_id || ""),
+            },
+            { displayName: String(value.display_name || "") },
+            Number(value.order),
+        );
+    }
+
+    /**
+     * Returns the credential-free locator consumed by routing and data-source selection.
+     * @returns {import("./routing.js").WorkspaceRouteLocator}
+     */
+    toLocator() {
+        return {
+            provider: this.provider,
+            repositoryUrl: this.repositoryUrl,
+            ref: this.ref,
+            workspacePath: this.workspacePath,
+            expectedWorkspaceId: this.expectedWorkspaceId,
+        };
+    }
+
+    /**
+     * Serializes a registry row without credential material.
+     * @returns {Object}
+     */
+    toObject() {
+        return {
+            display_name: this.displayName,
+            expected_workspace_id: this.expectedWorkspaceId,
+            id: this.id,
+            order: this.order,
+            provider: this.provider,
+            ref: this.ref,
+            repository_url: this.repositoryUrl,
+            workspace_path: this.workspacePath,
+        };
+    }
+}
+
+/**
+ * Models the ordered set of workspaces connected in one browser profile.
+ * The registry is application-local configuration: it selects repositories but is never written into any workspace repository.
+ */
+export class WorkspaceRegistry {
+    /**
+     * Creates a normalized registry and resolves its active connection.
+     * @param {WorkspaceConnection[]} connections Valid connection rows.
+     * @param {string} activeWorkspaceId Selected connection id.
+     */
+    constructor(connections = [], activeWorkspaceId = "") {
+        const deduplicated = new Map();
+        for (const connection of connections) deduplicated.set(connection.id, connection);
+        this.connections = Array.from(deduplicated.values()).sort(
+            (left, right) => left.order - right.order || left.displayName.localeCompare(right.displayName),
+        );
+        this.reindex();
+        this.activeWorkspaceId = this.connections.some((connection) => connection.id === activeWorkspaceId)
+            ? activeWorkspaceId
+            : this.connections[0]?.id || "";
+        this.schemaVersion = 1;
+    }
+
+    /**
+     * Parses the persisted registry, dropping malformed individual rows while preserving every valid connection.
+     * @param {unknown} raw Candidate registry object.
+     * @returns {WorkspaceRegistry}
+     */
+    static fromRaw(raw) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return new WorkspaceRegistry();
+        const value = /** @type {Record<string, unknown>} */ (raw);
+        if (Number(value.schema_version) !== 1) return new WorkspaceRegistry();
+        const connections = [];
+        for (const candidate of Array.isArray(value.workspaces) ? value.workspaces : []) {
+            try {
+                connections.push(WorkspaceConnection.fromRaw(candidate));
+            } catch {
+                // One malformed browser record must not make every other workspace unavailable.
+            }
+        }
+        return new WorkspaceRegistry(connections, String(value.active_workspace_id || ""));
+    }
+
+    /**
+     * Reassigns contiguous order values after insertion, removal, or movement.
+     * @returns {void}
+     */
+    reindex() {
+        this.connections.forEach((connection, index) => {
+            connection.order = index;
+        });
+    }
+
+    /**
+     * Returns connections in their persisted display order.
+     * @returns {WorkspaceConnection[]}
+     */
+    list() {
+        return this.connections.slice();
+    }
+
+    /**
+     * Finds a connection by its internal credential namespace id.
+     * @param {string} id Connection id.
+     * @returns {WorkspaceConnection | null}
+     */
+    getById(id) {
+        return this.connections.find((connection) => connection.id === id) || null;
+    }
+
+    /**
+     * Finds a registered connection with exactly the same provider/repository/ref/bootstrap coordinates.
+     * Expected workspace identity is verification metadata and therefore does not alter locator matching.
+     * @param {import("./routing.js").WorkspaceRouteLocator | null} locator Candidate route locator.
+     * @returns {WorkspaceConnection | null}
+     */
+    findByLocator(locator) {
+        if (!locator) return null;
+        let key;
+        try {
+            key = workspaceRouteLocatorKey(
+                locator.provider === "local" ? locator : { ...locator, expectedWorkspaceId: "" },
+            );
+        } catch {
+            return null;
+        }
+        return this.connections.find((connection) => connection.id === key) || null;
+    }
+
+    /**
+     * Returns the selected connection, if any.
+     * @returns {WorkspaceConnection | null}
+     */
+    getActive() {
+        return this.getById(this.activeWorkspaceId);
+    }
+
+    /**
+     * Inserts a locator or updates metadata for its existing connection.
+     * @param {import("./routing.js").WorkspaceRouteLocator} locator Public workspace coordinates.
+     * @param {WorkspaceConnectionMetadata} [metadata] Newly learned name and identity.
+     * @returns {WorkspaceConnection}
+     */
+    upsert(locator, metadata = {}) {
+        const existing = this.findByLocator(locator);
+        if (existing) {
+            if (metadata.displayName) existing.displayName = String(metadata.displayName).trim();
+            if (metadata.expectedWorkspaceId) existing.expectedWorkspaceId = String(metadata.expectedWorkspaceId).trim();
+            return existing;
+        }
+        const connection = WorkspaceConnection.fromLocator(locator, metadata, this.connections.length);
+        this.connections.push(connection);
+        this.reindex();
+        if (!this.activeWorkspaceId) this.activeWorkspaceId = connection.id;
+        return connection;
+    }
+
+    /**
+     * Selects a registered connection.
+     * @param {string} id Connection id.
+     * @returns {boolean} Whether the requested connection exists.
+     */
+    setActive(id) {
+        if (!this.getById(id)) return false;
+        this.activeWorkspaceId = id;
+        return true;
+    }
+
+    /**
+     * Removes a connection while leaving credentials to ConfigService's explicit cleanup step.
+     * @param {string} id Connection id.
+     * @returns {WorkspaceConnection | null} Removed connection.
+     */
+    remove(id) {
+        const index = this.connections.findIndex((connection) => connection.id === id);
+        if (index < 0) return null;
+        const [removed] = this.connections.splice(index, 1);
+        this.reindex();
+        if (this.activeWorkspaceId === id) this.activeWorkspaceId = this.connections[0]?.id || "";
+        return removed;
+    }
+
+    /**
+     * Moves one connection one slot up or down in the registry.
+     * @param {string} id Connection id.
+     * @param {-1 | 1} direction Requested movement.
+     * @returns {boolean} Whether ordering changed.
+     */
+    move(id, direction) {
+        const index = this.connections.findIndex((connection) => connection.id === id);
+        const target = index + (direction < 0 ? -1 : 1);
+        if (index < 0 || target < 0 || target >= this.connections.length) return false;
+        const [connection] = this.connections.splice(index, 1);
+        this.connections.splice(target, 0, connection);
+        this.reindex();
+        return true;
+    }
+
+    /**
+     * Serializes the browser registry without credentials.
+     * @returns {Object}
+     */
+    toObject() {
+        return {
+            active_workspace_id: this.activeWorkspaceId,
+            schema_version: this.schemaVersion,
+            workspaces: this.connections.map((connection) => connection.toObject()),
+        };
+    }
+}
 
 /**
  * Manages local/session storage for config and tokens.
@@ -122,6 +416,150 @@ const STORAGE_KEYS = {
 export class ConfigService {
     constructor() {
         this.storageKeys = { ...STORAGE_KEYS };
+    }
+
+    /**
+     * Parses one credential map from browser storage.
+     * Corrupt values are treated as empty and never leak into connection or route metadata.
+     * @param {Storage} storage Browser storage area.
+     * @param {string} key Storage key.
+     * @returns {Object.<string, string>}
+     */
+    readCredentialMap(storage, key) {
+        try {
+            const parsed = JSON.parse(storage.getItem(key) || "{}");
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+            /** @type {Object.<string, string>} */
+            const result = {};
+            for (const [connectionId, credential] of Object.entries(parsed)) {
+                if (typeof credential === "string" && credential) result[connectionId] = credential;
+            }
+            return result;
+        } catch {
+            return {};
+        }
+    }
+
+    /**
+     * Writes a credential map or removes its storage record when empty.
+     * @param {Storage} storage Browser storage area.
+     * @param {string} key Storage key.
+     * @param {Object.<string, string>} credentials Credential values keyed by connection id.
+     * @returns {void}
+     */
+    writeCredentialMap(storage, key, credentials) {
+        if (Object.keys(credentials).length) storage.setItem(key, JSON.stringify(credentials));
+        else storage.removeItem(key);
+    }
+
+    /**
+     * Loads the browser's ordered workspace registry and performs the one-time single-connection migration.
+     * Legacy repository config becomes a registry row only when legacy config or token state actually exists, so a first-time visitor is not connected to the developer's default workspace.
+     * @param {AppConfig} [fallbackConfig] Already loaded legacy-compatible configuration.
+     * @returns {WorkspaceRegistry}
+     */
+    loadWorkspaceRegistry(fallbackConfig = DEFAULT_CONFIG) {
+        try {
+            const raw = localStorage.getItem(this.storageKeys.workspaceRegistry);
+            if (raw !== null) return WorkspaceRegistry.fromRaw(JSON.parse(raw));
+        } catch {
+            return new WorkspaceRegistry();
+        }
+
+        const hasLegacyState =
+            localStorage.getItem(this.storageKeys.config) !== null ||
+            localStorage.getItem(this.storageKeys.token) !== null ||
+            sessionStorage.getItem(this.storageKeys.token) !== null;
+        if (!hasLegacyState) return new WorkspaceRegistry();
+
+        const config = migrateRenamedWorkspaceConfig({ ...DEFAULT_CONFIG, ...fallbackConfig });
+        const registry = new WorkspaceRegistry();
+        const connection = registry.upsert({
+            provider: "github",
+            repositoryUrl: formatGitHubRepositoryUrl(config.owner, config.repo),
+            ref: config.ref,
+            workspacePath: config.workspacePath,
+            expectedWorkspaceId: "",
+        });
+        registry.setActive(connection.id);
+        this.saveWorkspaceRegistry(registry);
+
+        const legacyToken = this.loadToken();
+        if (legacyToken) this.saveWorkspaceCredential(connection.id, legacyToken, this.isTokenRemembered());
+        return registry;
+    }
+
+    /**
+     * Persists the complete credential-free workspace registry.
+     * @param {WorkspaceRegistry} registry Registry model to save.
+     * @returns {void}
+     */
+    saveWorkspaceRegistry(registry) {
+        localStorage.setItem(this.storageKeys.workspaceRegistry, JSON.stringify(registry.toObject()));
+    }
+
+    /**
+     * Loads the session or remembered credential for one workspace connection.
+     * Session storage wins if both maps contain a value, matching an explicit temporary re-authentication.
+     * @param {string} connectionId Registry connection id.
+     * @returns {string}
+     */
+    loadWorkspaceCredential(connectionId) {
+        const id = String(connectionId || "");
+        if (!id) return "";
+        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
+        if (sessionCredentials[id]) return sessionCredentials[id];
+        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        return rememberedCredentials[id] || "";
+    }
+
+    /**
+     * Stores one workspace credential in exactly one browser persistence tier.
+     * @param {string} connectionId Registry connection id.
+     * @param {string} credential PAT or provider token.
+     * @param {boolean} remember Whether the credential should survive browser restarts.
+     * @returns {void}
+     */
+    saveWorkspaceCredential(connectionId, credential, remember) {
+        const id = String(connectionId || "");
+        if (!id) throw new Error("A workspace connection id is required to store a credential.");
+        const value = String(credential || "");
+        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
+        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        delete sessionCredentials[id];
+        delete rememberedCredentials[id];
+        if (value) {
+            if (remember) rememberedCredentials[id] = value;
+            else sessionCredentials[id] = value;
+        }
+        this.writeCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
+        this.writeCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
+    }
+
+    /**
+     * Reports whether one connection's credential is persisted beyond the current browser session.
+     * @param {string} connectionId Registry connection id.
+     * @returns {boolean}
+     */
+    isWorkspaceCredentialRemembered(connectionId) {
+        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        return Boolean(rememberedCredentials[String(connectionId || "")]);
+    }
+
+    /**
+     * Removes one connection's credentials from both persistence tiers.
+     * @param {string} connectionId Registry connection id.
+     * @returns {void}
+     */
+    clearWorkspaceCredential(connectionId) {
+        const id = String(connectionId || "");
+        if (!id) return;
+        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
+        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        delete sessionCredentials[id];
+        delete rememberedCredentials[id];
+        this.writeCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
+        this.writeCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
     }
 
     /**
@@ -205,6 +643,9 @@ export class ConfigService {
         localStorage.removeItem(this.storageKeys.config);
         localStorage.removeItem(this.storageKeys.token);
         localStorage.removeItem(this.storageKeys.tokenRemembered);
+        localStorage.removeItem(this.storageKeys.workspaceRegistry);
+        localStorage.removeItem(this.storageKeys.rememberedWorkspaceCredentials);
         sessionStorage.removeItem(this.storageKeys.token);
+        sessionStorage.removeItem(this.storageKeys.sessionWorkspaceCredentials);
     }
 }

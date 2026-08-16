@@ -7,7 +7,7 @@ import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -54,6 +54,26 @@ def _default_workspace_root() -> Path:
     return APP_ROOT.parent / "zeitplural-data"
 
 
+def _read_workspace_descriptor(workspace_root: Path, workspace_config_path: str) -> dict[str, str]:
+    """Read the public identity needed to expose one local workspace safely."""
+    config_file = _safe_workspace_path(workspace_root, workspace_config_path)
+    try:
+        payload = json.loads(config_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Could not read local workspace config: {config_file}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Local workspace config must be an object: {config_file}")
+    workspace_id = str(payload.get("workspace_id") or "").strip()
+    name = str(payload.get("name") or workspace_id).strip()
+    if not workspace_id:
+        raise ValueError(f"Local workspace config has no workspace_id: {config_file}")
+    return {
+        "workspace_id": workspace_id,
+        "name": name or workspace_id,
+        "workspace_path": workspace_config_path,
+    }
+
+
 def _is_application_route(path: str, app_entry_path: str) -> bool:
     base = app_entry_path.rstrip("/")
     if base and base != "/":
@@ -69,9 +89,19 @@ def _is_application_route(path: str, app_entry_path: str) -> bool:
 
 
 class Handler(SimpleHTTPRequestHandler):
-    workspace_root = APP_ROOT
+    workspace_roots: dict[str, Path] = {}
+    workspace_descriptors: dict[str, dict[str, str]] = {}
+    default_workspace_id = ""
     workspace_config_path = "zeitplural.json"
     app_entry_path = "/docs/"
+
+    def _select_workspace(self, requested_id: str = "") -> tuple[str, Path] | None:
+        """Resolve a public workspace id to one server-authorized filesystem root."""
+        workspace_id = requested_id.strip() or self.default_workspace_id
+        workspace_root = self.workspace_roots.get(workspace_id)
+        if workspace_root is None:
+            return None
+        return workspace_id, workspace_root
 
     def do_GET(self) -> None:  # noqa: N802 (stdlib)
         parsed = urlparse(self.path)
@@ -79,10 +109,24 @@ class Handler(SimpleHTTPRequestHandler):
             if self.app_entry_path == "/" and parse_qs(parsed.query).get("source") == ["local"]:
                 return super().do_GET()
             self.send_response(302)
-            self.send_header("Location", f"{self.app_entry_path}?source=local")
+            workspace_query = quote(self.default_workspace_id, safe="")
+            self.send_header("Location", f"{self.app_entry_path}time?source=local&workspace={workspace_query}")
             self.end_headers()
             return
+        if parsed.path == "/local-workspaces":
+            payload = {
+                "default_workspace_id": self.default_workspace_id,
+                "schema_version": 1,
+                "workspaces": list(self.workspace_descriptors.values()),
+            }
+            return self._send_json(200, payload)
         if parsed.path == "/workspace-config" or parsed.path.startswith("/workspace/"):
+            requested_id = (parse_qs(parsed.query).get("workspace") or [""])[0]
+            selected = self._select_workspace(requested_id)
+            if selected is None:
+                self.send_error(404, "Unknown local workspace")
+                return
+            _, workspace_root = selected
             path_text = (
                 self.workspace_config_path
                 if parsed.path == "/workspace-config"
@@ -92,7 +136,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_error(404, "Not found")
                 return
             try:
-                target = _safe_workspace_path(self.workspace_root, path_text)
+                target = _safe_workspace_path(workspace_root, path_text)
                 raw = target.read_bytes()
             except (OSError, ValueError):
                 self.send_error(404, "Not found")
@@ -145,6 +189,11 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(req, dict):
             return self._send_json(400, {"ok": False, "error": "Request JSON must be an object"})
 
+        selected = self._select_workspace(str(req.get("workspace_id") or ""))
+        if selected is None:
+            return self._send_json(404, {"ok": False, "error": "Unknown local workspace"})
+        _, workspace_root = selected
+
         files = req.get("files")
         if not isinstance(files, list):
             weeks = req.get("weeks")
@@ -164,7 +213,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(content, str):
                 return self._send_json(400, {"ok": False, "error": f"{path_text}: 'content' must be a string"})
 
-            out_path = _safe_workspace_path(self.workspace_root, path_text)
+            out_path = _safe_workspace_path(workspace_root, path_text)
             _write_text(out_path, content)
         return self._send_json(200, {"ok": True})
 
@@ -176,8 +225,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--workspace",
         type=Path,
-        default=_default_workspace_root(),
-        help="Workspace repository root. Defaults to this mixed checkout or the sibling ../zeitplural-data repository.",
+        action="append",
+        default=None,
+        help="Workspace repository root. Repeat to expose several local workspaces. Defaults to this mixed checkout or sibling ../zeitplural-data.",
     )
     parser.add_argument(
         "--workspace-config",
@@ -186,21 +236,36 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    workspace_root = args.workspace.expanduser().resolve()
     workspace_config_path = _normalize_workspace_path(args.workspace_config)
+    requested_workspace_roots = args.workspace or [_default_workspace_root()]
+    workspace_roots: dict[str, Path] = {}
+    workspace_descriptors: dict[str, dict[str, str]] = {}
+    for requested_root in requested_workspace_roots:
+        workspace_root = requested_root.expanduser().resolve()
+        descriptor = _read_workspace_descriptor(workspace_root, workspace_config_path)
+        workspace_id = descriptor["workspace_id"]
+        if workspace_id in workspace_roots:
+            raise ValueError(f"Duplicate local workspace_id: {workspace_id}")
+        workspace_roots[workspace_id] = workspace_root
+        workspace_descriptors[workspace_id] = descriptor
+    default_workspace_id = next(iter(workspace_roots))
     app_entry_path = "/" if (APP_ROOT / "index.html").is_file() else "/docs/"
 
     class ConfiguredHandler(Handler):
         pass
 
-    ConfiguredHandler.workspace_root = workspace_root
+    ConfiguredHandler.workspace_roots = workspace_roots
+    ConfiguredHandler.workspace_descriptors = workspace_descriptors
+    ConfiguredHandler.default_workspace_id = default_workspace_id
     ConfiguredHandler.workspace_config_path = workspace_config_path
     ConfiguredHandler.app_entry_path = app_entry_path
 
     handler = lambda *a, **k: ConfiguredHandler(*a, directory=str(APP_ROOT), **k)  # noqa: E731 (simple factory)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
-    print(f"Serving zeitplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}time?source=local")
-    print(f"Workspace: {workspace_root} ({workspace_config_path})")
+    route_id = quote(default_workspace_id, safe="")
+    print(f"Serving zeitplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}time?source=local&workspace={route_id}")
+    for workspace_id, workspace_root in workspace_roots.items():
+        print(f"Workspace {workspace_id}: {workspace_root} ({workspace_config_path})")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

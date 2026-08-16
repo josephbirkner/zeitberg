@@ -77,6 +77,27 @@ test("TODO routes preserve explicit false filters and selection", () => {
     });
 });
 
+test("Workspace settings preserve the Time panel they cover", () => {
+    const route = {
+        version: 1,
+        component: "time",
+        panel: "workspaces",
+        workspace: githubWorkspace,
+        state: {
+            returnPanel: "search",
+            weekStart: "2026-08-10",
+            query: "workspace-covered search",
+            sort: "desc",
+        },
+    };
+
+    const encoded = formatAppRoute(route);
+
+    assert.match(encoded, /panel=workspaces/);
+    assert.match(encoded, /under=search/);
+    assert.deepEqual(parseAppRoute(`https://zeitplural.io${encoded}`), route);
+});
+
 test("local routes retain source mode without inventing repository coordinates", () => {
     const encoded = formatAppRoute({
         version: 1,
@@ -101,6 +122,7 @@ test("local routes retain source mode without inventing repository coordinates",
         workspacePath: "nested/zeitplural.json",
         expectedWorkspaceId: "local-workspace",
     });
+    assert.equal(workspaceRouteLocatorKey(parsed.workspace), "local:local-workspace:nested/zeitplural.json");
 });
 
 test("malformed and unavailable route shapes fall back safely", () => {
@@ -209,4 +231,7 @@ test("static-host and local-server entrypoints preserve component-first reloads"
     assert.match(notFoundPage, /location\.replace\(basePath\)/);
     assert.match(localServer, /\{"time", "todos", "expenses"\}/);
     assert.match(localServer, /_is_application_route\(parsed\.path, self\.app_entry_path\)/);
+    assert.match(localServer, /"\/local-workspaces"/);
+    assert.match(localServer, /action="append"/);
+    assert.match(localServer, /workspace_id/);
 });

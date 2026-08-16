@@ -106,6 +106,7 @@ function buildGraphqlChunkBatches(chunks) {
  * @property {string} repo
  * @property {string} ref
  * @property {string} [workspacePath]
+ * @property {string} [localWorkspaceId] Local server workspace selector; never sent to a hosted provider.
  */
 
 /**
@@ -862,6 +863,41 @@ export class LocalDataSource extends DataSource {
     }
 
     /**
+     * Adds the active local workspace selector to a same-origin server endpoint.
+     * The selector is the public workspace_id from zeitplural.json rather than a filesystem path, so local routes never disclose checkout locations.
+     * @param {string} path Absolute local-server endpoint path.
+     * @returns {URL}
+     */
+    buildLocalServerUrl(path) {
+        const url = new URL(path, window.location.origin);
+        const workspaceId = String(this.config.localWorkspaceId || "").trim();
+        if (workspaceId) url.searchParams.set("workspace", workspaceId);
+        return url;
+    }
+
+    /**
+     * Lists every workspace explicitly exposed by the local development server.
+     * This bootstrap endpoint enables the same in-app switcher used for hosted repositories while keeping filesystem authority in server.py.
+     * @returns {Promise<{default_workspace_id: string, workspaces: Array<{workspace_id: string, name: string, workspace_path: string}>}>}
+     */
+    async fetchAvailableWorkspaces() {
+        const response = await fetch(new URL("/local-workspaces", window.location.origin), { cache: "no-store" });
+        if (!response.ok) throw new Error(`Could not list local workspaces (${response.status}).`);
+        const payload = await response.json();
+        const workspaces = Array.isArray(payload?.workspaces) ? payload.workspaces : [];
+        return {
+            default_workspace_id: String(payload?.default_workspace_id || ""),
+            workspaces: workspaces
+                .map((item) => ({
+                    workspace_id: String(item?.workspace_id || "").trim(),
+                    name: String(item?.name || "").trim(),
+                    workspace_path: String(item?.workspace_path || "zeitplural.json").trim(),
+                }))
+                .filter((item) => item.workspace_id),
+        };
+    }
+
+    /**
      * Builds a URL relative to the repo root for local fetches.
      * Used by the app to read or persist data.
      * @param {string} repoPath
@@ -869,7 +905,7 @@ export class LocalDataSource extends DataSource {
      */
     buildWorkspaceUrl(repoPath) {
         const path = normalizeRepositoryPath(repoPath, "workspace path");
-        return new URL(`/workspace/${encodeRepositoryPath(path)}`, window.location.origin).toString();
+        return this.buildLocalServerUrl(`/workspace/${encodeRepositoryPath(path)}`).toString();
     }
 
     /**
@@ -885,7 +921,7 @@ export class LocalDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchWorkspace() {
-        const resp = await fetch(new URL("/workspace-config", window.location.origin), { cache: "no-store" });
+        const resp = await fetch(this.buildLocalServerUrl("/workspace-config"), { cache: "no-store" });
         if (!resp.ok) {
             throw new Error(`Local zeitplural.json not found (${resp.status}). Start server.py with --workspace PATH.`);
         }
@@ -980,6 +1016,7 @@ export class LocalDataSource extends DataSource {
         const body = {
             files: inputFiles.map((file) => ({ path: file.path, content: file.content })),
             message: String(message || "").trim(),
+            workspace_id: String(this.config.localWorkspaceId || "").trim(),
         };
 
         let resp;

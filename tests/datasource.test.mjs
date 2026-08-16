@@ -4,6 +4,7 @@ import test from "node:test";
 import {
     buildGitHubIssueUrl,
     GitHubDataSource,
+    LocalDataSource,
     parseGitHubRepositoryId,
 } from "../datasource.js";
 import { Workspace } from "../model.js";
@@ -127,6 +128,54 @@ test("GitHub data source bootstraps configured workspace document paths", async 
         "/repos/owner/repo/contents/records/requirements.json",
         "/repos/owner/repo/contents/records/todos.json",
     ]);
+});
+
+test("local data sources scope discovery, reads, and writes by workspace id", async (context) => {
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: { location: { origin: "http://127.0.0.1:8000" } },
+    });
+    context.after(() => {
+        if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+        else delete globalThis.window;
+    });
+
+    const requests = [];
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        const requestUrl = new URL(String(url));
+        requests.push({ options, url: requestUrl });
+        if (requestUrl.pathname === "/local-workspaces") {
+            return jsonResponse({
+                default_workspace_id: "personal",
+                workspaces: [
+                    { name: "Personal", workspace_id: "personal", workspace_path: "zeitplural.json" },
+                    { name: "Shared", workspace_id: "shared", workspace_path: "config/workspace.json" },
+                ],
+            });
+        }
+        if (requestUrl.pathname === "/workspace-config") {
+            return jsonResponse({ name: "Shared", schema_version: 1, workspace_id: "shared" });
+        }
+        if (requestUrl.pathname === "/save") return jsonResponse({ ok: true });
+        return jsonResponse({}, 404);
+    });
+
+    const source = new LocalDataSource({
+        owner: "",
+        repo: "",
+        ref: "",
+        workspacePath: "config/workspace.json",
+        localWorkspaceId: "shared",
+    });
+    const catalog = await source.fetchAvailableWorkspaces();
+    await source.fetchWorkspace();
+    await source.saveFiles([{ content: "{}\n", path: "data/todos.json" }], "Save TODOs");
+
+    assert.equal(catalog.workspaces.length, 2);
+    assert.equal(requests[0].url.search, "");
+    assert.equal(requests[1].url.searchParams.get("workspace"), "shared");
+    assert.equal(JSON.parse(String(requests[2].options?.body)).workspace_id, "shared");
 });
 
 test("GitHub chunk loading retrieves multiple manifest blobs in one GraphQL request", async (context) => {
