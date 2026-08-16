@@ -1,13 +1,31 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import coverageLibrary from "istanbul-lib-coverage";
 import { chromium } from "playwright";
+import v8ToIstanbul from "v8-to-istanbul";
 
 const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WORKSPACE_ID = "replace-with-a-unique-id";
+const BROWSER_SOURCE_FILES = [
+    "app.js",
+    "expense.view.js",
+    "search.view.js",
+    "theme-init.js",
+    "todo.view.js",
+    "week.view.js",
+];
+
+/**
+ * @typedef {Object} BrowserCoverageEntry
+ * @property {string} url Loaded script URL.
+ * @property {string} [source] Loaded source text.
+ * @property {Array<Object>} functions V8 precise-coverage functions.
+ */
 
 /**
  * Reserves an available loopback port for the disposable local application server.
@@ -80,6 +98,64 @@ async function dialogSize(card) {
     });
 }
 
+/**
+ * Converts Chromium's precise V8 data into an Istanbul summary for browser-only controllers.
+ * The result is reported separately from the 90% deterministic production-logic gate so difficult DOM code remains visible without mixing two incompatible execution environments.
+ *
+ * @param {BrowserCoverageEntry[]} entries Coverage entries collected across desktop and narrow pages.
+ * @returns {Promise<{total: Object, files: Object}>} Serializable aggregate and per-file metrics.
+ */
+async function summarizeBrowserCoverage(entries) {
+    const coverageMap = coverageLibrary.createCoverageMap({});
+    for (const entry of entries) {
+        let fileName = "";
+        try {
+            fileName = path.basename(new URL(entry.url).pathname);
+        } catch {
+            continue;
+        }
+        if (!BROWSER_SOURCE_FILES.includes(fileName) || typeof entry.source !== "string") continue;
+        const converter = v8ToIstanbul(path.join(APP_ROOT, fileName), 0, { source: entry.source });
+        await converter.load();
+        converter.applyCoverage(/** @type {any} */ (entry.functions));
+        coverageMap.merge(converter.toIstanbul());
+    }
+
+    const files = {};
+    for (const filePath of coverageMap.files().sort()) {
+        files[path.basename(filePath)] = coverageMap.fileCoverageFor(filePath).toSummary().toJSON();
+    }
+    assert.deepEqual(Object.keys(files).sort(), BROWSER_SOURCE_FILES.slice().sort());
+    return { total: coverageMap.getCoverageSummary().toJSON(), files };
+}
+
+/**
+ * Writes the browser-controller summary beside c8's reports for CI artifact retention.
+ *
+ * @param {BrowserCoverageEntry[]} entries Coverage entries collected across browser scenarios.
+ * @returns {Promise<Object>} Aggregate browser summary.
+ */
+async function writeBrowserCoverage(entries) {
+    const summary = await summarizeBrowserCoverage(entries);
+    const outputDirectory = path.join(APP_ROOT, "coverage");
+    await mkdir(outputDirectory, { recursive: true });
+    await writeFile(
+        path.join(outputDirectory, "browser-summary.json"),
+        `${JSON.stringify(
+            {
+                schema_version: 1,
+                generated_at: new Date().toISOString(),
+                scope: BROWSER_SOURCE_FILES,
+                ...summary,
+            },
+            null,
+            2,
+        )}\n`,
+        "utf8",
+    );
+    return summary.total;
+}
+
 const port = await reservePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const server = spawn(
@@ -101,6 +177,7 @@ try {
     browser = await chromium.launch({ headless: true });
 
     const desktop = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await desktop.coverage.startJSCoverage({ resetOnNavigation: false });
     const browserErrors = [];
     desktop.on("pageerror", (error) => browserErrors.push(error.message));
     desktop.on("console", (message) => {
@@ -146,8 +223,10 @@ try {
     await desktop.goForward();
     await desktop.locator("#searchView:not([hidden])").waitFor();
     assert.deepEqual(browserErrors, []);
+    const desktopCoverage = await desktop.coverage.stopJSCoverage();
 
     const narrow = await browser.newPage({ viewport: { width: 500, height: 800 } });
+    await narrow.coverage.startJSCoverage({ resetOnNavigation: false });
     const narrowErrors = [];
     narrow.on("pageerror", (error) => narrowErrors.push(error.message));
     narrow.on("console", (message) => {
@@ -167,8 +246,16 @@ try {
     assert.equal(workspaceDialog.height, workspaceDialog.viewportHeight);
     await narrow.locator("#workspaceDialogCloseBtn").click();
     assert.deepEqual(narrowErrors, []);
+    const narrowCoverage = await narrow.coverage.stopJSCoverage();
+
+    const browserCoverage = await writeBrowserCoverage(
+        /** @type {BrowserCoverageEntry[]} */ ([...desktopCoverage, ...narrowCoverage]),
+    );
 
     console.log("Browser smoke passed: routing, workspace load, dialogs, history, and narrow layouts.");
+    console.log(
+        `Browser-controller coverage: ${browserCoverage.lines.pct}% lines, ${browserCoverage.functions.pct}% functions, ${browserCoverage.branches.pct}% branches.`,
+    );
 } catch (error) {
     if (serverOutput.trim()) console.error(serverOutput.trim());
     throw error;

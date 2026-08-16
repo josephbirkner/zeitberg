@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml/badge.svg?branch=main" /></a>
-  <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Coverage: at least 90%" src="https://img.shields.io/badge/coverage-%E2%89%A590%25-2b9c68" /></a>
+  <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Logic coverage: at least 90%" src="https://img.shields.io/badge/logic%20coverage-%E2%89%A590%25-2b9c68" /></a>
   <a href="https://github.com/josephbirkner/zeitplural/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/josephbirkner/zeitplural?display_name=tag&amp;sort=semver" /></a>
 </p>
 
@@ -179,7 +179,7 @@ The command runs every deterministic Node test under c8 and a headless Chromium 
 
 The measured first-party production scope is explicit in `package.json`: `appstate.js`, `cache.js`, `config.js`, `datasource.js`, `locale.js`, `model.js`, `oauth.js`, `routing.js`, `store.js`, and `utils.js`. This includes domain models, persistence and cache behavior, provider adapters, workspace switching, localization, routing, and shared utilities. Tests, generated or vendored assets, and one-off repository/import/build scripts are outside the production metric.
 
-The DOM composition entry points (`app.js`, `theme-init.js`, and the four `*.view.js` controllers) are excluded from the Node/V8 percentage because the application is served as unbundled browser modules under its production CSP. They are not excluded from automated validation: every coverage run launches the real static application in Chromium and checks local workspace initialization, component navigation, browser-history restoration, project/workspace/task/expense dialogs, and narrow full-screen layouts without credentials or private workspace data.
+The DOM composition entry points (`app.js`, `theme-init.js`, and the four `*.view.js` controllers) are excluded from the 90% Node/V8 gate because the application is served as unbundled browser modules under its production CSP. They are not hidden from measurement or automated validation: every coverage run launches the real static application in Chromium, records their separate line/function/branch execution in `coverage/browser-summary.json`, and checks local workspace initialization, component navigation, browser-history restoration, project/workspace/task/expense dialogs, and narrow full-screen layouts without credentials or private workspace data.
 
 Repeat `--workspace` to test the multi-workspace switcher against several local repositories:
 
