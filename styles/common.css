@@ -853,6 +853,63 @@ body.is-entry-moving * {
   align-items: center;
 }
 
+.workspace-share-dialog,
+.capability-import-dialog {
+  max-width: min(620px, calc(100vw - 24px));
+}
+
+.workspace-share-card,
+.capability-import-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.workspace-share-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-faint);
+}
+
+.workspace-share-option p {
+  margin: 5px 0 0;
+}
+
+.workspace-capability-option {
+  grid-template-columns: 1fr;
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.workspace-capability-option .btn {
+  justify-self: end;
+}
+
+.workspace-capability-warning {
+  margin: 0;
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.workspace-host-confirm {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+}
+
+.workspace-host-confirm input {
+  width: auto;
+  margin-top: 2px;
+}
+
 .projects-toolbar {
   align-items: center;
   justify-content: space-between;
@@ -1009,7 +1066,9 @@ html.ui-narrow textarea {
 html.ui-narrow #entryDialog,
 html.ui-narrow #todoDialog,
 html.ui-narrow #weekReqDialog,
-html.ui-narrow #workspaceDialog {
+html.ui-narrow #workspaceDialog,
+html.ui-narrow #workspaceShareDialog,
+html.ui-narrow #capabilityImportDialog {
   inset: 0;
   width: 100vw;
   max-width: none;
@@ -1022,7 +1081,9 @@ html.ui-narrow #workspaceDialog {
 html.ui-narrow #entryDialog .dialog-card,
 html.ui-narrow #todoDialog .dialog-card,
 html.ui-narrow #weekReqDialog .dialog-card,
-html.ui-narrow #workspaceDialog .dialog-card {
+html.ui-narrow #workspaceDialog .dialog-card,
+html.ui-narrow #workspaceShareDialog .dialog-card,
+html.ui-narrow #capabilityImportDialog .dialog-card {
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
@@ -1038,7 +1099,9 @@ html.ui-narrow #workspaceDialog .dialog-card {
 html.ui-narrow #entryDialog .dialog-grid,
 html.ui-narrow #todoDialog .dialog-grid,
 html.ui-narrow #weekReqDialog .dialog-grid,
-html.ui-narrow #workspaceDialog .dialog-grid {
+html.ui-narrow #workspaceDialog .dialog-grid,
+html.ui-narrow #workspaceShareDialog .dialog-grid,
+html.ui-narrow #capabilityImportDialog .dialog-grid {
   flex: 1;
   align-content: start;
 }
@@ -1046,7 +1109,9 @@ html.ui-narrow #workspaceDialog .dialog-grid {
 html.ui-narrow #entryDialog .dialog-actions,
 html.ui-narrow #todoDialog .dialog-actions,
 html.ui-narrow #weekReqDialog .dialog-actions,
-html.ui-narrow #workspaceDialog .dialog-actions {
+html.ui-narrow #workspaceDialog .dialog-actions,
+html.ui-narrow #workspaceShareDialog .dialog-actions,
+html.ui-narrow #capabilityImportDialog .dialog-actions {
   position: sticky;
   bottom: -12px;
   margin: auto -12px -12px;
@@ -1074,6 +1139,14 @@ html.ui-narrow .workspace-row-actions {
 html.ui-narrow .workspace-section-heading {
   align-items: flex-start;
   flex-direction: column;
+}
+
+html.ui-narrow .workspace-share-option {
+  grid-template-columns: 1fr;
+}
+
+html.ui-narrow .workspace-share-option .btn {
+  justify-self: stretch;
 }
 
 html.ui-compact {

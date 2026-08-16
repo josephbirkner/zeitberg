@@ -1,5 +1,8 @@
 const ROUTE_VERSION = 1;
 const STATIC_ROUTE_STORAGE_KEY = "zeitplural:static-route:v1";
+const CAPABILITY_FRAGMENT_PREFIX = "#zp-cap=";
+const CAPABILITY_VERSION = 1;
+const MAX_CAPABILITY_PAYLOAD_LENGTH = 24_000;
 const ROUTE_COMPONENTS = new Set(["time", "todos", "expenses"]);
 const ROUTE_PANELS = new Set(["main", "search", "workspaces"]);
 const PROVIDERS = new Set(["github", "gitlab", "codeberg", "forgejo", "custom", "local"]);
@@ -30,6 +33,15 @@ const PROVIDERS = new Set(["github", "gitlab", "codeberg", "forgejo", "custom", 
  * @property {RoutePanel} panel
  * @property {WorkspaceRouteLocator | null} workspace
  * @property {Object.<string, string | number | boolean | null>} state
+ */
+
+/**
+ * @typedef {Object} CapabilityLink
+ * @description A validated bearer credential and the exact non-secret route to which it is bound.
+ * @property {number} version
+ * @property {string} credential
+ * @property {AppRoute} route
+ * @property {boolean} requiresHostConfirmation
  */
 
 /**
@@ -453,6 +465,147 @@ export function formatAppRoute(route, basePath = "/") {
 }
 
 /**
+ * Encodes UTF-8 text as unpadded URL-safe base64 without relying on provider or third-party libraries.
+ * @param {string} value Plain JSON text.
+ * @returns {string}
+ */
+function encodeBase64Url(value) {
+    const bytes = new TextEncoder().encode(value);
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+    }
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+/**
+ * Decodes bounded URL-safe base64 into UTF-8 text and rejects malformed alphabets before allocation.
+ * @param {string} value Encoded payload text.
+ * @returns {string}
+ */
+function decodeBase64Url(value) {
+    const encoded = String(value || "");
+    if (!encoded || encoded.length > MAX_CAPABILITY_PAYLOAD_LENGTH || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
+        throw new Error("The capability payload is malformed.");
+    }
+    const padded = encoded.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(encoded.length / 4) * 4, "=");
+    let binary;
+    try {
+        binary = atob(padded);
+    } catch {
+        throw new Error("The capability payload is malformed.");
+    }
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+        throw new Error("The capability payload is malformed.");
+    }
+}
+
+/**
+ * Re-encodes and parses a route to remove unknown fields and enforce all ordinary locator and view-state validation.
+ * @param {AppRoute} route Candidate capability route.
+ * @param {string} pageOrigin Origin hosting the application.
+ * @param {string} basePath Deployment path containing index.html.
+ * @returns {AppRoute}
+ */
+function normalizeCapabilityRoute(route, pageOrigin, basePath) {
+    const routePath = formatAppRoute(route, basePath);
+    const normalized = parseAppRoute(new URL(routePath, pageOrigin), basePath);
+    if (!normalized.component || !normalized.workspace || normalized.workspace.provider === "local") {
+        throw new Error("Capability links require one hosted workspace route.");
+    }
+    return normalized;
+}
+
+/**
+ * Creates a versioned bearer-capability URL whose secret exists only in the fragment.
+ * The ordinary path/query remains a complete credential-free locator and view route, allowing the fragment to be scrubbed before any provider request.
+ * @param {AppRoute} route Workspace-bound application route.
+ * @param {string} credential Dedicated provider credential to convey.
+ * @param {string} pageOrigin Public application origin.
+ * @param {string} [basePath] Deployment path containing index.html.
+ * @returns {string}
+ */
+export function formatCapabilityLink(route, credential, pageOrigin, basePath = "/") {
+    const token = String(credential || "").trim();
+    if (!token || token.length > 8192 || /[\u0000-\u001f\u007f]/.test(token)) {
+        throw new Error("Enter a valid shareable repository credential.");
+    }
+    const origin = new URL(pageOrigin).origin;
+    const normalizedRoute = normalizeCapabilityRoute(route, origin, basePath);
+    const payload = {
+        credential: token,
+        route: normalizedRoute,
+        version: CAPABILITY_VERSION,
+    };
+    const url = new URL(formatAppRoute(normalizedRoute, basePath), origin);
+    url.hash = `${CAPABILITY_FRAGMENT_PREFIX.slice(1)}${encodeBase64Url(JSON.stringify(payload))}`;
+    return url.toString();
+}
+
+/**
+ * Validates and decodes a capability URL without mutating browser history.
+ * The duplicated public route and secret payload route must normalize identically, preventing a credential from being redirected to a query-string host chosen by an attacker.
+ * @param {string | URL} value Capability URL.
+ * @param {string} [basePath] Deployment path containing index.html.
+ * @returns {CapabilityLink}
+ */
+export function parseCapabilityLink(value, basePath = "/") {
+    const url = value instanceof URL ? new URL(value.toString()) : new URL(String(value));
+    if (!url.hash.startsWith(CAPABILITY_FRAGMENT_PREFIX)) throw new Error("No capability payload was found.");
+    const encoded = url.hash.slice(CAPABILITY_FRAGMENT_PREFIX.length);
+    let payload;
+    try {
+        payload = JSON.parse(decodeBase64Url(encoded));
+    } catch {
+        throw new Error("The capability payload is invalid.");
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || Number(payload.version) !== CAPABILITY_VERSION) {
+        throw new Error("The capability payload version is unsupported.");
+    }
+    const credential = String(payload.credential || "").trim();
+    if (!credential || credential.length > 8192 || /[\u0000-\u001f\u007f]/.test(credential)) {
+        throw new Error("The capability credential is invalid.");
+    }
+    const route = normalizeCapabilityRoute(payload.route, url.origin, basePath);
+    const publicRoute = normalizeCapabilityRoute(parseAppRoute(url, basePath), url.origin, basePath);
+    if (formatAppRoute(route, basePath) !== formatAppRoute(publicRoute, basePath)) {
+        throw new Error("The capability route does not match its public workspace locator.");
+    }
+    const provider = route.workspace?.provider || "custom";
+    return {
+        version: CAPABILITY_VERSION,
+        credential,
+        route,
+        requiresHostConfirmation: !["github", "gitlab", "codeberg"].includes(provider),
+    };
+}
+
+/**
+ * Removes a capability fragment from the address bar before decoding returns to application startup.
+ * Scrubbing occurs even for malformed payloads, ensuring a broken bearer link cannot survive in browser history, screenshots, copied addresses, or later diagnostics.
+ * @param {Window} browserWindow Active browser window.
+ * @param {string} [basePath] Deployment path containing index.html.
+ * @returns {CapabilityLink | null}
+ */
+export function consumeCapabilityLink(browserWindow, basePath = "/") {
+    if (!browserWindow.location.hash.startsWith(CAPABILITY_FRAGMENT_PREFIX)) return null;
+    const originalUrl = browserWindow.location.href;
+    browserWindow.history.replaceState(
+        null,
+        "",
+        `${browserWindow.location.pathname}${browserWindow.location.search}`,
+    );
+    try {
+        return parseCapabilityLink(originalUrl, basePath);
+    } catch {
+        throw new Error("This capability link is invalid or has been altered. Its credential fragment was removed.");
+    }
+}
+
+/**
  * Discovers the application's deployment base from the module script URL.
  * Unlike location.pathname, the script remains anchored to the application root even while a nested client-side route is active.
  * @param {Document} documentObject Active document.
@@ -577,4 +730,4 @@ export class RouteController {
     }
 }
 
-export { ROUTE_VERSION, STATIC_ROUTE_STORAGE_KEY };
+export { CAPABILITY_FRAGMENT_PREFIX, CAPABILITY_VERSION, ROUTE_VERSION, STATIC_ROUTE_STORAGE_KEY };

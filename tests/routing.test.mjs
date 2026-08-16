@@ -3,9 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+    CAPABILITY_FRAGMENT_PREFIX,
+    consumeCapabilityLink,
+    formatCapabilityLink,
     formatAppRoute,
     normalizeRouteBasePath,
     normalizeWorkspaceRouteLocator,
+    parseCapabilityLink,
     parseAppRoute,
     RouteController,
     STATIC_ROUTE_STORAGE_KEY,
@@ -96,6 +100,96 @@ test("Workspace settings preserve the Time panel they cover", () => {
     assert.match(encoded, /panel=workspaces/);
     assert.match(encoded, /under=search/);
     assert.deepEqual(parseAppRoute(`https://zeitplural.io${encoded}`), route);
+});
+
+test("capability links round-trip one exact workspace and keep credentials out of the public route", () => {
+    const route = {
+        version: 1,
+        component: "todos",
+        panel: "main",
+        workspace: githubWorkspace,
+        state: { currentOnly: true, openOnly: false, query: "shared task" },
+    };
+    const token = "github_pat_dedicated-example-token";
+    const link = formatCapabilityLink(route, token, "https://zeitplural.io", "/");
+    const url = new URL(link);
+    const parsed = parseCapabilityLink(url);
+
+    assert.equal(url.hash.startsWith(CAPABILITY_FRAGMENT_PREFIX), true);
+    assert.equal(url.pathname, "/todos");
+    assert.equal(url.searchParams.has("token"), false);
+    assert.equal(`${url.pathname}${url.search}`.includes(token), false);
+    assert.equal(link.includes(token), false);
+    assert.equal(parsed.credential, token);
+    assert.deepEqual(parsed.route, route);
+    assert.equal(parsed.requiresHostConfirmation, false);
+});
+
+test("capability links reject host confusion and scrub malformed bearer fragments", () => {
+    const route = { version: 1, component: "time", panel: "main", workspace: githubWorkspace, state: {} };
+    const link = formatCapabilityLink(route, "dedicated-secret", "https://zeitplural.io");
+    const confused = new URL(link);
+    confused.searchParams.set("repo", "https://github.com/attacker/other-repository");
+    assert.throws(() => parseCapabilityLink(confused), /does not match/);
+
+    const location = new URL(`https://zeitplural.io/time?v=1${CAPABILITY_FRAGMENT_PREFIX}not-valid-base64`);
+    const replacements = [];
+    const browser = {
+        history: {
+            replaceState(_state, _title, value) {
+                replacements.push(value);
+                location.href = new URL(value, location).href;
+            },
+        },
+        location,
+    };
+    assert.throws(() => consumeCapabilityLink(/** @type {any} */ (browser)), /credential fragment was removed/);
+    assert.deepEqual(replacements, ["/time?v=1"]);
+    assert.equal(location.hash, "");
+});
+
+test("valid capability consumption scrubs history before returning the session credential", () => {
+    const route = { version: 1, component: "time", panel: "main", workspace: githubWorkspace, state: {} };
+    const location = new URL(formatCapabilityLink(route, "session-only-token", "https://zeitplural.io"));
+    let scrubbed = false;
+    const browser = {
+        history: {
+            replaceState(_state, _title, value) {
+                scrubbed = true;
+                location.href = new URL(value, location).href;
+            },
+        },
+        location,
+    };
+
+    const consumed = consumeCapabilityLink(/** @type {any} */ (browser));
+
+    assert.equal(scrubbed, true);
+    assert.equal(location.hash, "");
+    assert.equal(consumed?.credential, "session-only-token");
+    assert.equal(consumed?.route.workspace?.repositoryUrl, githubWorkspace.repositoryUrl);
+});
+
+test("custom-host capability links require an additional host confirmation", () => {
+    const link = formatCapabilityLink(
+        {
+            version: 1,
+            component: "expenses",
+            panel: "main",
+            workspace: {
+                provider: "custom",
+                repositoryUrl: "https://git.example.test/family/shared-expenses",
+                ref: "main",
+                workspacePath: "zeitplural.json",
+                expectedWorkspaceId: "family-expenses",
+            },
+            state: {},
+        },
+        "custom-host-token",
+        "https://zeitplural.io",
+    );
+
+    assert.equal(parseCapabilityLink(link).requiresHostConfirmation, true);
 });
 
 test("local routes retain source mode without inventing repository coordinates", () => {

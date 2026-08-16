@@ -35,7 +35,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual Git commits. |
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, and direct browser-to-provider persistence. |
-| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [capability links](https://github.com/josephbirkner/zeitplural/issues/19), and [multi-workspace connections](https://github.com/josephbirkner/zeitplural/issues/22). |
+| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [German localization](https://github.com/josephbirkner/zeitplural/issues/23), and [installable offline support](https://github.com/josephbirkner/zeitplural/issues/21). |
 
 The project is intentionally one application: time, tasks, and future components share a project inventory and workspace identity while retaining separate documents and views.
 
@@ -76,6 +76,13 @@ gh repo create YOUR_ACCOUNT/zeitplural-data --private --source=. --push
 The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to `api.github.com`; the static host never receives the credential.
 
 After opening a workspace, use the first sidebar action beneath the owl to manage connections. The browser keeps an ordered registry of repository URL, branch, bootstrap path, verified workspace ID, and display name. Each workspace token is stored separately, and switching repositories preserves unsaved drafts in a workspace-specific IndexedDB journal. Disconnecting one workspace does not log out or clear credentials for the others.
+
+The same screen can share the active workspace in two forms:
+
+- A **locator link** contains only the provider, repository URL, branch, workspace file and ID, selected component, and current view state. Its recipient supplies a credential independently.
+- A **capability link** additionally carries a dedicated repository token in its URL fragment. The fragment is removed from the address bar before zeitplural performs authenticated network activity, and importing it requires explicit consent. Because anyone holding the link receives the token's access, create a least-privilege, expiring token for only that repository and send the link as securely as the credential itself. Imported capability credentials remain in session storage unless the recipient explicitly chooses to remember them.
+
+Ordinary routes, locator links, workspace records, cache keys, and repository documents never contain credentials. A custom provider host also requires a separate trust confirmation before zeitplural sends it an imported capability credential.
 
 If a project is bound to another GitHub repository for issue synchronization, the token additionally needs `Issues: Read & write` for that repository. Workspaces without such a binding do not need issue access.
 

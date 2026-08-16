@@ -25,7 +25,13 @@ import {
     utcNowIso,
 } from "./utils.js";
 import { Manifest, ProjectList, TodoList, WeekRequirements, Workspace } from "./model.js";
-import { formatAppRoute, getApplicationBasePath, RouteController } from "./routing.js";
+import {
+    consumeCapabilityLink,
+    formatAppRoute,
+    formatCapabilityLink,
+    getApplicationBasePath,
+    RouteController,
+} from "./routing.js";
 
 const MIN_APP_ZOOM = 0.8;
 const MAX_APP_ZOOM = 2;
@@ -515,7 +521,15 @@ class App {
     constructor() {
         this.routeController = new RouteController(window, getApplicationBasePath(document));
         this.routeController.restoreStaticRoute();
-        this.initialRoute = this.routeController.read();
+        /** @type {import("./routing.js").CapabilityLink | null} */
+        this.capabilityImport = null;
+        this.capabilityImportStartupError = "";
+        try {
+            this.capabilityImport = consumeCapabilityLink(window, this.routeController.basePath);
+        } catch (error) {
+            this.capabilityImportStartupError = safeText(error);
+        }
+        this.initialRoute = this.capabilityImport?.route || this.routeController.read();
         /** @type {import("./routing.js").AppRoute | null} */
         this.pendingRoute = this.initialRoute.component ? this.initialRoute : null;
         this.routeRestoreInProgress = false;
@@ -543,11 +557,13 @@ class App {
                   localWorkspaceId: this.initialRoute.workspace?.expectedWorkspaceId || "",
               }
             : configForRouteWorkspace(storedConfig, initialLocator);
-        this.token = this.activeWorkspaceConnection
-            ? this.configService.loadWorkspaceCredential(this.activeWorkspaceConnection.id)
-            : this.initialRoute.workspace
-              ? ""
-              : this.configService.loadToken();
+        this.token = this.capabilityImport
+            ? ""
+            : this.activeWorkspaceConnection
+              ? this.configService.loadWorkspaceCredential(this.activeWorkspaceConnection.id)
+              : this.initialRoute.workspace
+                ? ""
+                : this.configService.loadToken();
         this.state = new AppState(this.config, this.isLocalMode);
         this.state.setToken(this.token);
         this.timeContext = new TimeContext(this.config.timezone);
@@ -693,6 +709,23 @@ class App {
         this.workspaceRememberInput = getRequiredElement("workspaceRemember", HTMLInputElement);
         this.workspaceErrorEl = getRequiredElement("workspaceError", HTMLElement);
         this.workspaceShareBtn = getRequiredElement("workspaceShareBtn", HTMLButtonElement);
+        this.workspaceShareDialog = getRequiredElement("workspaceShareDialog", HTMLDialogElement);
+        this.workspaceShareCloseBtn = getRequiredElement("workspaceShareCloseBtn", HTMLButtonElement);
+        this.workspaceShareDetailsEl = getRequiredElement("workspaceShareDetails", HTMLElement);
+        this.workspaceCopyLocatorBtn = getRequiredElement("workspaceCopyLocatorBtn", HTMLButtonElement);
+        this.workspaceShareTokenInput = getRequiredElement("workspaceShareToken", HTMLInputElement);
+        this.workspaceCopyCapabilityBtn = getRequiredElement("workspaceCopyCapabilityBtn", HTMLButtonElement);
+        this.workspaceShareErrorEl = getRequiredElement("workspaceShareError", HTMLElement);
+
+        this.capabilityImportDialog = getRequiredElement("capabilityImportDialog", HTMLDialogElement);
+        this.capabilityImportDetailsEl = getRequiredElement("capabilityImportDetails", HTMLElement);
+        this.capabilityHostConfirmWrap = getRequiredElement("capabilityHostConfirmWrap", HTMLElement);
+        this.capabilityHostConfirmInput = getRequiredElement("capabilityHostConfirm", HTMLInputElement);
+        this.capabilityHostConfirmTextEl = getRequiredElement("capabilityHostConfirmText", HTMLElement);
+        this.capabilityRememberInput = getRequiredElement("capabilityRemember", HTMLInputElement);
+        this.capabilityImportErrorEl = getRequiredElement("capabilityImportError", HTMLElement);
+        this.capabilityImportCancelBtn = getRequiredElement("capabilityImportCancelBtn", HTMLButtonElement);
+        this.capabilityImportOpenBtn = getRequiredElement("capabilityImportOpenBtn", HTMLButtonElement);
 
         this.weekView = new WeekView({
             store: this.store,
@@ -1348,17 +1381,69 @@ class App {
     }
 
     /**
-     * Copies a credential-free route to the active workspace and underlying component state.
-     * Capability links with an intentionally embedded credential are handled by the dedicated share-link flow introduced separately.
-     * @returns {Promise<void>}
+     * Returns the active component route with global Workspace settings removed.
+     * Both locator and capability links use this exact model so the recipient restores the same sub-app and optional view state.
+     * @returns {import("./routing.js").AppRoute}
      */
-    async copyActiveWorkspaceLink() {
-        if (!this.workspace) return;
+    buildWorkspaceShareRoute() {
         const route = this.buildCurrentRoute();
         if (route.panel === "workspaces") {
             route.panel = route.component === "time" && route.state.returnPanel === "search" ? "search" : "main";
             delete route.state.returnPanel;
         }
+        return route;
+    }
+
+    /**
+     * Formats provider, repository, branch, config path, and verified identity for a consent surface.
+     * The summary is intentionally credential-free and may safely be rendered in the DOM.
+     * @param {import("./routing.js").WorkspaceRouteLocator} locator Workspace coordinates.
+     * @returns {string}
+     */
+    describeWorkspaceLocator(locator) {
+        const repository = locator.provider === "local" ? "Local server" : locator.repositoryUrl;
+        const details = [locator.provider, repository, locator.ref, locator.workspacePath, locator.expectedWorkspaceId];
+        return details.filter(Boolean).join(" · ");
+    }
+
+    /**
+     * Opens the explicit locator/capability choice for the mounted workspace.
+     * Capability creation remains unavailable in local mode because a local-server route is not a transferable repository authority.
+     * @returns {void}
+     */
+    openWorkspaceShareDialog() {
+        if (!this.workspace) return;
+        const route = this.buildWorkspaceShareRoute();
+        if (!route.workspace) return;
+        this.closeWorkspaceSettings("replace");
+        this.workspaceShareDetailsEl.textContent = this.describeWorkspaceLocator(route.workspace);
+        this.workspaceShareTokenInput.value = "";
+        this.workspaceShareTokenInput.disabled = route.workspace.provider === "local";
+        this.workspaceCopyCapabilityBtn.disabled = route.workspace.provider === "local";
+        this.setError(
+            this.workspaceShareErrorEl,
+            route.workspace.provider === "local" ? "Local workspaces can only produce locator links for this server." : "",
+        );
+        if (!this.workspaceShareDialog.open) this.workspaceShareDialog.showModal();
+    }
+
+    /**
+     * Closes the share dialog and clears any unsubmitted token from its input.
+     * @returns {void}
+     */
+    closeWorkspaceShareDialog() {
+        this.workspaceShareTokenInput.value = "";
+        this.setError(this.workspaceShareErrorEl, "");
+        if (this.workspaceShareDialog.open) this.workspaceShareDialog.close();
+    }
+
+    /**
+     * Copies a credential-free route to the active workspace and underlying component state.
+     * @returns {Promise<void>}
+     */
+    async copyActiveWorkspaceLink() {
+        if (!this.workspace) return;
+        const route = this.buildWorkspaceShareRoute();
         const relative = formatAppRoute(route, this.routeController.basePath);
         const url = new URL(relative, window.location.origin).toString();
         try {
@@ -1366,6 +1451,105 @@ class App {
             this.toast("Workspace link copied.", 2400, "success");
         } catch {
             window.prompt("Copy this workspace link:", url);
+        }
+    }
+
+    /**
+     * Creates and copies a bearer-capability link after the owner explicitly supplies a dedicated token.
+     * Clipboard failure never falls back to a visible prompt, avoiding accidental on-screen disclosure of the encoded bearer payload.
+     * @returns {Promise<void>}
+     */
+    async copyActiveCapabilityLink() {
+        this.setError(this.workspaceShareErrorEl, "");
+        const token = this.workspaceShareTokenInput.value.trim();
+        try {
+            const link = formatCapabilityLink(
+                this.buildWorkspaceShareRoute(),
+                token,
+                window.location.origin,
+                this.routeController.basePath,
+            );
+            await navigator.clipboard.writeText(link);
+            this.workspaceShareTokenInput.value = "";
+            this.toast("Capability link copied. Share it as securely as the token itself.", 4500, "success");
+        } catch (error) {
+            this.setError(this.workspaceShareErrorEl, safeText(error));
+        }
+    }
+
+    /**
+     * Displays a scrubbed capability import for explicit recipient consent.
+     * No credential is persisted or sent while this dialog is open; custom provider hosts additionally require a dedicated trust checkbox.
+     * @returns {void}
+     */
+    openCapabilityImportDialog() {
+        const capability = this.capabilityImport;
+        const locator = capability?.route.workspace || null;
+        if (!capability || !locator) return;
+        this.capabilityImportDetailsEl.textContent = this.describeWorkspaceLocator(locator);
+        this.capabilityRememberInput.checked = false;
+        this.capabilityHostConfirmInput.checked = false;
+        setVisible(this.capabilityHostConfirmWrap, capability.requiresHostConfirmation);
+        if (capability.requiresHostConfirmation) {
+            let host = locator.repositoryUrl;
+            try {
+                host = new URL(locator.repositoryUrl).host;
+            } catch {
+                // Locator validation already bounded the repository text.
+            }
+            this.capabilityHostConfirmTextEl.textContent = `I trust ${host} and permit sending the credential to this custom provider host.`;
+        }
+        this.setError(this.capabilityImportErrorEl, "");
+        if (!this.capabilityImportDialog.open) this.capabilityImportDialog.showModal();
+    }
+
+    /**
+     * Discards an imported bearer credential while retaining the public route as an independently authenticatable locator.
+     * @returns {void}
+     */
+    cancelCapabilityImport() {
+        this.capabilityImport = null;
+        if (this.capabilityImportDialog.open) this.capabilityImportDialog.close();
+        this.showLoginScreen();
+        this.setError(this.loginErrorEl, "Capability not imported. Enter your own credential to open this workspace.");
+    }
+
+    /**
+     * Accepts a scrubbed capability, stores its credential in the explicitly selected tier, and only then starts provider access.
+     * The registry entry is bound to the capability's validated locator before component state is restored.
+     * @returns {Promise<void>}
+     */
+    async acceptCapabilityImport() {
+        const capability = this.capabilityImport;
+        const locator = capability?.route.workspace || null;
+        if (!capability || !locator) return;
+        if (capability.requiresHostConfirmation && !this.capabilityHostConfirmInput.checked) {
+            this.setError(this.capabilityImportErrorEl, "Confirm the custom provider host before opening this capability.");
+            return;
+        }
+        if (locator.provider !== "github") {
+            this.setError(this.capabilityImportErrorEl, `${locator.provider} connections are not available yet.`);
+            return;
+        }
+
+        try {
+            const connection = this.workspaceRegistry.upsert(locator, {
+                expectedWorkspaceId: locator.expectedWorkspaceId,
+            });
+            this.workspaceRegistry.setActive(connection.id);
+            this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+            this.configService.saveWorkspaceCredential(
+                connection.id,
+                capability.credential,
+                this.capabilityRememberInput.checked,
+            );
+            this.activateWorkspaceConnection(connection, capability.credential);
+            this.pendingRoute = capability.route;
+            this.capabilityImport = null;
+            this.capabilityImportDialog.close();
+            await this.connectWithToken(this.token);
+        } catch (error) {
+            this.setError(this.capabilityImportErrorEl, safeText(error));
         }
     }
 
@@ -1726,7 +1910,20 @@ class App {
         });
         this.workspaceAddForm.addEventListener("submit", (ev) => void this.handleWorkspaceAdd(ev));
         this.workspaceListEl.addEventListener("click", (ev) => void this.handleWorkspaceListClick(ev));
-        this.workspaceShareBtn.addEventListener("click", () => void this.copyActiveWorkspaceLink());
+        this.workspaceShareBtn.addEventListener("click", () => this.openWorkspaceShareDialog());
+        this.workspaceShareCloseBtn.addEventListener("click", () => this.closeWorkspaceShareDialog());
+        this.workspaceShareDialog.addEventListener("cancel", (ev) => {
+            ev.preventDefault();
+            this.closeWorkspaceShareDialog();
+        });
+        this.workspaceCopyLocatorBtn.addEventListener("click", () => void this.copyActiveWorkspaceLink());
+        this.workspaceCopyCapabilityBtn.addEventListener("click", () => void this.copyActiveCapabilityLink());
+        this.capabilityImportCancelBtn.addEventListener("click", () => this.cancelCapabilityImport());
+        this.capabilityImportOpenBtn.addEventListener("click", () => void this.acceptCapabilityImport());
+        this.capabilityImportDialog.addEventListener("cancel", (ev) => {
+            ev.preventDefault();
+            this.cancelCapabilityImport();
+        });
         this.menuWeekBtn.addEventListener("click", () => this.setTab("week"));
         this.menuTodoBtn.addEventListener("click", () => this.setTab("todos"));
         this.menuSearchBtn.addEventListener("click", () => {
@@ -1758,6 +1955,17 @@ class App {
         setVisible(this.sidebarEl, false);
         setVisible(this.topbarEl, false);
         setVisible(this.loadingSection, false);
+
+        if (this.capabilityImportStartupError) {
+            this.showLoginScreen();
+            this.setError(this.loginErrorEl, this.capabilityImportStartupError);
+            return;
+        }
+        if (this.capabilityImport) {
+            this.showLoginScreen();
+            this.openCapabilityImportDialog();
+            return;
+        }
 
         if (this.isLocalMode) {
             this.setAuthStatus("Local mode");
@@ -2116,6 +2324,14 @@ class App {
         this.workspaceTokenInput.disabled = isBusy;
         this.workspaceRememberInput.disabled = isBusy;
         this.workspaceShareBtn.disabled = isBusy || !this.workspace;
+        this.workspaceShareCloseBtn.disabled = isBusy;
+        this.workspaceCopyLocatorBtn.disabled = isBusy;
+        this.workspaceShareTokenInput.disabled = isBusy || this.isLocalMode;
+        this.workspaceCopyCapabilityBtn.disabled = isBusy || this.isLocalMode;
+        this.capabilityRememberInput.disabled = isBusy;
+        this.capabilityHostConfirmInput.disabled = isBusy;
+        this.capabilityImportCancelBtn.disabled = isBusy;
+        this.capabilityImportOpenBtn.disabled = isBusy;
         this.menuWeekBtn.disabled = isBusy;
         this.menuTodoBtn.disabled = isBusy;
         this.menuSearchBtn.disabled = isBusy;
