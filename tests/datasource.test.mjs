@@ -39,12 +39,13 @@ function makeChunk(sha, week, text) {
  * Creates a JSON response compatible with the browser Fetch API.
  * @param {Object} body
  * @param {number} [status]
+ * @param {HeadersInit} [headers]
  * @returns {Response}
  */
-function jsonResponse(body, status = 200) {
+function jsonResponse(body, status = 200, headers = {}) {
     return new Response(JSON.stringify(body), {
         status,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...headers },
     });
 }
 
@@ -184,6 +185,65 @@ test("GitHub issue writes can target a repository other than the workspace", asy
     assert.equal(requests[1].url, "https://api.github.com/repos/app-owner/zeitplural/issues/17");
     assert.equal(requests[1].options?.method, "PATCH");
     assert.deepEqual(JSON.parse(String(requests[1].options?.body)), { state: "closed" });
+});
+
+test("GitHub issue loading paginates open and closed issues, excludes pull requests, and reuses ETags", async (context) => {
+    const requests = [];
+    let revalidate = false;
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        const requestUrl = new URL(String(url));
+        const page = Number(requestUrl.searchParams.get("page"));
+        requests.push({ page, headers: options?.headers, url: requestUrl });
+        if (revalidate) {
+            return new Response(null, { status: 304 });
+        }
+        if (page === 1) {
+            return jsonResponse(
+                [
+                    { number: 1, state: "open", title: "First issue" },
+                    { number: 2, pull_request: { url: "https://api.github.test/pulls/2" }, title: "A pull request" },
+                ],
+                200,
+                {
+                    ETag: '"page-one"',
+                    Link: '<https://api.github.com/repos/owner/app/issues?state=all&page=2>; rel="next"',
+                },
+            );
+        }
+        return jsonResponse(
+            [{ number: 3, state: "closed", title: "Closed issue" }],
+            200,
+            { ETag: '"page-two"' },
+        );
+    });
+    const source = new GitHubDataSource({ owner: "workspace", repo: "data", ref: "main" }, "read-token");
+
+    const first = await source.fetchGitHubIssues("owner/app");
+    assert.deepEqual(first.issues.map((issue) => issue.number), [1, 3]);
+    assert.equal(first.pages.length, 2);
+    assert.equal(first.usedCachedPages, false);
+    assert.equal(requests[0].url.searchParams.get("state"), "all");
+    assert.equal(requests[0].url.searchParams.get("per_page"), "100");
+
+    revalidate = true;
+    const second = await source.fetchGitHubIssues("owner/app", first.pages);
+    assert.deepEqual(second.issues.map((issue) => issue.number), [1, 3]);
+    assert.equal(second.usedCachedPages, true);
+    assert.equal(requests[2].headers?.["If-None-Match"], '"page-one"');
+    assert.equal(requests[3].headers?.["If-None-Match"], '"page-two"');
+});
+
+test("GitHub repository inspection uses the bound repository and remains non-mutating", async (context) => {
+    const requests = [];
+    context.mock.method(globalThis, "fetch", async (url, options) => {
+        requests.push({ url: String(url), method: options?.method || "GET" });
+        return jsonResponse({ private: true, has_issues: true, permissions: { pull: true, push: false } });
+    });
+    const source = new GitHubDataSource({ owner: "workspace", repo: "data", ref: "main" }, "read-token");
+
+    const info = await source.fetchGitHubRepositoryInfo("owner/app");
+    assert.equal(info.private, true);
+    assert.deepEqual(requests, [{ url: "https://api.github.com/repos/owner/app", method: "GET" }]);
 });
 
 test("GitHub data source bootstraps configured workspace document paths", async (context) => {

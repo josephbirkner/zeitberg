@@ -142,11 +142,27 @@ import {
  */
 
 /**
+ * @typedef {Object} GitHubTodoOverlayRaw
+ * @description Zeitplural-only scheduling metadata for one GitHub-owned issue task; title, body, labels, and state remain exclusively upstream.
+ * @property {string} repository
+ * @property {number} issue_number
+ * @property {string | null} [parent_id]
+ * @property {TodoDueRaw | null} [due]
+ * @property {RecurrenceRaw | null} [recurrence]
+ * @property {TodoCompletionRaw[]} [completion_history]
+ * @property {Object | null} [deadline]
+ * @property {number} [priority]
+ * @property {number} [order]
+ * @property {string | null} [section_key_override] Temporary local section assignment while its configured GitHub label awaits synchronization.
+ */
+
+/**
  * @typedef {Object} TodosFileRaw
  * @description The complete data/todos.json document persisted by the application.
  * @property {string} [generated_at]
  * @property {number} [schema_version]
  * @property {TodoRaw[]} [todos]
+ * @property {GitHubTodoOverlayRaw[]} [github_overlays]
  */
 
 /**
@@ -973,12 +989,15 @@ export class ProjectList {
 
     /**
      * Registers one upstream identifier and rejects ambiguous configuration immediately.
+     * GitHub labels are intentionally excluded because their identity is scoped by the owning repository and issue mapping resolves them within the parent project.
      * @param {ExternalReferenceRaw} reference
      * @param {string} projectKey
      * @param {string | null} sectionKey
      * @returns {void}
      */
     addExternalReference(reference, projectKey, sectionKey) {
+        // GitHub labels are repository-scoped and are resolved only within their parent project's issue collection.
+        if (reference.provider === "github-label") return;
         const key = `${reference.provider}\u0000${reference.id}`;
         const prior = this.assignmentsByExternalRef.get(key);
         if (prior && (prior.projectKey !== projectKey || prior.sectionKey !== sectionKey)) {
@@ -1793,11 +1812,13 @@ export class TodoList {
      * The input order is retained because imported child ordering is meaningful when due dates are equal.
      * @param {Todo[]} todos
      * @param {string} generatedAt
+     * @param {GitHubTodoOverlayRaw[]} [githubOverlays] Compact metadata for tasks whose main records live in GitHub Issues.
      */
-    constructor(todos, generatedAt) {
+    constructor(todos, generatedAt, githubOverlays = []) {
         this.todos = todos;
         this.generated_at = generatedAt;
-        this.schema_version = 3;
+        this.schema_version = 4;
+        this.github_overlays = cloneJson(githubOverlays);
         this.todosById = new Map();
         for (const todo of todos) {
             this.todosById.set(todo.id, todo);
@@ -1812,8 +1833,9 @@ export class TodoList {
      */
     static fromRaw(raw) {
         const rawObj = raw && typeof raw === "object" ? /** @type {TodosFileRaw} */ (raw) : null;
-        if (!rawObj || Number(rawObj.schema_version) !== 3) {
-            throw new Error("todos.json must use schema_version 3.");
+        const schemaVersion = Number(rawObj?.schema_version);
+        if (!rawObj || (schemaVersion !== 3 && schemaVersion !== 4)) {
+            throw new Error("todos.json must use schema_version 3 or 4.");
         }
         const rawTodos = Array.isArray(rawObj.todos) ? rawObj.todos : [];
         const byId = new Map();
@@ -1827,7 +1849,71 @@ export class TodoList {
             byId.set(todo.id, todo);
         }
         const generatedAt = typeof rawObj.generated_at === "string" ? rawObj.generated_at : "";
-        return new TodoList(Array.from(byId.values()), generatedAt);
+        const overlays = schemaVersion === 4
+            ? (Array.isArray(rawObj.github_overlays) ? rawObj.github_overlays : []).map((overlay) =>
+                  TodoList.normalizeGitHubOverlay(overlay),
+              )
+            : [];
+        const seenOverlays = new Set();
+        for (const overlay of overlays) {
+            const identity = `${overlay.repository}#${overlay.issue_number}`;
+            if (seenOverlays.has(identity)) throw new Error(`todos.json contains duplicate GitHub overlay ${identity}.`);
+            seenOverlays.add(identity);
+        }
+        return new TodoList(Array.from(byId.values()), generatedAt, overlays);
+    }
+
+    /**
+     * Validates one compact GitHub issue overlay without accepting any upstream-owned title, body, labels, or state fields.
+     * @param {unknown} raw Candidate overlay from todos.json.
+     * @returns {GitHubTodoOverlayRaw}
+     */
+    static normalizeGitHubOverlay(raw) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            throw new Error("todos.json contains an invalid GitHub overlay.");
+        }
+        const candidate = /** @type {Partial<GitHubTodoOverlayRaw>} */ (raw);
+        const repository = String(candidate.repository || "").trim();
+        if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+            throw new Error(`todos.json contains an invalid GitHub overlay repository: ${repository || "(empty)"}.`);
+        }
+        const issueNumber = Number(candidate.issue_number);
+        if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+            throw new Error(`todos.json contains an invalid GitHub overlay issue number for ${repository}.`);
+        }
+        const priority = Number(candidate.priority ?? 1);
+        if (!Number.isInteger(priority) || priority < 1 || priority > 4) {
+            throw new Error(`todos.json contains an invalid GitHub overlay priority for ${repository}#${issueNumber}.`);
+        }
+        const order = Number(candidate.order ?? 0);
+        if (!Number.isFinite(order)) {
+            throw new Error(`todos.json contains an invalid GitHub overlay order for ${repository}#${issueNumber}.`);
+        }
+        const due = Todo.normalizeDue(candidate.due);
+        const recurrence = Recurrence.fromRaw(candidate.recurrence);
+        if (recurrence && !due) {
+            throw new Error(`GitHub overlay ${repository}#${issueNumber} has recurrence without a due date.`);
+        }
+        const hasSectionOverride = Object.prototype.hasOwnProperty.call(candidate, "section_key_override");
+        const sectionKeyOverride =
+            typeof candidate.section_key_override === "string" && candidate.section_key_override.trim()
+                ? candidate.section_key_override.trim()
+                : null;
+        if (hasSectionOverride && sectionKeyOverride !== null && !PROJECT_KEY_PATTERN.test(sectionKeyOverride)) {
+            throw new Error(`GitHub overlay ${repository}#${issueNumber} has an invalid section override.`);
+        }
+        return {
+            repository,
+            issue_number: issueNumber,
+            parent_id: typeof candidate.parent_id === "string" && candidate.parent_id.trim() ? candidate.parent_id.trim() : null,
+            due,
+            recurrence: recurrence ? recurrence.toRaw() : null,
+            completion_history: Todo.normalizeCompletionHistory(candidate.completion_history),
+            deadline: candidate.deadline && typeof candidate.deadline === "object" ? cloneJson(candidate.deadline) : null,
+            priority,
+            order,
+            ...(hasSectionOverride ? { section_key_override: sectionKeyOverride } : {}),
+        };
     }
 
     /**
@@ -1836,7 +1922,7 @@ export class TodoList {
      * @returns {TodoList}
      */
     static createEmpty(generatedAt = "") {
-        return new TodoList([], generatedAt);
+        return new TodoList([], generatedAt, []);
     }
 
     /**
@@ -1871,6 +1957,7 @@ export class TodoList {
     toObject() {
         return {
             generated_at: this.generated_at,
+            github_overlays: cloneJson(this.github_overlays),
             schema_version: this.schema_version,
             todos: this.snapshotRaw(),
         };

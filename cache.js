@@ -42,6 +42,13 @@ const DRAFT_JOURNAL = {
     storeName: "week_drafts",
 };
 
+const REMOTE_CACHE = {
+    dbName: "zeitplural:remote_cache:v1",
+    dbVersion: 1,
+    namespaceIndex: "namespace",
+    storeName: "records",
+};
+
 /**
  * Wraps an IndexedDB request in a Promise so cache implementations can use async/await.
  * The request result is passed through unchanged because callers know the expected record type.
@@ -299,6 +306,135 @@ export class ChunkCache {
 
         try {
             if (typeof indexedDB !== "undefined") indexedDB.deleteDatabase(CHUNK_CACHE.dbName);
+        } catch {
+            // ignore
+        }
+    }
+}
+
+/**
+ * Stores conditionally reusable upstream component payloads in IndexedDB.
+ * Unlike the draft journal these records are never authoritative: callers may use them for ETag revalidation or temporary offline display, while provider data remains the source of truth.
+ */
+export class RemoteCache {
+    /**
+     * Initializes a lazy best-effort cache connection.
+     */
+    constructor() {
+        this.dbPromise = null;
+        this.db = null;
+        this.writesDisabled = false;
+    }
+
+    /**
+     * Opens the remote cache database and creates its namespace index on first use.
+     * @returns {Promise<IDBDatabase | null>}
+     */
+    async openDb() {
+        if (this.db) return this.db;
+        if (this.dbPromise) return await this.dbPromise;
+        if (typeof indexedDB === "undefined") return null;
+        this.dbPromise = new Promise((resolve) => {
+            let request;
+            try {
+                request = indexedDB.open(REMOTE_CACHE.dbName, REMOTE_CACHE.dbVersion);
+            } catch {
+                resolve(null);
+                return;
+            }
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                const store = db.objectStoreNames.contains(REMOTE_CACHE.storeName)
+                    ? request.transaction?.objectStore(REMOTE_CACHE.storeName)
+                    : db.createObjectStore(REMOTE_CACHE.storeName, { keyPath: "key" });
+                if (store && !store.indexNames.contains(REMOTE_CACHE.namespaceIndex)) {
+                    store.createIndex(REMOTE_CACHE.namespaceIndex, "namespace", { unique: false });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(null);
+            request.onblocked = () => resolve(null);
+        });
+        this.db = await this.dbPromise;
+        return this.db;
+    }
+
+    /**
+     * Builds a collision-safe record key from one workspace namespace and provider-specific cache identity.
+     * @param {string} namespace Workspace/branch namespace.
+     * @param {string} identity Provider cache identity.
+     * @returns {string}
+     */
+    buildKey(namespace, identity) {
+        return `${String(namespace || "").trim()}\u0000${String(identity || "").trim()}`;
+    }
+
+    /**
+     * Loads one cached value, returning null when storage is unavailable or no record exists.
+     * @param {string} namespace Workspace/branch namespace.
+     * @param {string} identity Provider cache identity.
+     * @returns {Promise<Object | null>}
+     */
+    async get(namespace, identity) {
+        const key = this.buildKey(namespace, identity);
+        if (!namespace || !identity) return null;
+        const db = await this.openDb();
+        if (!db) return null;
+        try {
+            const transaction = db.transaction(REMOTE_CACHE.storeName, "readonly");
+            const done = transactionDone(transaction);
+            const record = await requestToPromise(transaction.objectStore(REMOTE_CACHE.storeName).get(key));
+            await done;
+            return record?.value && typeof record.value === "object" ? record.value : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Writes one cache value without interrupting application loading when IndexedDB is unavailable or full.
+     * @param {string} namespace Workspace/branch namespace.
+     * @param {string} identity Provider cache identity.
+     * @param {Object} value Structured-clone-compatible cache value.
+     * @returns {Promise<boolean>} Whether the record was committed.
+     */
+    async put(namespace, identity, value) {
+        if (this.writesDisabled || !namespace || !identity || !value || typeof value !== "object") return false;
+        const db = await this.openDb();
+        if (!db) return false;
+        try {
+            const transaction = db.transaction(REMOTE_CACHE.storeName, "readwrite");
+            const done = transactionDone(transaction);
+            transaction.objectStore(REMOTE_CACHE.storeName).put({
+                key: this.buildKey(namespace, identity),
+                namespace: String(namespace),
+                identity: String(identity),
+                value,
+                savedAt: Date.now(),
+            });
+            await done;
+            return true;
+        } catch (error) {
+            if (isQuotaError(error)) this.writesDisabled = true;
+            return false;
+        }
+    }
+
+    /**
+     * Clears in-memory connection state and the entire best-effort cache database.
+     * @returns {void}
+     */
+    clearAll() {
+        try {
+            this.db?.close();
+        } catch {
+            // ignore
+        }
+        this.db = null;
+        this.dbPromise = null;
+        this.writesDisabled = false;
+        try {
+            if (typeof indexedDB !== "undefined") indexedDB.deleteDatabase(REMOTE_CACHE.dbName);
         } catch {
             // ignore
         }

@@ -82,7 +82,7 @@ test("German recurrence phrases normalize into language-neutral schedule fields"
     }
 });
 
-test("legacy Todoist due metadata normalizes into the schema v3 recurrence fields", () => {
+test("legacy due metadata normalizes while schema v3 documents upgrade in memory", () => {
     const todo = new Todo(
         makeTodo({
             due: {
@@ -100,7 +100,7 @@ test("legacy Todoist due metadata normalizes into the schema v3 recurrence field
     assert.deepEqual(raw.due, { date: "2026-07-27", timezone: null });
     assert.equal("is_recurring" in raw.due, false);
     assert.equal(raw.recurrence?.source_text, "every Monday");
-    assert.equal(TodoList.fromRaw({ schema_version: 3, todos: [raw] }).schema_version, 3);
+    assert.equal(TodoList.fromRaw({ schema_version: 3, todos: [raw] }).schema_version, 4);
 });
 
 test("scheduled recurrence skips overdue occurrences to the first future date", () => {

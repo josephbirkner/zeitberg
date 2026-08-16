@@ -1,4 +1,4 @@
-import { gitBlobSha1 } from "./utils.js";
+import { cloneJson, gitBlobSha1 } from "./utils.js";
 import { normalizeRepositoryPath } from "./model.js";
 
 const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
@@ -11,7 +11,7 @@ const HOSTED_CHUNK_CONCURRENCY = 6;
  * Represents one non-successful response from a hosted Git provider.
  * Keeping the numeric status separate from the display message lets optional workspace documents distinguish a genuine 404 from transport and authorization failures without parsing prose.
  */
-class ProviderApiError extends Error {
+export class ProviderApiError extends Error {
     /**
      * Creates a bounded provider error suitable for the application error surface.
      * @param {string} provider Human-readable provider name.
@@ -241,6 +241,23 @@ function buildGraphqlChunkBatches(chunks) {
  * @property {string} [body]
  * @property {string[]} [labels]
  * @property {"open" | "closed"} [state]
+ */
+
+/**
+ * @typedef {Object} GitHubIssueCachePage
+ * @description One conditionally reusable page from GitHub's all-issues REST collection.
+ * @property {number} page
+ * @property {string} etag
+ * @property {boolean} hasNext
+ * @property {Object[]} issues
+ */
+
+/**
+ * @typedef {Object} GitHubIssueCollection
+ * @description Complete non-pull-request issue inventory plus page metadata suitable for IndexedDB caching.
+ * @property {Object[]} issues
+ * @property {GitHubIssueCachePage[]} pages
+ * @property {boolean} usedCachedPages
  */
 
 /**
@@ -505,6 +522,40 @@ export class DataSource {
         void issue;
         throw new Error("GitHub issue synchronization is not available for this data source.");
     }
+
+    /**
+     * Loads every open and closed issue in a bound GitHub repository, excluding pull requests.
+     * @param {string} repository GitHub owner/repository identity.
+     * @param {GitHubIssueCachePage[]} [cachedPages] Previously cached conditional pages.
+     * @returns {Promise<GitHubIssueCollection>}
+     */
+    async fetchGitHubIssues(repository, cachedPages = []) {
+        void repository;
+        void cachedPages;
+        throw new Error("GitHub issue synchronization is not available for this data source.");
+    }
+
+    /**
+     * Loads one current issue immediately before an optimistic update.
+     * @param {string} repository GitHub owner/repository identity.
+     * @param {number | string} issueNumber Positive issue number.
+     * @returns {Promise<Object>}
+     */
+    async fetchGitHubIssue(repository, issueNumber) {
+        void repository;
+        void issueNumber;
+        throw new Error("GitHub issue synchronization is not available for this data source.");
+    }
+
+    /**
+     * Loads repository visibility and viewer-level capability metadata for project settings.
+     * @param {string} repository GitHub owner/repository identity.
+     * @returns {Promise<Object>}
+     */
+    async fetchGitHubRepositoryInfo(repository) {
+        void repository;
+        throw new Error("GitHub issue synchronization is not available for this data source.");
+    }
 }
 
 /**
@@ -655,6 +706,98 @@ export class GitHubDataSource extends DataSource {
         return await this.fetchJsonRequest(
             `https://api.github.com/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/issues/${number}`,
             { method: "PATCH", body },
+        );
+    }
+
+    /**
+     * Loads a complete issue collection using stable 100-row pages and conditional ETags.
+     * Pull requests are removed because GitHub's REST issues endpoint intentionally returns both resource kinds.
+     * @param {string} repository GitHub owner/repository identity.
+     * @param {GitHubIssueCachePage[]} [cachedPages] Previously cached pages keyed by page number.
+     * @returns {Promise<GitHubIssueCollection>}
+     */
+    async fetchGitHubIssues(repository, cachedPages = []) {
+        if (!this.token) throw new Error("Not logged in.");
+        const target = parseGitHubRepositoryId(repository);
+        const cachedByPage = new Map(
+            (Array.isArray(cachedPages) ? cachedPages : [])
+                .filter((page) => Number.isSafeInteger(page?.page) && page.page > 0)
+                .map((page) => [page.page, page]),
+        );
+        const pages = [];
+        const issues = [];
+        let pageNumber = 1;
+        let usedCachedPages = false;
+        while (pageNumber <= 1000) {
+            const cached = cachedByPage.get(pageNumber) || null;
+            const headers = this.buildHeaders("application/vnd.github+json");
+            if (cached?.etag) headers["If-None-Match"] = cached.etag;
+            const url = new URL(
+                `https://api.github.com/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/issues`,
+            );
+            url.searchParams.set("state", "all");
+            url.searchParams.set("sort", "created");
+            url.searchParams.set("direction", "asc");
+            url.searchParams.set("per_page", "100");
+            url.searchParams.set("page", String(pageNumber));
+            const response = await fetch(url, { headers, cache: "no-store" });
+            let pageIssues;
+            let etag;
+            let hasNext;
+            if (response.status === 304 && cached) {
+                pageIssues = cached.issues;
+                etag = cached.etag;
+                hasNext = cached.hasNext;
+                usedCachedPages = true;
+            } else {
+                if (!response.ok) throw new ProviderApiError("GitHub", response.status, await response.text());
+                const payload = await response.json();
+                if (!Array.isArray(payload)) throw new Error("GitHub returned an invalid issue page.");
+                pageIssues = payload.filter((issue) => issue && typeof issue === "object" && !("pull_request" in issue));
+                etag = response.headers.get("ETag") || "";
+                hasNext = /<[^>]+>;\s*rel="next"/.test(response.headers.get("Link") || "");
+            }
+            const normalizedPage = {
+                page: pageNumber,
+                etag,
+                hasNext,
+                issues: cloneJson(pageIssues),
+            };
+            pages.push(normalizedPage);
+            issues.push(...normalizedPage.issues);
+            if (!hasNext) return { issues, pages, usedCachedPages };
+            pageNumber += 1;
+        }
+        throw new Error("GitHub issue pagination exceeded the safety limit.");
+    }
+
+    /**
+     * Loads one current issue for conflict detection immediately before a patch.
+     * @param {string} repository GitHub owner/repository identity.
+     * @param {number | string} issueNumber Positive issue number.
+     * @returns {Promise<Object>}
+     */
+    async fetchGitHubIssue(repository, issueNumber) {
+        if (!this.token) throw new Error("Not logged in.");
+        const target = parseGitHubRepositoryId(repository);
+        const number = Number(issueNumber);
+        if (!Number.isSafeInteger(number) || number <= 0) throw new Error("Invalid GitHub issue number.");
+        return await this.fetchJsonRequest(
+            `https://api.github.com/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}/issues/${number}`,
+        );
+    }
+
+    /**
+     * Loads visibility and viewer permission metadata displayed beside a project binding.
+     * Fine-grained issue-write scope can only be conclusively verified by GitHub when a write is attempted, which the returned metadata states explicitly.
+     * @param {string} repository GitHub owner/repository identity.
+     * @returns {Promise<Object>}
+     */
+    async fetchGitHubRepositoryInfo(repository) {
+        if (!this.token) throw new Error("Not logged in.");
+        const target = parseGitHubRepositoryId(repository);
+        return await this.fetchJsonRequest(
+            `https://api.github.com/repos/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`,
         );
     }
 
@@ -908,7 +1051,7 @@ export class GitHubDataSource extends DataSource {
         } catch (err) {
             const message = String(err || "");
             if (message.includes("404")) {
-                return { generated_at: "", schema_version: 3, todos: [] };
+                return { generated_at: "", github_overlays: [], schema_version: 4, todos: [] };
             }
             if (message.includes("Failed to parse")) throw err;
             throw new Error(`Failed to load todos.json: ${message}`);
@@ -1210,7 +1353,7 @@ class HostedFileDataSource extends DataSource {
     }
 
     /**
-     * Loads TODO data or supplies the empty schema-v3 document when the optional file has not been created.
+     * Loads TODO data or supplies an empty schema-v4 document when the optional file has not been created.
      * @returns {Promise<Object>}
      */
     async fetchTodos() {
@@ -1218,7 +1361,7 @@ class HostedFileDataSource extends DataSource {
             return parseJsonDocument(await this.fetchRepositoryFileText(this.getTodosPath()), "todos.json");
         } catch (error) {
             if (error instanceof ProviderApiError && error.status === 404) {
-                return { generated_at: "", schema_version: 3, todos: [] };
+                return { generated_at: "", github_overlays: [], schema_version: 4, todos: [] };
             }
             throw error;
         }
@@ -1848,7 +1991,7 @@ export class LocalDataSource extends DataSource {
         const resp = await fetch(this.buildWorkspaceUrl(this.getTodosPath()), { cache: "no-store" });
         if (!resp.ok) {
             if (resp.status === 404) {
-                return { generated_at: "", schema_version: 3, todos: [] };
+                return { generated_at: "", github_overlays: [], schema_version: 4, todos: [] };
             }
             throw new Error(`Local todos.json not found (${resp.status}).`);
         }

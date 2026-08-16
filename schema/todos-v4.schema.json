@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zeitplural.io/schema/todos-v4.schema.json",
+  "title": "Zeitplural TODOs (v4)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated_at", "github_overlays", "schema_version", "todos"],
+  "properties": {
+    "generated_at": { "type": "string" },
+    "schema_version": { "type": "integer", "const": 4 },
+    "todos": {
+      "type": "array",
+      "items": { "$ref": "./todos-v3.schema.json#/$defs/todo" }
+    },
+    "github_overlays": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/githubOverlay" }
+    }
+  },
+  "$defs": {
+    "githubOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completion_history",
+        "deadline",
+        "due",
+        "issue_number",
+        "order",
+        "parent_id",
+        "priority",
+        "recurrence",
+        "repository"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "issue_number": { "type": "integer", "minimum": 1 },
+        "parent_id": { "type": ["string", "null"] },
+        "due": { "$ref": "./todos-v3.schema.json#/$defs/due" },
+        "recurrence": { "$ref": "./todos-v3.schema.json#/$defs/recurrence" },
+        "completion_history": {
+          "type": "array",
+          "items": { "$ref": "./todos-v3.schema.json#/$defs/completion" }
+        },
+        "deadline": { "type": ["object", "null"] },
+        "priority": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "order": { "type": "number" },
+        "section_key_override": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        }
+      }
+    }
+  }
+}

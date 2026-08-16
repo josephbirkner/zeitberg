@@ -143,9 +143,9 @@ A workspace project can opt into GitHub issue persistence with an external refer
 }
 ```
 
-Sections may identify their issue label through a `github-label` external reference. When an issue-backed TODO is manually saved, zeitplural creates or updates the corresponding issue first and then commits the TODO document to the workspace repository. The issue number is retained in the TODO's generic source metadata, making retries idempotent and links durable. Local-server mode continues to write workspace files without making remote issue changes.
+Sections may identify their repository-scoped issue label through a `github-label` external reference. At initialization and explicit refresh, zeitplural loads open and closed issues, filters out pull requests, maps recognized section labels, and conditionally revalidates an IndexedDB cache. GitHub remains authoritative for issue title, description, labels, and state; schema-v4 `todos.json` stores only small scheduling overlays for those tasks.
 
-Legacy tasks whose title or description explicitly names Toggl or Todoist remain private and are not auto-published into the issue tracker.
+Edits remain local until an explicit task Save. That operation creates, updates, closes, or reopens issues first and then commits the compact TODO document, with optimistic conflict checks preventing a newer upstream edit from being overwritten. Project settings provide repository inspection and explicit connect/detach migration choices, so existing local tasks are never bulk-published silently. Local-server mode continues to write workspace files without making remote issue changes.
 
 ## Local development
 

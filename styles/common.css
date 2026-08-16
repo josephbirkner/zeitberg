@@ -973,12 +973,44 @@ body.is-entry-moving * {
   background: var(--surface-faint);
 }
 
-.project-fields,
-.section-row {
+.project-fields {
   display: grid;
   grid-template-columns: minmax(150px, 2fr) minmax(110px, 1fr) minmax(120px, auto) auto;
   gap: 10px;
   align-items: end;
+}
+
+.project-github-binding {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto minmax(210px, 1.2fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.project-fields > *,
+.project-github-binding > *,
+.section-row > * {
+  min-width: 0;
+}
+
+.project-github-check {
+  min-height: 40px;
+}
+
+.project-github-status {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.project-github-status.is-success {
+  color: var(--accent-2);
+}
+
+.project-github-status.is-error {
+  color: var(--danger);
 }
 
 .project-sections-head {
@@ -1006,10 +1038,40 @@ body.is-entry-moving * {
 }
 
 .section-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.6fr) minmax(100px, 0.8fr) minmax(110px, auto) auto minmax(140px, 1.2fr);
+  gap: 10px;
+  align-items: end;
   margin-left: 14px;
   padding: 7px;
   border-left: 2px solid var(--border);
   background: var(--surface-faint);
+}
+
+.project-binding-card {
+  width: min(680px, calc(100vw - 28px));
+}
+
+.project-binding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(55vh, 460px);
+  overflow: auto;
+}
+
+.project-binding-row {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-faint);
+}
+
+.project-binding-row p {
+  margin: 0;
+  font-size: 0.76rem;
 }
 
 .section-color-controls {
@@ -1020,6 +1082,7 @@ body.is-entry-moving * {
 
 .section-color-controls input[type="checkbox"] {
   flex: 0 0 auto;
+  width: auto;
 }
 
 .project-row .project-field {
@@ -1051,6 +1114,15 @@ body.is-entry-moving * {
 html.ui-project-compact .project-fields,
 html.ui-project-compact .section-row {
   grid-template-columns: minmax(0, 1fr) minmax(100px, 0.7fr);
+}
+
+html.ui-project-compact .project-github-binding {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+html.ui-project-compact .project-github-status {
+  grid-column: 1 / -1;
+  min-height: 0;
 }
 
 html.ui-project-compact .section-row {

@@ -91,6 +91,14 @@ export class TodoStore {
     constructor(projectStore) {
         this.projectStore = projectStore;
         this.todoList = TodoList.createEmpty();
+        /** @type {Set<string>} */
+        this.loadedGitHubRepositories = new Set();
+        /** @type {Set<string>} */
+        this.remoteTodoIds = new Set();
+        /** @type {Map<string, import("./model.js").GitHubTodoOverlayRaw>} */
+        this.githubOverlaysByIdentity = new Map();
+        /** @type {Map<string, Object>} */
+        this.githubIssueBases = new Map();
     }
 
     /**
@@ -106,6 +114,13 @@ export class TodoStore {
             }
         }
         this.todoList = next;
+        this.githubOverlaysByIdentity = new Map(
+            next.github_overlays.map((overlay) => [
+                TodoStore.githubIdentity(overlay.repository, overlay.issue_number),
+                cloneJson(overlay),
+            ]),
+        );
+        this.rebuildRemoteTodoIds();
     }
 
     /**
@@ -114,6 +129,197 @@ export class TodoStore {
      */
     clear() {
         this.todoList = TodoList.createEmpty();
+        this.loadedGitHubRepositories.clear();
+        this.remoteTodoIds.clear();
+        this.githubOverlaysByIdentity.clear();
+        this.githubIssueBases.clear();
+    }
+
+    /**
+     * Builds the stable runtime/cache identity for one GitHub issue task.
+     * @param {string} repository Valid owner/repository binding.
+     * @param {number | string} issueNumber Positive issue number.
+     * @returns {string}
+     */
+    static githubIdentity(repository, issueNumber) {
+        return `${String(repository || "").trim()}#${Number(issueNumber)}`;
+    }
+
+    /**
+     * Recomputes which runtime TODOs are GitHub-owned after an undo, draft restore, or model replacement.
+     * A legacy mirrored row is considered remote only after its repository has actually loaded, keeping local/offline workspaces backwards compatible.
+     * @returns {void}
+     */
+    rebuildRemoteTodoIds() {
+        this.remoteTodoIds = new Set(
+            this.todoList
+                .list()
+                .filter(
+                    (todo) =>
+                        String(todo.source?.provider || "").toLowerCase() === "github" &&
+                        Boolean(todo.source?.project_id) &&
+                        this.loadedGitHubRepositories.has(String(todo.source?.project_id)),
+                )
+                .map((todo) => todo.id),
+        );
+    }
+
+    /**
+     * Reports whether one runtime TODO is owned by a loaded GitHub issue collection and must therefore not be mirrored into todos.json.
+     * @param {import("./model.js").Todo | import("./model.js").TodoRaw} todo Runtime model or raw row.
+     * @returns {boolean}
+     */
+    isGitHubOwnedTodo(todo) {
+        return this.remoteTodoIds.has(String(todo?.id || ""));
+    }
+
+    /**
+     * Extracts only Zeitplural-specific scheduling fields from one issue-backed runtime TODO.
+     * @param {import("./model.js").Todo | import("./model.js").TodoRaw} todo GitHub-backed task.
+     * @returns {import("./model.js").GitHubTodoOverlayRaw}
+     */
+    overlayFromTodo(todo) {
+        const raw = typeof todo?.toRaw === "function" ? todo.toRaw() : todo;
+        const source = raw?.source;
+        const repository = String(source?.project_id || "").trim();
+        const issueNumber = Number(source?.id);
+        const assignment = this.projectStore.resolveAssignment(raw?.project_key, raw?.section_key);
+        const expectedSectionLabel = assignment?.section?.getExternalReference("github-label")?.id || null;
+        const sectionBindingChanged = String(source?.section_id || "") !== String(expectedSectionLabel || "");
+        return TodoList.normalizeGitHubOverlay({
+            repository,
+            issue_number: issueNumber,
+            parent_id: raw?.parent_id || null,
+            due: raw?.due || null,
+            recurrence: raw?.recurrence || null,
+            completion_history: raw?.completion_history || [],
+            deadline: raw?.deadline || null,
+            priority: raw?.priority || 1,
+            order: raw?.order || 0,
+            ...(sectionBindingChanged ? { section_key_override: raw?.section_key || null } : {}),
+        });
+    }
+
+    /**
+     * Reports whether an overlay differs from fields derivable directly from its GitHub issue.
+     * Omitting all-default overlays keeps todos.json proportional to actual Zeitplural-only metadata instead of to the total upstream issue count.
+     * @param {import("./model.js").GitHubTodoOverlayRaw} overlay Normalized overlay candidate.
+     * @returns {boolean}
+     */
+    hasMeaningfulGitHubOverlay(overlay) {
+        return Boolean(
+            overlay.parent_id ||
+                overlay.due ||
+                overlay.recurrence ||
+                overlay.completion_history.length ||
+                overlay.deadline ||
+                overlay.priority !== 1 ||
+                overlay.order !== overlay.issue_number ||
+                Object.prototype.hasOwnProperty.call(overlay, "section_key_override")
+        );
+    }
+
+    /**
+     * Applies a compact local overlay to an upstream-owned raw task without replacing any GitHub title, body, label, or state field.
+     * @param {import("./model.js").TodoRaw} todoRaw Fresh upstream task row.
+     * @param {import("./model.js").GitHubTodoOverlayRaw | null} overlay Optional scheduling overlay.
+     * @returns {import("./model.js").TodoRaw}
+     */
+    applyGitHubOverlay(todoRaw, overlay) {
+        if (!overlay) return cloneJson(todoRaw);
+        return {
+            ...cloneJson(todoRaw),
+            parent_id: overlay.parent_id,
+            due: cloneJson(overlay.due),
+            recurrence: cloneJson(overlay.recurrence),
+            completion_history: cloneJson(overlay.completion_history),
+            deadline: cloneJson(overlay.deadline),
+            priority: overlay.priority,
+            order: overlay.order,
+            ...(Object.prototype.hasOwnProperty.call(overlay, "section_key_override")
+                ? { section_key: overlay.section_key_override || null }
+                : {}),
+        };
+    }
+
+    /**
+     * Replaces one repository's legacy/memory issue rows with a freshly fetched complete issue collection.
+     * Legacy schema-v3 mirrors contribute only overlay fields; all upstream-owned fields come from the fetched issue payload.
+     * @param {string} repository GitHub owner/repository binding.
+     * @param {import("./model.js").TodoRaw[]} remoteTodos Fresh normalized issue tasks.
+     * @param {Map<string, Object>} issueBases Runtime identity to upstream concurrency metadata.
+     * @returns {void}
+     */
+    replaceGitHubTodos(repository, remoteTodos, issueBases) {
+        const normalizedRepository = String(repository || "").trim();
+        const current = this.snapshotRaw();
+        const legacyByIssue = new Map();
+        const retained = [];
+        for (const raw of current) {
+            const source = raw.source;
+            const isRepositoryIssue =
+                String(source?.provider || "").toLowerCase() === "github" &&
+                String(source?.project_id || "") === normalizedRepository;
+            if (!isRepositoryIssue) {
+                retained.push(raw);
+                continue;
+            }
+            const issueNumber = Number(source?.id);
+            if (Number.isSafeInteger(issueNumber) && issueNumber > 0) {
+                legacyByIssue.set(issueNumber, this.overlayFromTodo(raw));
+            }
+        }
+
+        const normalizedRemote = [];
+        const liveIdentities = new Set();
+        const liveTodoIds = new Set();
+        for (const remoteRaw of remoteTodos) {
+            const issueNumber = Number(remoteRaw?.source?.id);
+            const identity = TodoStore.githubIdentity(normalizedRepository, issueNumber);
+            liveIdentities.add(identity);
+            const overlay = this.githubOverlaysByIdentity.get(identity) || legacyByIssue.get(issueNumber) || null;
+            if (overlay) this.githubOverlaysByIdentity.set(identity, cloneJson(overlay));
+            normalizedRemote.push(this.applyGitHubOverlay(remoteRaw, overlay));
+            liveTodoIds.add(remoteRaw.id);
+        }
+        for (const todoId of [...this.githubIssueBases.keys()]) {
+            if (todoId.startsWith(`github:${normalizedRepository}#`) && !liveTodoIds.has(todoId)) {
+                this.githubIssueBases.delete(todoId);
+            }
+        }
+        for (const identity of [...this.githubOverlaysByIdentity.keys()]) {
+            if (identity.startsWith(`${normalizedRepository}#`) && !liveIdentities.has(identity)) {
+                this.githubOverlaysByIdentity.delete(identity);
+            }
+        }
+        this.loadedGitHubRepositories.add(normalizedRepository);
+        this.todoList = TodoList.fromRaw({
+            generated_at: this.todoList.generated_at,
+            github_overlays: [...this.githubOverlaysByIdentity.values()],
+            schema_version: 4,
+            todos: [...retained, ...normalizedRemote],
+        });
+        this.rebuildRemoteTodoIds();
+        for (const [id, base] of issueBases) this.githubIssueBases.set(id, cloneJson(base));
+    }
+
+    /**
+     * Returns the last fetched upstream metadata used to detect remote edits made after a local draft began.
+     * @param {string} todoId Stable runtime issue-task id.
+     * @returns {Object | null}
+     */
+    getGitHubIssueBase(todoId) {
+        return this.githubIssueBases.get(String(todoId || "")) || null;
+    }
+
+    /**
+     * Updates one issue's concurrency baseline after a successful create, refresh, or patch.
+     * @param {string} todoId Stable runtime issue-task id.
+     * @param {Object} base Fresh upstream metadata.
+     * @returns {void}
+     */
+    setGitHubIssueBase(todoId, base) {
+        this.githubIssueBases.set(String(todoId || ""), cloneJson(base));
     }
 
     /**
@@ -150,6 +356,39 @@ export class TodoStore {
     }
 
     /**
+     * Captures runtime rows plus compact overlay metadata so a failed multi-document project migration can be rolled back exactly.
+     * @returns {{todos: import("./model.js").TodoRaw[], generatedAt: string, githubOverlays: import("./model.js").GitHubTodoOverlayRaw[], loadedGitHubRepositories: string[], githubIssueBases: Array<[string, Object]>}}
+     */
+    snapshotDocumentState() {
+        return {
+            todos: this.snapshotRaw(),
+            generatedAt: this.todoList.generated_at,
+            githubOverlays: [...this.githubOverlaysByIdentity.values()].map((overlay) => cloneJson(overlay)),
+            loadedGitHubRepositories: [...this.loadedGitHubRepositories],
+            githubIssueBases: [...this.githubIssueBases].map(([id, base]) => [id, cloneJson(base)]),
+        };
+    }
+
+    /**
+     * Restores a document snapshot captured before an atomic project-binding migration.
+     * @param {{todos: import("./model.js").TodoRaw[], generatedAt: string, githubOverlays: import("./model.js").GitHubTodoOverlayRaw[], loadedGitHubRepositories?: string[], githubIssueBases?: Array<[string, Object]>}} state Prior state.
+     * @returns {void}
+     */
+    restoreDocumentState(state) {
+        this.githubOverlaysByIdentity = new Map(
+            (state.githubOverlays || []).map((overlay) => [
+                TodoStore.githubIdentity(overlay.repository, overlay.issue_number),
+                cloneJson(overlay),
+            ]),
+        );
+        this.loadedGitHubRepositories = new Set(state.loadedGitHubRepositories || []);
+        this.githubIssueBases = new Map(
+            (state.githubIssueBases || []).map(([id, base]) => [String(id), cloneJson(base)]),
+        );
+        this.applySnapshot(state.todos || [], state.generatedAt || "");
+    }
+
+    /**
      * Rebuilds models from a raw snapshot while retaining or replacing document metadata.
      * @param {import("./model.js").TodoRaw[]} todosRaw
      * @param {string} [generatedAt]
@@ -158,7 +397,8 @@ export class TodoStore {
     applySnapshot(todosRaw, generatedAt = this.todoList.generated_at) {
         this.setTodoList(TodoList.fromRaw({
             generated_at: generatedAt,
-            schema_version: 3,
+            github_overlays: [...this.githubOverlaysByIdentity.values()],
+            schema_version: 4,
             todos: Array.isArray(todosRaw) ? todosRaw : [],
         }));
     }
@@ -226,8 +466,15 @@ export class TodoStore {
         const assignment = this.normalizeAssignment(details?.projectKey, details?.sectionKey);
         const schedule = this.normalizeSchedule(details);
         const maxOrder = this.getTodos().reduce((max, todo) => Math.max(max, todo.order), 0);
+        const id = this.reserveTodoId();
+        const repository = assignment.projectKey
+            ? this.projectStore.resolveAssignment(assignment.projectKey, assignment.sectionKey)?.project?.getExternalReference("github")?.id || null
+            : null;
+        const sectionLabel = assignment.sectionKey
+            ? this.projectStore.resolveAssignment(assignment.projectKey, assignment.sectionKey)?.section?.getExternalReference("github-label")?.id || null
+            : null;
         const raw = {
-            id: this.reserveTodoId(),
+            id,
             content,
             description: String(details?.description || ""),
             project_key: assignment.projectKey,
@@ -244,7 +491,14 @@ export class TodoStore {
             updated_at: nowIso,
             archived: false,
             order: maxOrder + 1,
-            source: null,
+            source: repository
+                ? {
+                      provider: "github-pending",
+                      id,
+                      project_id: repository,
+                      section_id: sectionLabel,
+                  }
+                : null,
         };
         const next = this.snapshotRaw();
         next.push(raw);
@@ -268,6 +522,12 @@ export class TodoStore {
         if (!content) throw new Error("A TODO needs a title.");
         const assignment = this.normalizeAssignment(details?.projectKey, details?.sectionKey);
         const schedule = this.normalizeSchedule(details);
+        const resolvedAssignment = this.projectStore.resolveAssignment(assignment.projectKey, assignment.sectionKey);
+        const currentProvider = String(current.source?.provider || "").toLowerCase();
+        const assignedRepository = resolvedAssignment?.project?.getExternalReference("github")?.id || null;
+        if (currentProvider === "github" && assignedRepository !== current.source?.project_id) {
+            throw new Error("A linked GitHub issue cannot be moved to a different repository-backed project.");
+        }
         const next = this.snapshotRaw();
         const index = next.findIndex((todo) => todo.id === current.id);
         if (index < 0) throw new Error("TODO not found.");
@@ -283,6 +543,16 @@ export class TodoStore {
             recurrence: schedule.recurrence,
             updated_at: nowIso,
         };
+        if (currentProvider === "github-pending") {
+            next[index].source = assignedRepository
+                ? {
+                      provider: "github-pending",
+                      id: current.source?.id || current.id,
+                      project_id: assignedRepository,
+                      section_id: resolvedAssignment?.section?.getExternalReference("github-label")?.id || null,
+                  }
+                : null;
+        }
         this.applySnapshot(next);
         const updated = this.getTodoById(current.id);
         if (!updated) throw new Error("Failed to update TODO.");
@@ -307,6 +577,181 @@ export class TodoStore {
         const updated = this.getTodoById(current.id);
         if (!updated) throw new Error("Failed to attach TODO source metadata.");
         return updated;
+    }
+
+    /**
+     * Replaces a newly created pending task with the stable GitHub issue identity returned by the provider.
+     * Its local scheduling fields become an overlay, while fresh upstream fields remain authoritative.
+     * @param {string} pendingId Existing local task id.
+     * @param {import("./model.js").TodoRaw} remoteRaw Fresh normalized task built from the created issue response.
+     * @param {Object} issueBase Upstream concurrency metadata.
+     * @returns {import("./model.js").Todo}
+     */
+    promoteTodoToGitHub(pendingId, remoteRaw, issueBase) {
+        const pending = this.getTodoById(pendingId);
+        if (!pending) throw new Error("Pending TODO not found.");
+        const overlay = this.overlayFromTodo({
+            ...pending.toRaw(),
+            source: remoteRaw.source,
+        });
+        const identity = TodoStore.githubIdentity(overlay.repository, overlay.issue_number);
+        this.githubOverlaysByIdentity.set(identity, overlay);
+        this.loadedGitHubRepositories.add(overlay.repository);
+        const next = this.snapshotRaw().filter((todo) => todo.id !== pending.id);
+        next.push(this.applyGitHubOverlay(remoteRaw, overlay));
+        this.applySnapshot(next);
+        this.remoteTodoIds.add(remoteRaw.id);
+        this.setGitHubIssueBase(remoteRaw.id, issueBase);
+        const promoted = this.getTodoById(remoteRaw.id);
+        if (!promoted) throw new Error("Failed to promote TODO to a GitHub issue.");
+        return promoted;
+    }
+
+    /**
+     * Marks existing local tasks in a newly bound project for explicit publication on the next TODO save.
+     * Already linked tasks and provider imports are left untouched.
+     * @param {string} projectKey Project being connected.
+     * @param {string} repository GitHub owner/repository binding.
+     * @param {(todo: import("./model.js").Todo) => boolean} [isPublishable] Optional policy gate for tasks that must never be exposed through the target issue tracker.
+     * @returns {number} Number of tasks marked pending.
+     */
+    markProjectTodosForGitHub(projectKey, repository, isPublishable = () => true) {
+        const next = this.snapshotRaw();
+        let changed = 0;
+        for (const raw of next) {
+            if (raw.project_key !== projectKey || raw.source) continue;
+            const todo = this.getTodoById(raw.id);
+            if (!todo || !isPublishable(todo)) continue;
+            const assignment = this.projectStore.resolveAssignment(raw.project_key, raw.section_key);
+            raw.source = {
+                provider: "github-pending",
+                id: raw.id,
+                project_id: repository,
+                section_id: assignment?.section?.getExternalReference("github-label")?.id || null,
+            };
+            changed += 1;
+        }
+        if (changed) this.applySnapshot(next);
+        return changed;
+    }
+
+    /**
+     * Reconciles unpublished task provenance with the currently configured project repository and section label.
+     * Removing a binding returns pending tasks to ordinary local ownership; renaming a section label updates only metadata used by the eventual issue creation.
+     * @returns {number} Number of pending records whose source metadata changed.
+     */
+    refreshPendingGitHubBindings() {
+        const next = this.snapshotRaw();
+        let changed = 0;
+        for (const raw of next) {
+            if (String(raw.source?.provider || "").toLowerCase() !== "github-pending") continue;
+            const assignment = this.projectStore.resolveAssignment(raw.project_key, raw.section_key);
+            const repository = assignment?.project?.getExternalReference("github")?.id || "";
+            const source = repository
+                ? {
+                      provider: "github-pending",
+                      id: raw.source?.id || raw.id,
+                      project_id: repository,
+                      section_id: assignment?.section?.getExternalReference("github-label")?.id || null,
+                  }
+                : null;
+            if (JSON.stringify(raw.source) === JSON.stringify(source)) continue;
+            raw.source = source;
+            changed += 1;
+        }
+        if (changed) this.applySnapshot(next);
+        return changed;
+    }
+
+    /**
+     * Rebuilds compact overlays for loaded issue tasks after project section-label configuration changes.
+     * A temporary section override makes the intended label migration survive reloads until the next manual TODO save updates GitHub and removes the override again.
+     * @returns {boolean} Whether persisted overlay metadata changed.
+     */
+    refreshGitHubTaskOverlays() {
+        const before = JSON.stringify(
+            [...this.githubOverlaysByIdentity.entries()].sort((left, right) => left[0].localeCompare(right[0])),
+        );
+        for (const todo of this.getTodos()) {
+            if (!this.remoteTodoIds.has(todo.id)) continue;
+            const overlay = this.overlayFromTodo(todo);
+            const identity = TodoStore.githubIdentity(overlay.repository, overlay.issue_number);
+            if (this.hasMeaningfulGitHubOverlay(overlay)) this.githubOverlaysByIdentity.set(identity, overlay);
+            else this.githubOverlaysByIdentity.delete(identity);
+        }
+        const after = JSON.stringify(
+            [...this.githubOverlaysByIdentity.entries()].sort((left, right) => left[0].localeCompare(right[0])),
+        );
+        return before !== after;
+    }
+
+    /**
+     * Materializes every linked or unpublished issue task in a detached project as an ordinary JSON-backed task.
+     * The repository argument prevents a repository replacement from altering unrelated provenance that happens to share the same local project.
+     * @param {string} projectKey Detached project key.
+     * @param {string} [repository] Previous GitHub owner/repository binding.
+     * @returns {number} Number of retained local copies.
+     */
+    materializeGitHubProjectTodos(projectKey, repository = "") {
+        const next = this.snapshotRaw();
+        let changed = 0;
+        for (const raw of next) {
+            const provider = String(raw.source?.provider || "").toLowerCase();
+            const matchesRepository = !repository || raw.source?.project_id === repository;
+            if (raw.project_key !== projectKey || !matchesRepository || (provider !== "github" && provider !== "github-pending")) {
+                continue;
+            }
+            const issueNumber = Number(raw.source?.id);
+            if (provider === "github" && Number.isSafeInteger(issueNumber) && issueNumber > 0) {
+                const identity = TodoStore.githubIdentity(raw.source?.project_id || "", issueNumber);
+                this.githubOverlaysByIdentity.delete(identity);
+                this.githubIssueBases.delete(raw.id);
+            }
+            raw.source = null;
+            changed += 1;
+        }
+        if (changed) this.applySnapshot(next);
+        if (repository) this.loadedGitHubRepositories.delete(repository);
+        this.rebuildRemoteTodoIds();
+        return changed;
+    }
+
+    /**
+     * Removes issue-owned tasks from a detached project while leaving upstream issues untouched.
+     * Unpublished pending tasks have no upstream counterpart and are therefore retained as ordinary local tasks even when the remove choice is selected.
+     * @param {string} projectKey Detached project key.
+     * @param {string} [repository] Previous GitHub owner/repository binding.
+     * @returns {number} Number of runtime tasks removed.
+     */
+    removeGitHubProjectTodos(projectKey, repository = "") {
+        const before = this.snapshotRaw();
+        const next = [];
+        let removed = 0;
+        let changed = false;
+        for (const raw of before) {
+            const provider = String(raw.source?.provider || "").toLowerCase();
+            const matchesRepository = !repository || raw.source?.project_id === repository;
+            const matchesProject = raw.project_key === projectKey && matchesRepository;
+            if (matchesProject && provider === "github") {
+                const issueNumber = Number(raw.source?.id);
+                if (Number.isSafeInteger(issueNumber) && issueNumber > 0) {
+                    const identity = TodoStore.githubIdentity(raw.source?.project_id || "", issueNumber);
+                    this.githubOverlaysByIdentity.delete(identity);
+                }
+                this.githubIssueBases.delete(raw.id);
+                removed += 1;
+                continue;
+            }
+            if (matchesProject && provider === "github-pending") {
+                raw.source = null;
+                changed = true;
+            }
+            next.push(raw);
+        }
+        if (removed || changed) this.applySnapshot(next);
+        if (repository) this.loadedGitHubRepositories.delete(repository);
+        this.rebuildRemoteTodoIds();
+        return removed;
     }
 
     /**
@@ -383,8 +828,29 @@ export class TodoStore {
      * @returns {string}
      */
     serialize(nowIso = utcNowIso()) {
-        this.applySnapshot(this.snapshotRaw(), nowIso);
-        return this.todoList.toJson();
+        const localTodos = this.snapshotRaw().filter((todo) => !this.remoteTodoIds.has(todo.id));
+        const overlays = new Map(this.githubOverlaysByIdentity);
+        for (const todo of this.getTodos()) {
+            if (!this.remoteTodoIds.has(todo.id)) continue;
+            const overlay = this.overlayFromTodo(todo);
+            const identity = TodoStore.githubIdentity(overlay.repository, overlay.issue_number);
+            if (this.hasMeaningfulGitHubOverlay(overlay)) overlays.set(identity, overlay);
+            else overlays.delete(identity);
+        }
+        const persisted = TodoList.fromRaw({
+            generated_at: nowIso,
+            github_overlays: [...overlays.values()],
+            schema_version: 4,
+            todos: localTodos,
+        });
+        this.todoList.generated_at = nowIso;
+        this.githubOverlaysByIdentity = new Map(
+            persisted.github_overlays.map((overlay) => [
+                TodoStore.githubIdentity(overlay.repository, overlay.issue_number),
+                cloneJson(overlay),
+            ]),
+        );
+        return persisted.toJson();
     }
 }
 

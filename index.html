@@ -719,6 +719,18 @@
         </div>
       </form>
     </dialog>
+    <dialog id="todoConflictDialog" class="dialog todo-conflict-dialog">
+      <div class="dialog-card todo-conflict-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="todo.conflictsTitle">Resolve task conflicts</div>
+            <div class="dialog-meta muted" data-i18n="todo.conflictsMeta">Both this browser and GitHub changed these tasks. Choose one version for each task before saving.</div>
+          </div>
+          <button id="todoConflictCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <div id="todoConflictList" class="todo-conflict-list"></div>
+      </div>
+    </dialog>
     <dialog id="expenseDialog" class="dialog expense-dialog">
       <form id="expenseForm" method="dialog" class="dialog-card expense-dialog-card">
         <div class="dialog-head">
@@ -844,6 +856,22 @@
         <div class="row dialog-actions">
           <button id="projectsOkBtn" class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="projectsCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="projectBindingDialog" class="dialog project-binding-dialog">
+      <form id="projectBindingForm" method="dialog" class="dialog-card project-binding-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="projects.bindingPreviewTitle">GitHub project migration</div>
+            <div class="dialog-meta muted" data-i18n="projects.bindingPreviewMeta">Review local task handling. Upstream issues are never deleted; new issues are created only by a later manual task save.</div>
+          </div>
+          <button id="projectBindingCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <div id="projectBindingList" class="project-binding-list"></div>
+        <div class="row dialog-actions">
+          <button class="btn" type="submit" data-i18n="common.continue">Continue</button>
+          <button id="projectBindingCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </dialog>

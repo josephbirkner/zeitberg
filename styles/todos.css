@@ -1,5 +1,49 @@
 /* TODO navigation, lists, editor details, and TODO-specific responsive rules. */
 
+.todo-conflict-card {
+  width: min(760px, calc(100vw - 24px));
+}
+
+.todo-conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+}
+
+.todo-conflict-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.todo-conflict-comparison {
+  overflow-wrap: anywhere;
+}
+
+.todo-conflict-actions {
+  justify-content: flex-end;
+}
+
+html.ui-narrow .todo-conflict-dialog {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+}
+
+html.ui-narrow .todo-conflict-card {
+  width: 100%;
+  min-height: 100%;
+  border-radius: 0;
+}
+
 body.app-mode #todoView {
   display: flex;
   flex-direction: column;
