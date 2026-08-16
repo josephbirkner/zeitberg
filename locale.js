@@ -17,6 +17,8 @@ export const EN_MESSAGES = Object.freeze({
     "nav.week": "Week view",
     "nav.todosTitle": "Tasks (Ctrl+T)",
     "nav.todos": "Task view",
+    "nav.expensesTitle": "Expenses (Ctrl+E)",
+    "nav.expenses": "Expense view",
     "nav.searchTitle": "Search (Ctrl+K)",
     "nav.search": "Time-entry search",
     "nav.applicationZoom": "Application zoom",
@@ -44,6 +46,9 @@ export const EN_MESSAGES = Object.freeze({
     "topbar.searchTodosTitle": "Search tasks (Ctrl+K)",
     "topbar.searchTodos": "Search tasks",
     "topbar.searchTodosPlaceholder": "Search tasks…",
+    "topbar.searchExpensesTitle": "Search expenses (Ctrl+K)",
+    "topbar.searchExpenses": "Search expenses",
+    "topbar.searchExpensesPlaceholder": "Search expenses…",
     "topbar.addTodoTitle": "Add task (A)",
     "topbar.addTodo": "Add task",
     "topbar.todoFilters": "Task view filters",
@@ -153,6 +158,8 @@ export const EN_MESSAGES = Object.freeze({
     "loading.requirements": "Loading week requirements…",
     "loading.todosLocal": "Loading tasks (local)…",
     "loading.todos": "Loading tasks…",
+    "loading.expensesLocal": "Loading expenses (local)…",
+    "loading.expenses": "Loading expenses…",
     "loading.progress": "Loading {loaded}/{total}…",
     "loading.checkCache": "Checking {count} cached week files…",
     "loading.download": "Downloading {count} week files in bulk…",
@@ -304,6 +311,57 @@ export const EN_MESSAGES = Object.freeze({
     "todo.priorityUrgent": "Urgent",
     "todo.labels": "Labels (comma-separated)",
 
+    "expenses.timeline": "Expenses and settlements",
+    "expenses.filterCategories": "Filter expenses by category",
+    "expenses.all": "All",
+    "expenses.empty": "No expenses match this view.",
+    "expenses.stats": "{shown} shown • {expenses} expenses • {settlements} settlements",
+    "expenses.addTitle": "Add expense (A)",
+    "expenses.add": "Add expense",
+    "expenses.newExpense": "New shared expense",
+    "expenses.edit": "Edit expense",
+    "expenses.editTitle": "Edit expense",
+    "expenses.editSplit": "Edit split",
+    "expenses.settleTitle": "Settle balances (S)",
+    "expenses.settle": "Settle balances",
+    "expenses.settlement": "Settlement",
+    "expenses.settleMeta": "Suggested payments are calculated independently per currency.",
+    "expenses.inventoryTitle": "Participants and categories",
+    "expenses.inventory": "Participants and categories",
+    "expenses.inventoryMeta": "Stable keys remain unchanged when names are edited.",
+    "expenses.participants": "Participants",
+    "expenses.categories": "Categories",
+    "expenses.addParticipant": "Add participant",
+    "expenses.addCategory": "Add category",
+    "expenses.participantName": "Participant name",
+    "expenses.categoryName": "Category name",
+    "expenses.description": "Description",
+    "expenses.date": "Date",
+    "expenses.amount": "Amount",
+    "expenses.currency": "Currency",
+    "expenses.category": "Category",
+    "expenses.noCategory": "No category",
+    "expenses.notes": "Notes",
+    "expenses.splitRule": "Split rule",
+    "expenses.splitEqual": "Equal",
+    "expenses.splitPercentage": "Percentage",
+    "expenses.splitShares": "Shares",
+    "expenses.splitExact": "Exact amounts",
+    "expenses.participant": "Participant",
+    "expenses.paid": "Paid",
+    "expenses.owed": "Owed",
+    "expenses.included": "Included (1)",
+    "expenses.percentage": "Percentage",
+    "expenses.shares": "Shares",
+    "expenses.paidBy": "Paid by {participant}",
+    "expenses.owedBy": "Owed by {participant}",
+    "expenses.importedFrom": "Imported from {provider}",
+    "expenses.localExpense": "Workspace expense",
+    "expenses.balanced": "All balances settled",
+    "expenses.balancedLong": "There are no outstanding balances.",
+    "expenses.paymentSuggestion": "{from} pays {to} {amount}",
+    "expenses.recordPayment": "Record payment",
+
     "projects.title": "Projects",
     "projects.meta": "Manage shared projects, sections, defaults, and archive state.",
     "projects.add": "Add project",
@@ -378,10 +436,14 @@ export const EN_MESSAGES = Object.freeze({
     "status.todoNoUnsaved": "No unsaved task changes",
     "status.todoSaveChanged": "Save changed tasks",
     "status.todoChangesSaved": "Task changes saved",
+    "status.expenseNoUnsaved": "No unsaved expense changes",
+    "status.expenseSaveChanged": "Save changed expenses",
+    "status.expenseChangesSaved": "Expense changes saved",
 
     "data.weekFiles": "{count} week files",
     "data.entries": "{count} entries",
     "data.todos": "{count} tasks",
+    "data.expenses": "{count} expenses",
     "data.manifestAt": "manifest {date}",
     "data.local": "Local data",
 
@@ -403,6 +465,21 @@ export const EN_MESSAGES = Object.freeze({
     "toast.invalidSplit": "Invalid split position.",
     "toast.todoTitle": "A task needs a title.",
     "toast.todoSaved": "Tasks saved.",
+    "toast.expensesSaved": "Expenses saved.",
+    "toast.expenseNeedsParticipant": "Add at least one participant before creating an expense.",
+    "toast.expenseDescription": "An expense needs a description.",
+    "toast.expensePayersTotal": "Paid amounts must equal the expense total.",
+    "toast.expensePercentageTotal": "Percentage splits must add up to 100%.",
+    "toast.expenseNeedsAllocation": "Select at least one participant for the split.",
+    "toast.expenseAllocationsTotal": "Owed amounts must equal the expense total.",
+    "toast.expenseMissing": "Expense or settlement not found.",
+    "toast.expenseParticipantName": "Every participant needs a name.",
+    "toast.expenseCategoryName": "Every category needs a name.",
+    "toast.expenseDraftUnavailable": "Browser draft storage is unavailable; unsaved expense changes may not survive a reload.",
+    "toast.expenseDraftCleanup": "The saved expense draft could not be removed from browser storage.",
+    "toast.expenseDraftConflict": "The expense draft could not be merged safely: {error}",
+    "toast.expenseRestored": "Unsaved expense changes restored.",
+    "toast.expenseRestoredMerged": "Expense changes restored and merged with newer repository data.",
     "toast.todoRestored": "Restored unsaved task edits.",
     "toast.todoRestoredMerged": "Restored task edits and merged newer data.",
     "toast.recurrenceDue": "A recurring task needs a due date.",
@@ -481,6 +558,8 @@ export const DE_MESSAGES = Object.freeze({
     "nav.week": "Wochenansicht",
     "nav.todosTitle": "Aufgaben (Strg+T)",
     "nav.todos": "Aufgabenansicht",
+    "nav.expensesTitle": "Ausgaben (Strg+E)",
+    "nav.expenses": "Ausgabenansicht",
     "nav.searchTitle": "Suche (Strg+K)",
     "nav.search": "Zeiteinträge durchsuchen",
     "nav.applicationZoom": "Anwendungszoom",
@@ -508,6 +587,9 @@ export const DE_MESSAGES = Object.freeze({
     "topbar.searchTodosTitle": "Aufgaben durchsuchen (Strg+K)",
     "topbar.searchTodos": "Aufgaben durchsuchen",
     "topbar.searchTodosPlaceholder": "Aufgaben durchsuchen…",
+    "topbar.searchExpensesTitle": "Ausgaben durchsuchen (Strg+K)",
+    "topbar.searchExpenses": "Ausgaben durchsuchen",
+    "topbar.searchExpensesPlaceholder": "Ausgaben durchsuchen…",
     "topbar.addTodoTitle": "Aufgabe hinzufügen (A)",
     "topbar.addTodo": "Aufgabe hinzufügen",
     "topbar.todoFilters": "Aufgabenfilter",
@@ -617,6 +699,8 @@ export const DE_MESSAGES = Object.freeze({
     "loading.requirements": "Sollstunden werden geladen…",
     "loading.todosLocal": "Lokale Aufgaben werden geladen…",
     "loading.todos": "Aufgaben werden geladen…",
+    "loading.expensesLocal": "Lokale Ausgaben werden geladen…",
+    "loading.expenses": "Ausgaben werden geladen…",
     "loading.progress": "{loaded}/{total} werden geladen…",
     "loading.checkCache": "{count} zwischengespeicherte Wochendateien werden geprüft…",
     "loading.download": "{count} Wochendateien werden gebündelt heruntergeladen…",
@@ -768,6 +852,57 @@ export const DE_MESSAGES = Object.freeze({
     "todo.priorityUrgent": "Dringend",
     "todo.labels": "Labels (kommagetrennt)",
 
+    "expenses.timeline": "Ausgaben und Ausgleiche",
+    "expenses.filterCategories": "Ausgaben nach Kategorie filtern",
+    "expenses.all": "Alle",
+    "expenses.empty": "Keine Ausgaben entsprechen dieser Ansicht.",
+    "expenses.stats": "{shown} angezeigt • {expenses} Ausgaben • {settlements} Ausgleiche",
+    "expenses.addTitle": "Ausgabe hinzufügen (A)",
+    "expenses.add": "Ausgabe hinzufügen",
+    "expenses.newExpense": "Neue gemeinsame Ausgabe",
+    "expenses.edit": "Ausgabe bearbeiten",
+    "expenses.editTitle": "Ausgabe bearbeiten",
+    "expenses.editSplit": "Aufteilung bearbeiten",
+    "expenses.settleTitle": "Salden ausgleichen (S)",
+    "expenses.settle": "Salden ausgleichen",
+    "expenses.settlement": "Ausgleich",
+    "expenses.settleMeta": "Zahlungsvorschläge werden je Währung getrennt berechnet.",
+    "expenses.inventoryTitle": "Personen und Kategorien",
+    "expenses.inventory": "Personen und Kategorien",
+    "expenses.inventoryMeta": "Stabile Schlüssel bleiben unverändert, wenn Namen bearbeitet werden.",
+    "expenses.participants": "Personen",
+    "expenses.categories": "Kategorien",
+    "expenses.addParticipant": "Person hinzufügen",
+    "expenses.addCategory": "Kategorie hinzufügen",
+    "expenses.participantName": "Name der Person",
+    "expenses.categoryName": "Name der Kategorie",
+    "expenses.description": "Beschreibung",
+    "expenses.date": "Datum",
+    "expenses.amount": "Betrag",
+    "expenses.currency": "Währung",
+    "expenses.category": "Kategorie",
+    "expenses.noCategory": "Keine Kategorie",
+    "expenses.notes": "Notizen",
+    "expenses.splitRule": "Aufteilung",
+    "expenses.splitEqual": "Gleichmäßig",
+    "expenses.splitPercentage": "Prozentual",
+    "expenses.splitShares": "Anteile",
+    "expenses.splitExact": "Exakte Beträge",
+    "expenses.participant": "Person",
+    "expenses.paid": "Bezahlt",
+    "expenses.owed": "Anteil",
+    "expenses.included": "Beteiligt (1)",
+    "expenses.percentage": "Prozent",
+    "expenses.shares": "Anteile",
+    "expenses.paidBy": "Bezahlt von {participant}",
+    "expenses.owedBy": "Anteil von {participant}",
+    "expenses.importedFrom": "Aus {provider} importiert",
+    "expenses.localExpense": "Ausgabe im Arbeitsbereich",
+    "expenses.balanced": "Alle Salden ausgeglichen",
+    "expenses.balancedLong": "Es gibt keine offenen Salden.",
+    "expenses.paymentSuggestion": "{from} zahlt {to} {amount}",
+    "expenses.recordPayment": "Zahlung eintragen",
+
     "projects.title": "Projekte",
     "projects.meta": "Gemeinsame Projekte, Abschnitte, Vorgaben und Archivstatus verwalten.",
     "projects.add": "Projekt hinzufügen",
@@ -842,10 +977,14 @@ export const DE_MESSAGES = Object.freeze({
     "status.todoNoUnsaved": "Keine ungespeicherten Aufgabenänderungen",
     "status.todoSaveChanged": "Geänderte Aufgaben speichern",
     "status.todoChangesSaved": "Aufgabenänderungen gespeichert",
+    "status.expenseNoUnsaved": "Keine ungespeicherten Ausgabenänderungen",
+    "status.expenseSaveChanged": "Geänderte Ausgaben speichern",
+    "status.expenseChangesSaved": "Ausgabenänderungen gespeichert",
 
     "data.weekFiles": "{count} Wochendateien",
     "data.entries": "{count} Einträge",
     "data.todos": "{count} Aufgaben",
+    "data.expenses": "{count} Ausgaben",
     "data.manifestAt": "Manifest {date}",
     "data.local": "Lokale Daten",
 
@@ -867,6 +1006,21 @@ export const DE_MESSAGES = Object.freeze({
     "toast.invalidSplit": "Ungültige Trennstelle.",
     "toast.todoTitle": "Eine Aufgabe benötigt einen Titel.",
     "toast.todoSaved": "Aufgaben gespeichert.",
+    "toast.expensesSaved": "Ausgaben gespeichert.",
+    "toast.expenseNeedsParticipant": "Füge mindestens eine Person hinzu, bevor du eine Ausgabe erstellst.",
+    "toast.expenseDescription": "Eine Ausgabe benötigt eine Beschreibung.",
+    "toast.expensePayersTotal": "Die bezahlten Beträge müssen der Gesamtausgabe entsprechen.",
+    "toast.expensePercentageTotal": "Prozentuale Aufteilungen müssen zusammen 100 % ergeben.",
+    "toast.expenseNeedsAllocation": "Wähle mindestens eine Person für die Aufteilung aus.",
+    "toast.expenseAllocationsTotal": "Die Anteile müssen der Gesamtausgabe entsprechen.",
+    "toast.expenseMissing": "Ausgabe oder Ausgleich nicht gefunden.",
+    "toast.expenseParticipantName": "Jede Person benötigt einen Namen.",
+    "toast.expenseCategoryName": "Jede Kategorie benötigt einen Namen.",
+    "toast.expenseDraftUnavailable": "Der Browser-Entwurfsspeicher ist nicht verfügbar; ungespeicherte Ausgabenänderungen überstehen ein Neuladen möglicherweise nicht.",
+    "toast.expenseDraftCleanup": "Der gespeicherte Ausgabenentwurf konnte nicht aus dem Browser-Speicher entfernt werden.",
+    "toast.expenseDraftConflict": "Der Ausgabenentwurf konnte nicht sicher zusammengeführt werden: {error}",
+    "toast.expenseRestored": "Ungespeicherte Ausgabenänderungen wiederhergestellt.",
+    "toast.expenseRestoredMerged": "Ausgabenänderungen wiederhergestellt und mit neueren Repository-Daten zusammengeführt.",
     "toast.todoRestored": "Ungespeicherte Aufgabenänderungen wiederhergestellt.",
     "toast.todoRestoredMerged": "Aufgabenänderungen wiederhergestellt und mit neueren Daten zusammengeführt.",
     "toast.recurrenceDue": "Eine wiederkehrende Aufgabe benötigt ein Fälligkeitsdatum.",
@@ -1170,6 +1324,35 @@ export class LocaleService {
      */
     formatCurrency(amount, currency = "EUR") {
         return this.formatNumber(amount, { style: "currency", currency });
+    }
+
+    /**
+     * Returns the standard minor-unit precision reported by Intl for one currency in the active locale.
+     * This affects input and display only; repository amounts remain explicit integers and never depend on locale parsing.
+     * @param {string} currency ISO 4217 currency code.
+     * @returns {number}
+     */
+    currencyMinorDigits(currency) {
+        const code = String(currency || "").trim().toUpperCase();
+        if (!/^[A-Z]{3}$/.test(code)) throw new Error("Currency must be a three-letter currency code.");
+        return new Intl.NumberFormat(this.locale, { style: "currency", currency: code }).resolvedOptions()
+            .maximumFractionDigits;
+    }
+
+    /**
+     * Formats a safe integer minor-unit amount using the currency's Intl-defined decimal precision.
+     * Floating-point conversion is confined to presentation; persisted and calculated balances remain integers.
+     * @param {number} amountMinor Integer minor-unit amount.
+     * @param {string} [currency] ISO 4217 currency code.
+     * @param {Intl.NumberFormatOptions} [options] Additional display controls such as signDisplay.
+     * @returns {string}
+     */
+    formatMinorCurrency(amountMinor, currency = "EUR", options = {}) {
+        const amount = Number(amountMinor);
+        if (!Number.isSafeInteger(amount)) return "—";
+        const code = String(currency || "").trim().toUpperCase();
+        const digits = this.currencyMinorDigits(code);
+        return this.formatNumber(amount / 10 ** digits, { ...options, style: "currency", currency: code });
     }
 
     /**

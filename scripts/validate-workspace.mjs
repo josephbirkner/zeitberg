@@ -4,7 +4,14 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Manifest, ProjectList, TodoList, WeekRequirements } from "../model.js";
+import {
+    ExpenseDocument,
+    ExpenseManifest,
+    Manifest,
+    ProjectList,
+    TodoList,
+    WeekRequirements,
+} from "../model.js";
 import { gitBlobSha1, utf8ByteLength } from "../utils.js";
 import { loadWorkspace, resolveWorkspaceFile } from "./workspace.mjs";
 
@@ -82,9 +89,10 @@ function repositoryPath(workspaceRoot, path) {
  * @param {ProjectList} projectList Parsed project inventory.
  * @param {Object[]} entries Normalized time-entry records.
  * @param {import("../model.js").TodoRaw[]} todos Normalized TODO records.
+ * @param {import("../model.js").ExpenseRaw[]} expenses Normalized expense records.
  * @returns {void}
  */
-function validateAssignments(projectList, entries, todos) {
+function validateAssignments(projectList, entries, todos, expenses = []) {
     for (const entry of entries) {
         if (!projectList.resolveAssignment(entry.project_key, entry.section_key)) {
             throw new Error(`Entry ${entry.id} has an unresolved configured assignment.`);
@@ -93,6 +101,11 @@ function validateAssignments(projectList, entries, todos) {
     for (const todo of todos) {
         if (!projectList.resolveAssignment(todo.project_key, todo.section_key)) {
             throw new Error(`TODO ${todo.id} has an unresolved configured assignment.`);
+        }
+    }
+    for (const expense of expenses) {
+        if (!projectList.resolveAssignment(expense.project_key, expense.section_key)) {
+            throw new Error(`Expense ${expense.id} has an unresolved configured assignment.`);
         }
     }
 }
@@ -105,58 +118,102 @@ function validateAssignments(projectList, entries, todos) {
  */
 async function validateWorkspace(options) {
     const { root, configPath, workspace } = await loadWorkspace(options.workspaceRoot, options.workspaceConfigPath);
-    const projectsPath = workspace.getResourcePath("projects");
-    const entriesDirectory = workspace.getComponentPath("time_tracking", "entries");
-    const manifestPath = workspace.getComponentPath("time_tracking", "manifest");
-    const weekRequirementsPath = workspace.getComponentPath("time_tracking", "week_requirements");
-    const todosPath = workspace.getComponentPath("todos", "document");
-
-    const [projectsRaw, todosRaw, requirementsRaw, manifestRaw] = await Promise.all([
-        readJson(resolveWorkspaceFile(root, projectsPath)),
-        readJson(resolveWorkspaceFile(root, todosPath)),
-        readJson(resolveWorkspaceFile(root, weekRequirementsPath)),
-        readJson(resolveWorkspaceFile(root, manifestPath)),
-    ]);
-    const projectList = ProjectList.fromRaw(projectsRaw);
-    const todoList = TodoList.fromRaw(todosRaw);
-    WeekRequirements.fromRaw(requirementsRaw);
-    const manifest = Manifest.fromRaw(manifestRaw, entriesDirectory);
-    if (manifest.timezone !== workspace.timezone) {
-        throw new Error(`Manifest timezone ${manifest.timezone} does not match workspace timezone ${workspace.timezone}.`);
-    }
-
-    const weekFiles = await listFiles(resolveWorkspaceFile(root, entriesDirectory));
-    const actualWeekPaths = weekFiles.map((path) => repositoryPath(root, path));
-    if (actualWeekPaths.some((path) => !path.endsWith(".json"))) {
-        throw new Error("The entries directory contains a non-JSON import artifact.");
-    }
-    const manifestPaths = manifest.chunks.map((chunk) => chunk.path);
-    if (JSON.stringify(actualWeekPaths) !== JSON.stringify(manifestPaths)) {
-        throw new Error("Manifest chunk paths do not exactly match the expected week files on disk.");
-    }
-
+    const expectedDataPaths = new Set();
+    const projectsPath = workspace.resources.projects || "";
+    const projectList = projectsPath
+        ? ProjectList.fromRaw(await readJson(resolveWorkspaceFile(root, projectsPath)))
+        : ProjectList.createEmpty();
+    if (projectsPath) expectedDataPaths.add(projectsPath);
     const entries = [];
-    for (const chunk of manifest.chunks) {
-        const path = resolveWorkspaceFile(root, chunk.path);
-        const rawText = await readFile(path, "utf8");
-        const week = JSON.parse(rawText);
-        if (Number(week.schema_version) !== 2) throw new Error(`${chunk.path} is not entry schema version 2.`);
-        if (Number(week.year) !== chunk.year || Number(week.week) !== chunk.week) {
-            throw new Error(`${chunk.path} year/week metadata does not match its manifest chunk.`);
+    let weekCount = 0;
+    if (workspace.hasComponent("time_tracking")) {
+        const entriesDirectory = workspace.getComponentPath("time_tracking", "entries");
+        const manifestPath = workspace.getComponentPath("time_tracking", "manifest");
+        const weekRequirementsPath = workspace.getComponentPath("time_tracking", "week_requirements");
+        const [requirementsRaw, manifestRaw] = await Promise.all([
+            readJson(resolveWorkspaceFile(root, weekRequirementsPath)),
+            readJson(resolveWorkspaceFile(root, manifestPath)),
+        ]);
+        WeekRequirements.fromRaw(requirementsRaw);
+        const manifest = Manifest.fromRaw(manifestRaw, entriesDirectory);
+        if (manifest.timezone !== workspace.timezone) {
+            throw new Error(`Manifest timezone ${manifest.timezone} does not match workspace timezone ${workspace.timezone}.`);
         }
-        if (String(week.timezone || "") !== workspace.timezone) {
-            throw new Error(`${chunk.path} timezone does not match zeitplural.json.`);
-        }
-        const weekEntries = Array.isArray(week.entries) ? week.entries : [];
-        entries.push(...weekEntries);
-        if (chunk.sha !== gitBlobSha1(rawText)) throw new Error(`Manifest SHA mismatch for ${chunk.path}.`);
-        if (chunk.size !== utf8ByteLength(rawText)) throw new Error(`Manifest size mismatch for ${chunk.path}.`);
-        if (chunk.entries !== weekEntries.length) throw new Error(`Manifest entry count mismatch for ${chunk.path}.`);
-    }
-    if (entries.length !== manifest.total_entries) throw new Error("Manifest total_entries does not match week data.");
-    validateAssignments(projectList, entries, todoList.snapshotRaw());
 
-    const expectedDataPaths = new Set([projectsPath, todosPath, weekRequirementsPath, manifestPath, ...manifestPaths]);
+        const entriesPath = resolveWorkspaceFile(root, entriesDirectory);
+        let weekFiles = [];
+        try {
+            const entriesStat = await stat(entriesPath);
+            if (!entriesStat.isDirectory()) throw new Error("The configured entries path is not a directory.");
+            weekFiles = await listFiles(entriesPath);
+        } catch (error) {
+            const errorCode = error && typeof error === "object" && "code" in error ? error.code : "";
+            if (errorCode !== "ENOENT" || manifest.chunks.length) throw error;
+        }
+        const actualWeekPaths = weekFiles.map((path) => repositoryPath(root, path));
+        if (actualWeekPaths.some((path) => !path.endsWith(".json"))) {
+            throw new Error("The entries directory contains a non-JSON import artifact.");
+        }
+        const manifestPaths = manifest.chunks.map((chunk) => chunk.path);
+        if (JSON.stringify(actualWeekPaths) !== JSON.stringify(manifestPaths)) {
+            throw new Error("Manifest chunk paths do not exactly match the expected week files on disk.");
+        }
+        for (const chunk of manifest.chunks) {
+            const path = resolveWorkspaceFile(root, chunk.path);
+            const rawText = await readFile(path, "utf8");
+            const week = JSON.parse(rawText);
+            if (Number(week.schema_version) !== 2) throw new Error(`${chunk.path} is not entry schema version 2.`);
+            if (Number(week.year) !== chunk.year || Number(week.week) !== chunk.week) {
+                throw new Error(`${chunk.path} year/week metadata does not match its manifest chunk.`);
+            }
+            if (String(week.timezone || "") !== workspace.timezone) {
+                throw new Error(`${chunk.path} timezone does not match zeitplural.json.`);
+            }
+            const weekEntries = Array.isArray(week.entries) ? week.entries : [];
+            entries.push(...weekEntries);
+            if (chunk.sha !== gitBlobSha1(rawText)) throw new Error(`Manifest SHA mismatch for ${chunk.path}.`);
+            if (chunk.size !== utf8ByteLength(rawText)) throw new Error(`Manifest size mismatch for ${chunk.path}.`);
+            if (chunk.entries !== weekEntries.length) throw new Error(`Manifest entry count mismatch for ${chunk.path}.`);
+        }
+        if (entries.length !== manifest.total_entries) throw new Error("Manifest total_entries does not match week data.");
+        weekCount = manifest.chunks.length;
+        expectedDataPaths.add(manifestPath);
+        expectedDataPaths.add(weekRequirementsPath);
+        for (const path of manifestPaths) expectedDataPaths.add(path);
+    }
+
+    let todoList = TodoList.createEmpty();
+    if (workspace.hasComponent("todos")) {
+        const todosPath = workspace.getComponentPath("todos", "document");
+        todoList = TodoList.fromRaw(await readJson(resolveWorkspaceFile(root, todosPath)));
+        expectedDataPaths.add(todosPath);
+    }
+
+    let expenseDocument = ExpenseDocument.createEmpty();
+    if (workspace.hasComponent("expenses")) {
+        const expensesPath = workspace.getComponentPath("expenses", "document");
+        const expenseManifestPath = workspace.getComponentPath("expenses", "manifest");
+        const [expenseText, expenseManifestRaw] = await Promise.all([
+            readFile(resolveWorkspaceFile(root, expensesPath), "utf8"),
+            readJson(resolveWorkspaceFile(root, expenseManifestPath)),
+        ]);
+        expenseDocument = ExpenseDocument.fromRaw(JSON.parse(expenseText));
+        const expenseManifest = ExpenseManifest.fromRaw(expenseManifestRaw, expensesPath);
+        expenseManifest.verifyContent(expenseText);
+        if (
+            expenseManifest.participants !== expenseDocument.participants.length ||
+            expenseManifest.categories !== expenseDocument.categories.length ||
+            expenseManifest.expenses !== expenseDocument.expenses.length ||
+            expenseManifest.transfers !== expenseDocument.transfers.length
+        ) {
+            throw new Error("Expense manifest counts do not match expenses.json.");
+        }
+        expectedDataPaths.add(expensesPath);
+        expectedDataPaths.add(expenseManifestPath);
+    }
+
+    validateAssignments(projectList, entries, todoList.snapshotRaw(), expenseDocument.expenses.map((expense) => expense.toRaw()));
+
     const managedRoots = new Set([...expectedDataPaths].map((path) => path.split("/")[0]));
     const managedFiles = [];
     for (const managedRoot of managedRoots) {
@@ -172,7 +229,8 @@ async function validateWorkspace(options) {
 
     process.stdout.write(
         `Validated workspace ${workspace.name} (${workspace.workspace_id}) via ${configPath}: ` +
-            `${entries.length} entries, ${todoList.list().length} TODOs, ${manifest.chunks.length} weeks, and all manifest hashes.\n`,
+            `${entries.length} entries, ${todoList.list().length} TODOs, ${expenseDocument.expenses.length} expenses, ` +
+            `${expenseDocument.transfers.length} transfers, ${weekCount} weeks, and all manifest hashes.\n`,
     );
 }
 

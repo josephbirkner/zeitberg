@@ -7,6 +7,7 @@ const expectedStylesheets = [
     "./styles/common.css",
     "./styles/time.css",
     "./styles/todos.css",
+    "./styles/expenses.css",
     "./styles/landing.css",
 ];
 
@@ -30,11 +31,11 @@ test("the document loads modular stylesheets explicitly and in dependency order"
 });
 
 test("each stylesheet declares and retains its component ownership", async () => {
-    const [common, time, todos, landing] = await Promise.all(
+    const [common, time, todos, expenses, landing] = await Promise.all(
         expectedStylesheets.map((path) => readRepositoryFile(path.replace("./", ""))),
     );
 
-    for (const content of [common, time, todos, landing]) {
+    for (const content of [common, time, todos, expenses, landing]) {
         assert.doesNotMatch(content, /@import\b/);
     }
 
@@ -52,6 +53,11 @@ test("each stylesheet declares and retains its component ownership", async () =>
     assert.match(todos, /\.todo-row\s*\{/);
     assert.match(todos, /\.todo-project-filter\s*\{/);
     assert.doesNotMatch(todos, /\.week-grid\s*\{/);
+
+    assert.match(expenses, /^\/\* Expense ledger,/);
+    assert.match(expenses, /\.expense-row\s*\{/);
+    assert.match(expenses, /\.expense-balance-strip/);
+    assert.doesNotMatch(expenses, /\.week-grid\s*\{/);
 
     assert.match(landing, /^\/\* Public landing page/);
     assert.match(landing, /\.landing-hero\s*\{/);

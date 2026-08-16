@@ -9,7 +9,16 @@ import {
     isoWeekdayIndex,
     utcNowIso,
 } from "./utils.js";
-import { Entry, Manifest, ProjectList, TodoList, Week, WeekRequirements } from "./model.js";
+import {
+    Entry,
+    ExpenseDocument,
+    ExpenseManifest,
+    Manifest,
+    ProjectList,
+    TodoList,
+    Week,
+    WeekRequirements,
+} from "./model.js";
 
 /**
  * @typedef {Object} WeekFile
@@ -376,6 +385,441 @@ export class TodoStore {
     serialize(nowIso = utcNowIso()) {
         this.applySnapshot(this.snapshotRaw(), nowIso);
         return this.todoList.toJson();
+    }
+}
+
+/**
+ * @typedef {Object} ExpenseDetails
+ * @description Editable fields accepted when creating or updating one shared expense.
+ * @property {string} description
+ * @property {string} date
+ * @property {string} currency
+ * @property {number} amount_minor
+ * @property {import("./model.js").ExpenseAmountRaw[]} payers
+ * @property {import("./model.js").ExpenseAmountRaw[]} allocations
+ * @property {import("./model.js").ExpenseAllocationRuleRaw | null} [allocation_rule]
+ * @property {string | null} [category_key]
+ * @property {string | null} [project_key]
+ * @property {string | null} [section_key]
+ * @property {string} [notes]
+ */
+
+/**
+ * @typedef {Object} ExpenseTransferDetails
+ * @description Editable fields accepted when recording or updating a settlement transfer.
+ * @property {string} date
+ * @property {string} currency
+ * @property {number} amount_minor
+ * @property {string} from_participant_key
+ * @property {string} to_participant_key
+ * @property {string} [notes]
+ */
+
+/**
+ * @typedef {Object} ExpenseBalance
+ * @description One participant's current net position in one currency; positive means they should receive money and negative means they owe money.
+ * @property {string} participantKey
+ * @property {string} currency
+ * @property {number} amountMinor
+ */
+
+/**
+ * @typedef {Object} ExpenseSettlementSuggestion
+ * @description One deterministic payment that reduces all current balances for a currency to zero when combined with the other suggestions.
+ * @property {string} currency
+ * @property {number} amountMinor
+ * @property {string} fromParticipantKey
+ * @property {string} toParticipantKey
+ */
+
+/**
+ * Owns the provider-neutral expense document, validated mutations, balances, settlement suggestions, and atomic persistence payloads.
+ * Every amount entering the store is re-parsed through ExpenseDocument, keeping UI code, private import scripts, and future provider adapters behind the same exact-integer invariants.
+ */
+export class ExpenseStore {
+    /**
+     * Initializes an empty ledger and retains the shared project store used to validate optional cross-component assignments.
+     * @param {EntryStore} projectStore Store containing the shared ProjectList resource.
+     */
+    constructor(projectStore) {
+        this.projectStore = projectStore;
+        this.document = ExpenseDocument.createEmpty();
+        /** @type {ExpenseManifest | null} */
+        this.manifest = null;
+    }
+
+    /**
+     * Replaces the loaded expense document after network loading, draft restoration, or undo/redo.
+     * Optional project and section references are checked against the same inventory used by time entries and TODOs.
+     * @param {ExpenseDocument | null} document Parsed expense document.
+     * @returns {void}
+     */
+    setDocument(document) {
+        const next = document instanceof ExpenseDocument ? document : ExpenseDocument.createEmpty();
+        for (const expense of next.expenses) {
+            if (!this.projectStore.resolveAssignment(expense.project_key, expense.section_key)) {
+                const assignment = [expense.project_key, expense.section_key].filter(Boolean).join("/") || "(none)";
+                throw new Error(`Expense ${expense.id} references unknown project assignment ${assignment}.`);
+            }
+        }
+        this.document = next;
+    }
+
+    /**
+     * Stores the manifest associated with the currently loaded document.
+     * @param {ExpenseManifest | null} manifest Parsed expense manifest.
+     * @returns {void}
+     */
+    setManifest(manifest) {
+        this.manifest = manifest instanceof ExpenseManifest ? manifest : null;
+    }
+
+    /**
+     * Clears all in-memory expense state while leaving shared projects untouched.
+     * @returns {void}
+     */
+    clear() {
+        this.document = ExpenseDocument.createEmpty();
+        this.manifest = null;
+    }
+
+    /**
+     * Returns the current expense document model.
+     * @returns {ExpenseDocument}
+     */
+    getDocument() {
+        return this.document;
+    }
+
+    /**
+     * Returns integrity metadata associated with the currently loaded expense document.
+     * @returns {ExpenseManifest | null}
+     */
+    getManifest() {
+        return this.manifest;
+    }
+
+    /**
+     * Finds one expense by stable id.
+     * @param {string} id Expense id.
+     * @returns {import("./model.js").Expense | null}
+     */
+    getExpenseById(id) {
+        return this.document.getExpenseById(id);
+    }
+
+    /**
+     * Finds one settlement transfer by stable id.
+     * @param {string} id Transfer id.
+     * @returns {import("./model.js").ExpenseTransfer | null}
+     */
+    getTransferById(id) {
+        return this.document.getTransferById(id);
+    }
+
+    /**
+     * Returns the current participant inventory as model objects.
+     * @returns {import("./model.js").ExpenseParticipant[]}
+     */
+    getParticipants() {
+        return this.document.participants.slice();
+    }
+
+    /**
+     * Returns the current category inventory as model objects.
+     * @returns {import("./model.js").ExpenseCategory[]}
+     */
+    getCategories() {
+        return this.document.categories.slice();
+    }
+
+    /**
+     * Returns all expense records as model objects.
+     * @returns {import("./model.js").Expense[]}
+     */
+    getExpenses() {
+        return this.document.expenses.slice();
+    }
+
+    /**
+     * Returns all settlement transfers as model objects.
+     * @returns {import("./model.js").ExpenseTransfer[]}
+     */
+    getTransfers() {
+        return this.document.transfers.slice();
+    }
+
+    /**
+     * Produces a detached complete document snapshot for undo history and IndexedDB drafts.
+     * @returns {import("./model.js").ExpensesFileRaw}
+     */
+    snapshotRaw() {
+        return cloneJson(this.document.toObject());
+    }
+
+    /**
+     * Rebuilds all expense models from a detached snapshot, rerunning cross-record and project-assignment validation.
+     * @param {import("./model.js").ExpensesFileRaw} raw Complete expense document snapshot.
+     * @returns {void}
+     */
+    applySnapshot(raw) {
+        this.setDocument(ExpenseDocument.fromRaw(raw));
+    }
+
+    /**
+     * Generates a collision-resistant local identifier for an expense or transfer without requiring a server round trip.
+     * @param {"expense" | "transfer"} kind Record kind used as a readable id prefix.
+     * @returns {string}
+     */
+    reserveId(kind) {
+        const collection = kind === "transfer" ? this.document.transfersById : this.document.expensesById;
+        let suffix = "";
+        if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+            suffix = crypto.randomUUID();
+        } else {
+            suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        }
+        let candidate = `local:${kind}:${suffix}`;
+        while (collection.has(candidate)) candidate = `local:${kind}:${suffix}-${Math.random().toString(36).slice(2)}`;
+        return candidate;
+    }
+
+    /**
+     * Replaces participant and category metadata as one validated mutation while retaining all money records.
+     * Existing records prevent referenced keys from being removed, though their definitions may be renamed or archived.
+     * @param {import("./model.js").ExpenseParticipantRaw[]} participants New participant definitions.
+     * @param {import("./model.js").ExpenseCategoryRaw[]} categories New category definitions.
+     * @returns {void}
+     */
+    updateInventory(participants, categories) {
+        this.applySnapshot({
+            ...this.snapshotRaw(),
+            participants: cloneJson(participants),
+            categories: cloneJson(categories),
+        });
+    }
+
+    /**
+     * Creates one expense from editable details and returns its normalized model.
+     * @param {ExpenseDetails} details Exact expense details.
+     * @param {string} [nowIso] Creation/update timestamp.
+     * @returns {import("./model.js").Expense}
+     */
+    createExpense(details, nowIso = utcNowIso()) {
+        const id = this.reserveId("expense");
+        const raw = {
+            id,
+            description: details.description,
+            date: details.date,
+            currency: details.currency,
+            amount_minor: details.amount_minor,
+            payers: cloneJson(details.payers),
+            allocations: cloneJson(details.allocations),
+            allocation_rule: details.allocation_rule ? cloneJson(details.allocation_rule) : null,
+            category_key: details.category_key || null,
+            project_key: details.project_key || null,
+            section_key: details.section_key || null,
+            notes: details.notes || "",
+            created_at: nowIso,
+            updated_at: nowIso,
+            source: null,
+        };
+        const next = this.snapshotRaw();
+        next.expenses = [...(next.expenses || []), raw];
+        this.applySnapshot(next);
+        const created = this.getExpenseById(id);
+        if (!created) throw new Error("Failed to create expense.");
+        return created;
+    }
+
+    /**
+     * Updates editable fields while preserving stable identity, creation time, and import provenance.
+     * @param {string} id Expense id.
+     * @param {ExpenseDetails} details Exact replacement details.
+     * @param {string} [nowIso] Update timestamp.
+     * @returns {import("./model.js").Expense}
+     */
+    updateExpense(id, details, nowIso = utcNowIso()) {
+        const current = this.getExpenseById(id);
+        if (!current) throw new Error("Expense not found.");
+        const next = this.snapshotRaw();
+        const index = (next.expenses || []).findIndex((expense) => expense.id === current.id);
+        if (index < 0) throw new Error("Expense not found.");
+        next.expenses[index] = {
+            ...next.expenses[index],
+            description: details.description,
+            date: details.date,
+            currency: details.currency,
+            amount_minor: details.amount_minor,
+            payers: cloneJson(details.payers),
+            allocations: cloneJson(details.allocations),
+            allocation_rule: details.allocation_rule ? cloneJson(details.allocation_rule) : null,
+            category_key: details.category_key || null,
+            project_key: details.project_key || null,
+            section_key: details.section_key || null,
+            notes: details.notes || "",
+            updated_at: nowIso,
+        };
+        this.applySnapshot(next);
+        const updated = this.getExpenseById(current.id);
+        if (!updated) throw new Error("Failed to update expense.");
+        return updated;
+    }
+
+    /**
+     * Deletes one expense immediately; the view's snapshot history makes this reversible.
+     * @param {string} id Expense id.
+     * @returns {boolean}
+     */
+    deleteExpense(id) {
+        if (!this.getExpenseById(id)) return false;
+        const next = this.snapshotRaw();
+        next.expenses = (next.expenses || []).filter((expense) => expense.id !== id);
+        this.applySnapshot(next);
+        return true;
+    }
+
+    /**
+     * Records a settlement transfer and returns its normalized model.
+     * @param {ExpenseTransferDetails} details Transfer details.
+     * @param {string} [nowIso] Creation/update timestamp.
+     * @returns {import("./model.js").ExpenseTransfer}
+     */
+    createTransfer(details, nowIso = utcNowIso()) {
+        const id = this.reserveId("transfer");
+        const next = this.snapshotRaw();
+        next.transfers = [
+            ...(next.transfers || []),
+            {
+                id,
+                date: details.date,
+                currency: details.currency,
+                amount_minor: details.amount_minor,
+                from_participant_key: details.from_participant_key,
+                to_participant_key: details.to_participant_key,
+                notes: details.notes || "",
+                created_at: nowIso,
+                updated_at: nowIso,
+                source: null,
+            },
+        ];
+        this.applySnapshot(next);
+        const created = this.getTransferById(id);
+        if (!created) throw new Error("Failed to create settlement.");
+        return created;
+    }
+
+    /**
+     * Deletes one settlement transfer immediately; the view's snapshot history makes this reversible.
+     * @param {string} id Transfer id.
+     * @returns {boolean}
+     */
+    deleteTransfer(id) {
+        if (!this.getTransferById(id)) return false;
+        const next = this.snapshotRaw();
+        next.transfers = (next.transfers || []).filter((transfer) => transfer.id !== id);
+        this.applySnapshot(next);
+        return true;
+    }
+
+    /**
+     * Computes every non-zero participant balance independently per currency.
+     * Expense contributions add credit, allocations subtract debt, outgoing settlements reduce debt, and incoming settlements reduce credit.
+     * @returns {ExpenseBalance[]}
+     */
+    calculateBalances() {
+        /** @type {Map<string, Map<string, number>>} */
+        const byCurrency = new Map();
+        const add = (currency, participantKey, amountMinor) => {
+            let balances = byCurrency.get(currency);
+            if (!balances) {
+                balances = new Map();
+                byCurrency.set(currency, balances);
+            }
+            const next = (balances.get(participantKey) || 0) + amountMinor;
+            if (!Number.isSafeInteger(next)) throw new Error("Expense balance exceeds the safe integer range.");
+            balances.set(participantKey, next);
+        };
+        for (const expense of this.document.expenses) {
+            for (const payer of expense.payers) add(expense.currency, payer.participant_key, payer.amount_minor);
+            for (const allocation of expense.allocations) add(expense.currency, allocation.participant_key, -allocation.amount_minor);
+        }
+        for (const transfer of this.document.transfers) {
+            add(transfer.currency, transfer.from_participant_key, transfer.amount_minor);
+            add(transfer.currency, transfer.to_participant_key, -transfer.amount_minor);
+        }
+        const result = [];
+        for (const [currency, balances] of [...byCurrency].sort(([left], [right]) => left.localeCompare(right))) {
+            const total = [...balances.values()].reduce((sum, amount) => sum + amount, 0);
+            if (total !== 0) throw new Error(`Expense balances for ${currency} do not sum to zero.`);
+            for (const [participantKey, amountMinor] of [...balances].sort(([left], [right]) => left.localeCompare(right))) {
+                if (amountMinor !== 0) result.push({ participantKey, currency, amountMinor });
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Builds a deterministic minimal-style settlement plan by greedily matching sorted debtors and creditors per currency.
+     * The output never mutates the ledger; accepting one suggestion records an ordinary transfer through createTransfer().
+     * @returns {ExpenseSettlementSuggestion[]}
+     */
+    suggestSettlements() {
+        const balances = this.calculateBalances();
+        const currencies = [...new Set(balances.map((balance) => balance.currency))].sort();
+        const suggestions = [];
+        for (const currency of currencies) {
+            const debtors = balances
+                .filter((balance) => balance.currency === currency && balance.amountMinor < 0)
+                .map((balance) => ({ key: balance.participantKey, amount: -balance.amountMinor }))
+                .sort((left, right) => left.key.localeCompare(right.key));
+            const creditors = balances
+                .filter((balance) => balance.currency === currency && balance.amountMinor > 0)
+                .map((balance) => ({ key: balance.participantKey, amount: balance.amountMinor }))
+                .sort((left, right) => left.key.localeCompare(right.key));
+            let debtorIndex = 0;
+            let creditorIndex = 0;
+            while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+                const debtor = debtors[debtorIndex];
+                const creditor = creditors[creditorIndex];
+                const amountMinor = Math.min(debtor.amount, creditor.amount);
+                suggestions.push({
+                    currency,
+                    amountMinor,
+                    fromParticipantKey: debtor.key,
+                    toParticipantKey: creditor.key,
+                });
+                debtor.amount -= amountMinor;
+                creditor.amount -= amountMinor;
+                if (debtor.amount === 0) debtorIndex += 1;
+                if (creditor.amount === 0) creditorIndex += 1;
+            }
+        }
+        return suggestions;
+    }
+
+    /**
+     * Builds the exact expense document and manifest payloads that must be saved atomically through DataSource.saveFiles().
+     * The in-memory document remains untouched until the caller confirms a successful save, avoiding false clean state after network errors.
+     * @param {string} documentPath Workspace-configured expense document path.
+     * @param {string} manifestPath Workspace-configured expense manifest path.
+     * @param {string} [nowIso] Shared generation timestamp.
+     * @returns {{document: ExpenseDocument, manifest: ExpenseManifest, files: Array<{path: string, content: string}>}}
+     */
+    buildPersistenceFiles(documentPath, manifestPath, nowIso = utcNowIso()) {
+        const raw = this.snapshotRaw();
+        raw.generated_at = nowIso;
+        const document = ExpenseDocument.fromRaw(raw);
+        const content = document.toJson();
+        const manifest = ExpenseManifest.fromDocument(document, documentPath, content, nowIso);
+        return {
+            document,
+            manifest,
+            files: [
+                { path: documentPath, content },
+                { path: manifestPath, content: manifest.toJson() },
+            ],
+        };
     }
 }
 

@@ -182,6 +182,7 @@ body.app-mode #appSection {
 
 body.app-mode #weekViewSection,
 body.app-mode #todoView,
+body.app-mode #expenseView,
 body.app-mode #searchView {
   flex: 1;
   overflow: hidden;

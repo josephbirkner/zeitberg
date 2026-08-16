@@ -27,6 +27,7 @@
     <link rel="stylesheet" href="./styles/common.css" />
     <link rel="stylesheet" href="./styles/time.css" />
     <link rel="stylesheet" href="./styles/todos.css" />
+    <link rel="stylesheet" href="./styles/expenses.css" />
     <link rel="stylesheet" href="./styles/landing.css" />
   </head>
   <body>
@@ -44,6 +45,9 @@
         </button>
         <button id="menuTodoBtn" class="sidebar-button" type="button" data-i18n-title="nav.todosTitle" title="Tasks (Ctrl+T)" data-i18n-aria-label="nav.todos" aria-label="Task view">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#checklist"></use></svg>
+        </button>
+        <button id="menuExpenseBtn" class="sidebar-button" type="button" data-i18n-title="nav.expensesTitle" title="Expenses (Ctrl+E)" data-i18n-aria-label="nav.expenses" aria-label="Expense view">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#payments"></use></svg>
         </button>
         <button id="menuSearchBtn" class="sidebar-button" type="button" data-i18n-title="nav.searchTitle" title="Search (Ctrl+K)" data-i18n-aria-label="nav.search" aria-label="Time-entry search">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#search"></use></svg>
@@ -97,6 +101,18 @@
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#check_circle"></use></svg>
           </button>
         </div>
+      </div>
+
+      <div id="expenseTopbarControls" class="expense-topbar-controls" hidden>
+        <button id="expenseAddBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.addTitle" title="Add expense (A)" data-i18n-aria-label="expenses.add" aria-label="Add expense">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
+        </button>
+        <button id="expenseSettleBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.settleTitle" title="Settle balances" data-i18n-aria-label="expenses.settle" aria-label="Settle balances">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#handshake"></use></svg>
+        </button>
+        <button id="expenseInventoryBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.inventoryTitle" title="Participants and categories" data-i18n-aria-label="expenses.inventory" aria-label="Participants and categories">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#group"></use></svg>
+        </button>
       </div>
 
       <div id="weekControls" class="week-controls" hidden>
@@ -366,6 +382,12 @@
             <div id="todoProjectFilters" class="todo-project-filters" role="toolbar" data-i18n-aria-label="todo.filterByProject" aria-label="Filter tasks by project"></div>
           </div>
           <div id="todoList" class="todo-list" role="listbox" tabindex="0" data-i18n-aria-label="todo.timeline" aria-label="Tasks"></div>
+        </section>
+
+        <section id="expenseView" class="expense-view" hidden>
+          <div id="expenseBalanceStrip" class="expense-balance-strip" aria-live="polite"></div>
+          <div id="expenseCategoryFilters" class="expense-category-filters" role="toolbar" data-i18n-aria-label="expenses.filterCategories" aria-label="Filter expenses by category"></div>
+          <div id="expenseList" class="expense-list" role="listbox" tabindex="0" data-i18n-aria-label="expenses.timeline" aria-label="Expenses and settlements"></div>
         </section>
 
         <div id="searchView" class="stack" hidden>
@@ -694,6 +716,114 @@
         <div class="row dialog-actions">
           <button class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="todoCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="expenseDialog" class="dialog expense-dialog">
+      <form id="expenseForm" method="dialog" class="dialog-card expense-dialog-card">
+        <div class="dialog-head">
+          <div>
+            <div id="expenseDialogTitle" class="dialog-title" data-i18n="expenses.editTitle">Edit expense</div>
+            <div id="expenseDialogMeta" class="dialog-meta muted"></div>
+          </div>
+          <button id="expenseCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+
+        <div class="grid dialog-grid expense-main-fields">
+          <label class="col-span-2">
+            <span data-i18n="expenses.description">Description</span>
+            <input id="expenseDescription" type="text" autocomplete="off" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.date">Date</span>
+            <input id="expenseDate" type="date" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.amount">Amount</span>
+            <input id="expenseAmount" type="text" inputmode="decimal" autocomplete="off" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.currency">Currency</span>
+            <input id="expenseCurrency" type="text" inputmode="text" maxlength="3" value="EUR" autocomplete="off" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.category">Category</span>
+            <select id="expenseCategory"></select>
+          </label>
+          <label class="col-span-2">
+            <span data-i18n="entry.assignment">Project / section</span>
+            <input id="expenseAssignment" type="text" spellcheck="false" list="expenseAssignmentList" data-i18n-placeholder="entry.noProject" placeholder="No project" autocomplete="off" />
+            <datalist id="expenseAssignmentList"></datalist>
+          </label>
+          <label>
+            <span data-i18n="expenses.splitRule">Split rule</span>
+            <select id="expenseAllocationType">
+              <option value="equal" data-i18n="expenses.splitEqual">Equal</option>
+              <option value="percentage" data-i18n="expenses.splitPercentage">Percentage</option>
+              <option value="shares" data-i18n="expenses.splitShares">Shares</option>
+              <option value="exact" data-i18n="expenses.splitExact">Exact amounts</option>
+            </select>
+          </label>
+          <label class="col-span-2">
+            <span data-i18n="expenses.notes">Notes</span>
+            <textarea id="expenseNotes" rows="3"></textarea>
+          </label>
+        </div>
+
+        <div class="expense-split-heading">
+          <span data-i18n="expenses.participant">Participant</span>
+          <span data-i18n="expenses.paid">Paid</span>
+          <span id="expenseOwedHeading" data-i18n="expenses.owed">Owed</span>
+        </div>
+        <div id="expenseSplitRows" class="expense-split-rows"></div>
+
+        <div class="row dialog-actions">
+          <button id="expenseDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n="common.delete">Delete</button>
+          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="expenseCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="expenseSettlementDialog" class="dialog expense-settlement-dialog">
+      <div class="dialog-card expense-settlement-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="expenses.settle">Settle balances</div>
+            <div class="dialog-meta muted" data-i18n="expenses.settleMeta">Suggested payments are calculated independently per currency.</div>
+          </div>
+          <button id="expenseSettlementCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <div id="expenseSettlementList" class="expense-settlement-list"></div>
+      </div>
+    </dialog>
+
+    <dialog id="expenseInventoryDialog" class="dialog expense-inventory-dialog">
+      <form id="expenseInventoryForm" method="dialog" class="dialog-card expense-inventory-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="expenses.inventory">Participants and categories</div>
+            <div class="dialog-meta muted" data-i18n="expenses.inventoryMeta">Stable keys remain unchanged when names are edited.</div>
+          </div>
+          <button id="expenseInventoryCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <section class="expense-inventory-section">
+          <div class="expense-inventory-heading">
+            <strong data-i18n="expenses.participants">Participants</strong>
+            <button id="expenseAddParticipantBtn" class="btn btn-secondary" type="button" data-i18n="expenses.addParticipant">Add participant</button>
+          </div>
+          <div id="expenseParticipantList" class="expense-inventory-list"></div>
+        </section>
+        <section class="expense-inventory-section">
+          <div class="expense-inventory-heading">
+            <strong data-i18n="expenses.categories">Categories</strong>
+            <button id="expenseAddCategoryBtn" class="btn btn-secondary" type="button" data-i18n="expenses.addCategory">Add category</button>
+          </div>
+          <div id="expenseCategoryList" class="expense-inventory-list"></div>
+        </section>
+        <div class="row dialog-actions">
+          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="expenseInventoryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </dialog>

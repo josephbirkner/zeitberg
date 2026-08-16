@@ -11,7 +11,8 @@ import {
     WorkspaceRegistry,
 } from "./config.js";
 import { createHostedDataSource, LocalDataSource } from "./datasource.js";
-import { EntryStore, TodoStore } from "./store.js";
+import { EntryStore, ExpenseStore, TodoStore } from "./store.js";
+import { ExpenseView } from "./expense.view.js";
 import { SearchView } from "./search.view.js";
 import { TodoView } from "./todo.view.js";
 import { WeekView } from "./week.view.js";
@@ -25,7 +26,15 @@ import {
     TimeContext,
     utcNowIso,
 } from "./utils.js";
-import { Manifest, ProjectList, TodoList, WeekRequirements, Workspace } from "./model.js";
+import {
+    ExpenseDocument,
+    ExpenseManifest,
+    Manifest,
+    ProjectList,
+    TodoList,
+    WeekRequirements,
+    Workspace,
+} from "./model.js";
 import { LocaleService, resolveLocale } from "./locale.js";
 import {
     consumeOAuthCallback,
@@ -654,10 +663,12 @@ class App {
         this.timeContext = new TimeContext(this.config.timezone);
         this.store = new EntryStore(this.timeContext);
         this.todoStore = new TodoStore(this.store);
+        this.expenseStore = new ExpenseStore(this.store);
         this.chunkCache = new ChunkCache();
         this.draftJournal = new DraftJournal();
         this.repositorySummary = "";
         this.todoSummary = "";
+        this.expenseSummary = "";
         /** @type {Workspace | null} */
         this.workspace = null;
 
@@ -680,6 +691,7 @@ class App {
         this.workspaceSettingsBtn = getRequiredElement("workspaceSettingsBtn", HTMLButtonElement);
         this.menuWeekBtn = getRequiredElement("menuWeekBtn", HTMLButtonElement);
         this.menuTodoBtn = getRequiredElement("menuTodoBtn", HTMLButtonElement);
+        this.menuExpenseBtn = getRequiredElement("menuExpenseBtn", HTMLButtonElement);
         this.menuSearchBtn = getRequiredElement("menuSearchBtn", HTMLButtonElement);
         this.appZoomOutBtn = getRequiredElement("appZoomOutBtn", HTMLButtonElement);
         this.appZoomResetBtn = getRequiredElement("appZoomResetBtn", HTMLButtonElement);
@@ -782,6 +794,44 @@ class App {
         this.todoPrioritySelect = getRequiredElement("todoPriority", HTMLSelectElement);
         this.todoLabelsInput = getRequiredElement("todoLabels", HTMLInputElement);
         this.todoDialogMetaEl = getRequiredElement("todoDialogMeta", HTMLElement);
+
+        this.expenseViewEl = getRequiredElement("expenseView", HTMLElement);
+        this.expenseBalanceStripEl = getRequiredElement("expenseBalanceStrip", HTMLElement);
+        this.expenseCategoryFiltersEl = getRequiredElement("expenseCategoryFilters", HTMLElement);
+        this.expenseListEl = getRequiredElement("expenseList", HTMLElement);
+        this.expenseTopbarControlsEl = getRequiredElement("expenseTopbarControls", HTMLElement);
+        this.expenseAddBtn = getRequiredElement("expenseAddBtn", HTMLButtonElement);
+        this.expenseSettleBtn = getRequiredElement("expenseSettleBtn", HTMLButtonElement);
+        this.expenseInventoryBtn = getRequiredElement("expenseInventoryBtn", HTMLButtonElement);
+        this.expenseDialog = getRequiredElement("expenseDialog", HTMLDialogElement);
+        this.expenseForm = getRequiredElement("expenseForm", HTMLFormElement);
+        this.expenseDialogTitleEl = getRequiredElement("expenseDialogTitle", HTMLElement);
+        this.expenseDialogMetaEl = getRequiredElement("expenseDialogMeta", HTMLElement);
+        this.expenseCloseBtn = getRequiredElement("expenseCloseBtn", HTMLButtonElement);
+        this.expenseCancelBtn = getRequiredElement("expenseCancelBtn", HTMLButtonElement);
+        this.expenseDeleteBtn = getRequiredElement("expenseDeleteBtn", HTMLButtonElement);
+        this.expenseDescriptionInput = getRequiredElement("expenseDescription", HTMLInputElement);
+        this.expenseDateInput = getRequiredElement("expenseDate", HTMLInputElement);
+        this.expenseAmountInput = getRequiredElement("expenseAmount", HTMLInputElement);
+        this.expenseCurrencyInput = getRequiredElement("expenseCurrency", HTMLInputElement);
+        this.expenseCategorySelect = getRequiredElement("expenseCategory", HTMLSelectElement);
+        this.expenseAssignmentInput = getRequiredElement("expenseAssignment", HTMLInputElement);
+        this.expenseAssignmentListEl = getRequiredElement("expenseAssignmentList", HTMLDataListElement);
+        this.expenseAllocationTypeSelect = getRequiredElement("expenseAllocationType", HTMLSelectElement);
+        this.expenseNotesInput = getRequiredElement("expenseNotes", HTMLTextAreaElement);
+        this.expenseOwedHeadingEl = getRequiredElement("expenseOwedHeading", HTMLElement);
+        this.expenseSplitRowsEl = getRequiredElement("expenseSplitRows", HTMLElement);
+        this.expenseSettlementDialog = getRequiredElement("expenseSettlementDialog", HTMLDialogElement);
+        this.expenseSettlementCloseBtn = getRequiredElement("expenseSettlementCloseBtn", HTMLButtonElement);
+        this.expenseSettlementListEl = getRequiredElement("expenseSettlementList", HTMLElement);
+        this.expenseInventoryDialog = getRequiredElement("expenseInventoryDialog", HTMLDialogElement);
+        this.expenseInventoryForm = getRequiredElement("expenseInventoryForm", HTMLFormElement);
+        this.expenseInventoryCloseBtn = getRequiredElement("expenseInventoryCloseBtn", HTMLButtonElement);
+        this.expenseInventoryCancelBtn = getRequiredElement("expenseInventoryCancelBtn", HTMLButtonElement);
+        this.expenseAddParticipantBtn = getRequiredElement("expenseAddParticipantBtn", HTMLButtonElement);
+        this.expenseAddCategoryBtn = getRequiredElement("expenseAddCategoryBtn", HTMLButtonElement);
+        this.expenseParticipantListEl = getRequiredElement("expenseParticipantList", HTMLElement);
+        this.expenseCategoryListEl = getRequiredElement("expenseCategoryList", HTMLElement);
 
         this.providerInput = getRequiredElement("providerInput", HTMLSelectElement);
         this.landingProviderStatusTextEl = getRequiredElement("landingProviderStatusText", HTMLElement);
@@ -957,6 +1007,64 @@ class App {
             onStateChange: () => this.scheduleRouteReplace(),
         });
 
+        this.expenseView = new ExpenseView({
+            store: this.expenseStore,
+            projectStore: this.store,
+            dataSource: this.dataSource,
+            draftJournal: this.draftJournal,
+            draftNamespace: this.buildDraftNamespace(),
+            timeContext: this.timeContext,
+            locale: this.locale,
+            elements: {
+                expenseView: this.expenseViewEl,
+                expenseBalanceStrip: this.expenseBalanceStripEl,
+                expenseCategoryFilters: this.expenseCategoryFiltersEl,
+                expenseList: this.expenseListEl,
+                searchInput: this.searchInput,
+                expenseAddBtn: this.expenseAddBtn,
+                expenseSettleBtn: this.expenseSettleBtn,
+                expenseInventoryBtn: this.expenseInventoryBtn,
+                editorBadge: this.editorBadgeEl,
+                expenseDialog: this.expenseDialog,
+                expenseForm: this.expenseForm,
+                expenseDialogTitle: this.expenseDialogTitleEl,
+                expenseDialogMeta: this.expenseDialogMetaEl,
+                expenseCloseBtn: this.expenseCloseBtn,
+                expenseCancelBtn: this.expenseCancelBtn,
+                expenseDeleteBtn: this.expenseDeleteBtn,
+                expenseDescription: this.expenseDescriptionInput,
+                expenseDate: this.expenseDateInput,
+                expenseAmount: this.expenseAmountInput,
+                expenseCurrency: this.expenseCurrencyInput,
+                expenseCategory: this.expenseCategorySelect,
+                expenseAssignment: this.expenseAssignmentInput,
+                expenseAssignmentList: this.expenseAssignmentListEl,
+                expenseAllocationType: this.expenseAllocationTypeSelect,
+                expenseNotes: this.expenseNotesInput,
+                expenseOwedHeading: this.expenseOwedHeadingEl,
+                expenseSplitRows: this.expenseSplitRowsEl,
+                expenseSettlementDialog: this.expenseSettlementDialog,
+                expenseSettlementCloseBtn: this.expenseSettlementCloseBtn,
+                expenseSettlementList: this.expenseSettlementListEl,
+                expenseInventoryDialog: this.expenseInventoryDialog,
+                expenseInventoryForm: this.expenseInventoryForm,
+                expenseInventoryCloseBtn: this.expenseInventoryCloseBtn,
+                expenseInventoryCancelBtn: this.expenseInventoryCancelBtn,
+                expenseAddParticipantBtn: this.expenseAddParticipantBtn,
+                expenseAddCategoryBtn: this.expenseAddCategoryBtn,
+                expenseParticipantList: this.expenseParticipantListEl,
+                expenseCategoryList: this.expenseCategoryListEl,
+            },
+            onToast: (message, timeout, tone) => this.toast(message, timeout, tone),
+            onBusy: (busy) => this.setBusy(busy),
+            onSaved: () => this.refreshRepoLabel(),
+            onStatsChanged: (summary) => {
+                this.expenseSummary = summary;
+                this.refreshDataBadge();
+            },
+            onStateChange: () => this.scheduleRouteReplace(),
+        });
+
         this.projectDialog = new ProjectDialog({
             store: this.store,
             dataSource: this.dataSource,
@@ -1010,6 +1118,7 @@ class App {
         this.weekView.refreshLocale();
         this.searchView.refreshLocale();
         this.todoView.refreshLocale();
+        this.expenseView.refreshLocale();
         this.renderWorkspaceRegistry();
         this.refreshRepoLabel();
     }
@@ -1341,8 +1450,10 @@ class App {
             "zeitplural.json",
             "data/projects.json",
             "data/todos.json",
+            "data/expenses.json",
             "data/week-requirements.json",
             "data/index/entries-manifest.json",
+            "data/index/expenses-manifest.json",
         ];
         const files = await Promise.all(
             paths.map(async (path) => {
@@ -1752,6 +1863,7 @@ class App {
         this.rememberInput.checked = this.configService.isWorkspaceCredentialRemembered(connection.id);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
+        this.expenseView.setDraftNamespace(this.buildDraftNamespace());
     }
 
     /**
@@ -1761,7 +1873,12 @@ class App {
      * @returns {import("./routing.js").AppRoute}
      */
     routeForWorkspaceConnection(connection) {
-        const component = this.state.activeTab === "todos" ? "todos" : "time";
+        const component =
+            this.state.activeTab === "todos"
+                ? "todos"
+                : this.state.activeTab === "expenses"
+                  ? "expenses"
+                  : "time";
         const panel = this.state.activeTab === "search" ? "search" : "main";
         return {
             version: 1,
@@ -1825,17 +1942,22 @@ class App {
             this.closeWorkspaceSettings();
             return;
         }
-        if (this.weekView.saveInFlight || this.todoView.saveInFlight) {
+        if (this.weekView.saveInFlight || this.todoView.saveInFlight || this.expenseView.saveInFlight) {
             this.toast(this.locale.t("toast.waitSaveSwitch"), 4000);
             return;
         }
         if (connection.provider === "local") {
-            await Promise.all([this.weekView.flushDraftWrites(), this.todoView.flushDraftWrites()]);
+            await Promise.all([
+                this.weekView.flushDraftWrites(),
+                this.todoView.flushDraftWrites(),
+                this.expenseView.flushDraftWrites(),
+            ]);
             this.activateWorkspaceConnection(connection, "");
             this.pendingRoute = requestedRoute || this.routeForWorkspaceConnection(connection);
             this.dataSource = new LocalDataSource(this.config);
             this.weekView.setDataSource(this.dataSource);
             this.todoView.setDataSource(this.dataSource);
+            this.expenseView.setDataSource(this.dataSource);
             this.projectDialog.setDataSource(this.dataSource);
             this.closeWorkspaceSettings("none");
             await this.reloadData();
@@ -1864,7 +1986,11 @@ class App {
             this.setBusy(false);
         }
 
-        await Promise.all([this.weekView.flushDraftWrites(), this.todoView.flushDraftWrites()]);
+        await Promise.all([
+            this.weekView.flushDraftWrites(),
+            this.todoView.flushDraftWrites(),
+            this.expenseView.flushDraftWrites(),
+        ]);
         this.activateWorkspaceConnection(connection, credential);
         this.pendingRoute = requestedRoute || this.routeForWorkspaceConnection(connection);
         this.closeWorkspaceSettings("none");
@@ -1915,7 +2041,7 @@ class App {
      * @returns {void}
      */
     disconnectWorkspace(connectionId) {
-        if (this.weekView.saveInFlight || this.todoView.saveInFlight) {
+        if (this.weekView.saveInFlight || this.todoView.saveInFlight || this.expenseView.saveInFlight) {
             this.toast(this.locale.t("toast.waitSaveDisconnect"), 4000);
             return;
         }
@@ -2171,6 +2297,15 @@ class App {
                 state: this.todoView.getRouteState(),
             };
         }
+        if (this.state.activeTab === "expenses") {
+            return {
+                version: 1,
+                component: "expenses",
+                panel: globalPanel || "main",
+                workspace: this.getCurrentWorkspaceRouteLocator(),
+                state: this.expenseView.getRouteState(),
+            };
+        }
 
         const underlyingPanel = this.state.activeTab === "search" ? "search" : "main";
         const panel = globalPanel || underlyingPanel;
@@ -2211,10 +2346,11 @@ class App {
     /**
      * Maps a component-first route to the existing view identifiers used by AppState.
      * @param {import("./routing.js").AppRoute} route Parsed route.
-     * @returns {"week" | "todos" | "search"}
+     * @returns {"week" | "todos" | "expenses" | "search"}
      */
     tabForRoute(route) {
         if (route.component === "todos") return "todos";
+        if (route.component === "expenses") return "expenses";
         if (
             route.component === "time" &&
             (route.panel === "search" || (route.panel === "workspaces" && route.state.returnPanel === "search"))
@@ -2226,7 +2362,7 @@ class App {
 
     /**
      * Normalizes a requested component against both the loaded workspace and the components implemented in this release.
-     * Unavailable TODO or future Expense routes fall back to an enabled Time component, then to TODOs, without leaving a broken blank surface.
+     * An unavailable component falls back to Time, TODOs, or Expenses in that order without leaving a broken blank surface.
      * @param {import("./routing.js").AppRoute} route Requested route.
      * @returns {import("./routing.js").AppRoute}
      */
@@ -2234,11 +2370,16 @@ class App {
         if (!this.workspace || !route.component) return this.buildCurrentRoute();
         const hasTime = this.workspace.hasComponent("time_tracking");
         const hasTodos = this.workspace.hasComponent("todos");
+        const hasExpenses = this.workspace.hasComponent("expenses");
         let component = route.component;
         let panel = route.panel;
 
-        if (component === "expenses" || (component === "time" && !hasTime) || (component === "todos" && !hasTodos)) {
-            component = hasTime ? "time" : hasTodos ? "todos" : "time";
+        const unavailable =
+            (component === "time" && !hasTime) ||
+            (component === "todos" && !hasTodos) ||
+            (component === "expenses" && !hasExpenses);
+        if (unavailable) {
+            component = hasTime ? "time" : hasTodos ? "todos" : hasExpenses ? "expenses" : "time";
             panel = "main";
         }
         if (component !== "time" && panel === "search") panel = "main";
@@ -2261,6 +2402,8 @@ class App {
             if (tab === "search") this.searchView.restoreRouteState(normalized.state);
         } else if (normalized.component === "todos") {
             this.todoView.restoreRouteState(normalized.state);
+        } else if (normalized.component === "expenses") {
+            this.expenseView.restoreRouteState(normalized.state);
         }
         if (normalized.panel === "workspaces") this.openWorkspaceSettings("none");
         else this.closeWorkspaceSettings("none");
@@ -2418,6 +2561,7 @@ class App {
             this.dataSource = new LocalDataSource(this.config);
             this.weekView.setDataSource(this.dataSource);
             this.todoView.setDataSource(this.dataSource);
+            this.expenseView.setDataSource(this.dataSource);
             this.projectDialog.setDataSource(this.dataSource);
             this.pendingRoute = this.pendingRoute
                 ? { ...this.pendingRoute, workspace: selected.toLocator() }
@@ -2513,6 +2657,7 @@ class App {
         });
         this.menuWeekBtn.addEventListener("click", () => this.setTab("week"));
         this.menuTodoBtn.addEventListener("click", () => this.setTab("todos"));
+        this.menuExpenseBtn.addEventListener("click", () => this.setTab("expenses"));
         this.menuSearchBtn.addEventListener("click", () => {
             this.setTab("search");
             queueMicrotask(() => this.searchInput.focus());
@@ -2526,7 +2671,14 @@ class App {
         this.logoutBtn.addEventListener("click", () => this.logout());
         this.reloadDataBtn.addEventListener("click", () => void this.reloadData());
         this.searchInput.addEventListener("input", () => {
-            if (this.appSection.hidden || this.state.activeTab === "search" || this.state.activeTab === "todos") return;
+            if (
+                this.appSection.hidden ||
+                this.state.activeTab === "search" ||
+                this.state.activeTab === "todos" ||
+                this.state.activeTab === "expenses"
+            ) {
+                return;
+            }
             this.searchView.setSearchQuery(this.searchInput.value);
             if (this.searchInput.value.trim()) this.setTab("search");
         });
@@ -2685,7 +2837,7 @@ class App {
 
             if (keyLower === "k") {
                 ev.preventDefault();
-                if (this.state.activeTab !== "todos") this.setTab("search");
+                if (this.state.activeTab !== "todos" && this.state.activeTab !== "expenses") this.setTab("search");
                 queueMicrotask(() => {
                     try {
                         this.searchInput.focus();
@@ -2700,6 +2852,12 @@ class App {
             if (keyLower === "t") {
                 ev.preventDefault();
                 this.setTab("todos");
+                return;
+            }
+
+            if (keyLower === "e") {
+                ev.preventDefault();
+                this.setTab("expenses");
                 return;
             }
 
@@ -2723,6 +2881,7 @@ class App {
         }
 
         if (this.state.activeTab === "todos" && this.todoView.handleKeydown(ev)) return;
+        if (this.state.activeTab === "expenses" && this.expenseView.handleKeydown(ev)) return;
         this.weekView.handleKeydown(ev);
     }
 
@@ -2734,6 +2893,10 @@ class App {
     saveActiveView() {
         if (this.state.activeTab === "todos") {
             void this.todoView.saveNow();
+            return;
+        }
+        if (this.state.activeTab === "expenses") {
+            void this.expenseView.saveNow();
             return;
         }
         if (this.state.activeTab === "week") {
@@ -2848,6 +3011,7 @@ class App {
         this.setAutomaticAppZoom(false);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
+        this.expenseView.setDraftNamespace(this.buildDraftNamespace());
         this.providerInput.value = this.config.provider || "github";
         this.repositoryInput.value =
             this.config.repositoryUrl || formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
@@ -2959,6 +3123,7 @@ class App {
         this.capabilityImportOpenBtn.disabled = isBusy;
         this.menuWeekBtn.disabled = isBusy;
         this.menuTodoBtn.disabled = isBusy;
+        this.menuExpenseBtn.disabled = isBusy;
         this.menuSearchBtn.disabled = isBusy;
         this.prevWeekBtn.disabled = isBusy;
         this.nextWeekBtn.disabled = isBusy;
@@ -2982,6 +3147,7 @@ class App {
         this.weekReqComment.disabled = isBusy;
         this.weekView.setBusy(isBusy);
         this.todoView.setBusy(isBusy);
+        this.expenseView.setBusy(isBusy);
         if (!isBusy) this.refreshOAuthControls();
     }
 
@@ -3007,36 +3173,43 @@ class App {
      */
     updateSearchControls() {
         const searchesTodos = this.state.activeTab === "todos";
-        this.searchInput.value = searchesTodos ? this.todoView.getSearchQuery() : this.searchView.getSearchQuery();
+        const searchesExpenses = this.state.activeTab === "expenses";
+        this.searchInput.value = searchesTodos
+            ? this.todoView.getSearchQuery()
+            : searchesExpenses
+              ? this.expenseView.getSearchQuery()
+              : this.searchView.getSearchQuery();
+        const searchKey = searchesTodos ? "Todos" : searchesExpenses ? "Expenses" : "Time";
         this.searchInput.placeholder = this.locale.t(
-            searchesTodos ? "topbar.searchTodosPlaceholder" : "topbar.searchTimePlaceholder",
+            `topbar.search${searchKey}Placeholder`,
         );
         this.searchInput.setAttribute(
             "aria-label",
-            this.locale.t(searchesTodos ? "topbar.searchTodos" : "topbar.searchTime"),
+            this.locale.t(`topbar.search${searchKey}`),
         );
         this.globalSearchEl.title = this.locale.t(
-            searchesTodos ? "topbar.searchTodosTitle" : "topbar.searchTimeTitle",
+            `topbar.search${searchKey}Title`,
         );
         this.searchFromLabelEl.textContent = this.locale.t("search.from", { timezone: this.timeContext.timeZone });
         this.searchToLabelEl.textContent = this.locale.t("search.to", { timezone: this.timeContext.timeZone });
     }
 
     /**
-     * Switches between Week, TODO, and Search tabs.
+     * Switches between Week, TODO, Expenses, and Search tabs.
      * Keeps the main UI flow and data loading coordinated.
-     * @param {"week" | "todos" | "search"} tab
+     * @param {"week" | "todos" | "expenses" | "search"} tab
      * @param {"push" | "replace" | "none"} [historyMode] Whether this navigation should create, replace, or leave browser history.
      * @returns {void}
      */
     setTab(tab, historyMode = "push") {
-        const next = tab === "search" || tab === "todos" ? tab : "week";
+        const next = tab === "search" || tab === "todos" || tab === "expenses" ? tab : "week";
         this.state.setActiveTab(next);
         this.updateSearchControls();
         this.topbarEl.dataset.activeTab = next;
         for (const [button, isCurrent] of [
             [this.menuWeekBtn, next === "week"],
             [this.menuTodoBtn, next === "todos"],
+            [this.menuExpenseBtn, next === "expenses"],
             [this.menuSearchBtn, next === "search"],
         ]) {
             if (!(button instanceof HTMLButtonElement)) continue;
@@ -3045,10 +3218,12 @@ class App {
         }
         this.weekView.setActive(next === "week");
         this.todoView.setActive(next === "todos");
+        this.expenseView.setActive(next === "expenses");
         this.searchView.setActive(next === "search");
         setVisible(this.weekControlsEl, next === "week" && !this.topbarEl.hidden);
         setVisible(this.todoTopbarControlsEl, next === "todos" && !this.topbarEl.hidden);
-        setVisible(this.editorBadgeEl, next !== "search" && !this.topbarEl.hidden);
+        setVisible(this.expenseTopbarControlsEl, next === "expenses" && !this.topbarEl.hidden);
+        setVisible(this.editorBadgeEl, (next === "week" || next === "todos" || next === "expenses") && !this.topbarEl.hidden);
         this.refreshDataBadge();
         if (historyMode !== "none") this.writeCurrentRoute(historyMode);
     }
@@ -3086,6 +3261,7 @@ class App {
     handleProjectsSaved(projectList) {
         this.weekView.setProjects(projectList);
         this.todoView.setProjects();
+        this.expenseView.setProjects();
         this.markSearchDirty();
     }
 
@@ -3096,26 +3272,34 @@ class App {
      */
     refreshRepoLabel() {
         const manifest = this.store.getManifest();
-        if (!manifest) {
-            this.repositorySummary = "";
-            this.refreshDataBadge();
-            return;
-        }
-
+        const expenseManifest = this.expenseStore.getManifest();
         const totals = [];
-        totals.push(
-            this.locale.t("data.weekFiles", { count: this.locale.formatNumber(manifest.chunks.length) }),
-        );
-        if (typeof manifest.total_entries === "number" && Number.isFinite(manifest.total_entries)) {
-            totals.push(this.locale.t("data.entries", { count: this.locale.formatNumber(manifest.total_entries) }));
+        if (manifest) {
+            totals.push(
+                this.locale.t("data.weekFiles", { count: this.locale.formatNumber(manifest.chunks.length) }),
+            );
+            if (typeof manifest.total_entries === "number" && Number.isFinite(manifest.total_entries)) {
+                totals.push(this.locale.t("data.entries", { count: this.locale.formatNumber(manifest.total_entries) }));
+            }
         }
-        totals.push(
-            this.locale.t("data.todos", { count: this.locale.formatNumber(this.todoStore.getTodos().length) }),
-        );
-        if (manifest.generated_at) {
+        if (this.workspace?.hasComponent("todos")) {
+            totals.push(
+                this.locale.t("data.todos", { count: this.locale.formatNumber(this.todoStore.getTodos().length) }),
+            );
+        }
+        if (this.workspace?.hasComponent("expenses")) {
+            totals.push(
+                this.locale.t("data.expenses", {
+                    count: this.locale.formatNumber(this.expenseStore.getExpenses().length),
+                }),
+            );
+        }
+        const generatedTimestamps = [manifest?.generated_at || "", expenseManifest?.generated_at || ""].sort();
+        const generatedAt = generatedTimestamps[generatedTimestamps.length - 1] || "";
+        if (generatedAt) {
             totals.push(
                 this.locale.t("data.manifestAt", {
-                    date: this.locale.formatDate(manifest.generated_at, this.timeContext.timeZone, {
+                    date: this.locale.formatDate(generatedAt, this.timeContext.timeZone, {
                         dateStyle: "short",
                         timeStyle: "short",
                     }),
@@ -3149,7 +3333,12 @@ class App {
      * @returns {void}
      */
     refreshDataBadge() {
-        this.repoLabelEl.textContent = this.state.activeTab === "todos" ? this.todoSummary : this.repositorySummary;
+        this.repoLabelEl.textContent =
+            this.state.activeTab === "todos"
+                ? this.todoSummary
+                : this.state.activeTab === "expenses"
+                  ? this.expenseSummary
+                  : this.repositorySummary;
     }
 
     /**
@@ -3173,6 +3362,11 @@ class App {
         }
         this.workspace = workspace;
         this.dataSource.setWorkspace(workspace);
+        setVisible(this.menuWeekBtn, workspace.hasComponent("time_tracking"));
+        setVisible(this.menuSearchBtn, workspace.hasComponent("time_tracking"));
+        setVisible(this.menuTodoBtn, workspace.hasComponent("todos"));
+        setVisible(this.menuExpenseBtn, workspace.hasComponent("expenses"));
+        setVisible(this.projectsBtn, Boolean(workspace.resources.projects));
         this.timeContext.setTimeZone(workspace.timezone);
         this.config = { ...this.config, timezone: workspace.timezone };
         this.state.setConfig(this.config);
@@ -3188,6 +3382,7 @@ class App {
         }
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
+        this.expenseView.setDraftNamespace(this.buildDraftNamespace());
     }
 
     /**
@@ -3222,6 +3417,7 @@ class App {
         const projectList = ProjectList.fromRaw(raw || {});
         this.store.setProjectList(projectList);
         this.weekView.setProjects(projectList);
+        this.expenseView.setProjects();
         this.markSearchDirty();
     }
 
@@ -3266,6 +3462,43 @@ class App {
         const raw = await this.dataSource.fetchTodos();
         this.todoStore.setTodoList(TodoList.fromRaw(raw || {}));
         await this.todoView.initializeLoadedData();
+        this.refreshRepoLabel();
+    }
+
+    /**
+     * Loads and verifies the exact expense document against its workspace-configured integrity manifest, then restores any durable browser draft.
+     * @returns {Promise<void>}
+     */
+    async fetchExpenses() {
+        this.setProgress(
+            0,
+            1,
+            this.locale.t(this.isLocalMode ? "loading.expensesLocal" : "loading.expenses"),
+        );
+        const [content, manifestRaw] = await Promise.all([
+            this.dataSource.fetchExpensesText(),
+            this.dataSource.fetchExpensesManifest(),
+        ]);
+        const manifest = ExpenseManifest.fromRaw(manifestRaw, this.dataSource.getExpensesPath());
+        manifest.verifyContent(content);
+        let raw;
+        try {
+            raw = JSON.parse(content);
+        } catch {
+            throw new Error("expenses.json is not valid JSON.");
+        }
+        const document = ExpenseDocument.fromRaw(raw);
+        if (
+            manifest.participants !== document.participants.length ||
+            manifest.categories !== document.categories.length ||
+            manifest.expenses !== document.expenses.length ||
+            manifest.transfers !== document.transfers.length
+        ) {
+            throw new Error("Expense manifest counts do not match expenses.json.");
+        }
+        this.expenseStore.setDocument(document);
+        this.expenseStore.setManifest(manifest);
+        await this.expenseView.initializeLoadedData();
         this.refreshRepoLabel();
     }
 
@@ -3449,16 +3682,35 @@ class App {
         this.statsEl.textContent = "";
         await this.weekView.flushDraftWrites();
         await this.todoView.flushDraftWrites();
+        await this.expenseView.flushDraftWrites();
         this.weekView.reset();
         this.store.clear();
         this.todoStore.clear();
         this.todoView.reset();
+        this.expenseStore.clear();
+        this.expenseView.reset();
         try {
             await this.fetchWorkspace();
-            await Promise.all([this.fetchManifest(), this.fetchProjects()]);
-            await Promise.all([this.fetchWeekRequirements(), this.fetchTodos()]);
-            await this.loadAllChunks();
+            await this.fetchProjects();
+            const componentLoads = [];
+            if (this.workspace?.hasComponent("time_tracking")) {
+                componentLoads.push(this.fetchManifest(), this.fetchWeekRequirements());
+            }
+            if (this.workspace?.hasComponent("todos")) componentLoads.push(this.fetchTodos());
+            if (this.workspace?.hasComponent("expenses")) componentLoads.push(this.fetchExpenses());
+            await Promise.all(componentLoads);
+            if (this.workspace?.hasComponent("time_tracking")) {
+                await this.loadAllChunks();
+            } else {
+                this.state.setWeekStart(null);
+                this.state.setLatestWeekStart(null);
+                this.weekView.reset();
+                this.searchView.reset();
+            }
             const requestedRoute = this.pendingRoute;
+            if (!requestedRoute && !this.workspace?.hasComponent("time_tracking")) {
+                this.state.setActiveTab(this.workspace?.hasComponent("todos") ? "todos" : "expenses");
+            }
             this.routeRestoreInProgress = Boolean(requestedRoute);
             this.showApplicationScreen();
             if (requestedRoute) {
@@ -3495,6 +3747,8 @@ class App {
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDataSource(this.dataSource);
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
+        this.expenseView.setDataSource(this.dataSource);
+        this.expenseView.setDraftNamespace(this.buildDraftNamespace());
         this.projectDialog.setDataSource(this.dataSource);
         this.setAuthStatus(this.locale.t("status.connecting"));
         const provider = this.activeWorkspaceConnection?.provider || this.config.provider || "custom";
@@ -3548,20 +3802,24 @@ class App {
         this.pendingRoute = null;
         this.store.clear();
         this.todoStore.clear();
+        this.expenseStore.clear();
         this.chunkCache.clearMemory();
         this.weekView.reset();
         this.todoView.reset();
+        this.expenseView.reset();
         this.searchView.reset();
         this.searchInput.value = "";
         this.setProgress(0, 1, "");
         this.setAuthStatus(this.locale.t("status.notLoggedIn"));
         this.repositorySummary = "";
         this.todoSummary = "";
+        this.expenseSummary = "";
         this.refreshDataBadge();
         this.projectDialog.close();
         this.closeWorkspaceSettings("none");
         setVisible(this.weekControlsEl, false);
         setVisible(this.todoTopbarControlsEl, false);
+        setVisible(this.expenseTopbarControlsEl, false);
         setVisible(this.reloadDataBtn, false);
         setVisible(this.logoutBtn, false);
         setVisible(this.projectsBtn, false);

@@ -1,0 +1,426 @@
+/* Expense ledger, balances, split editor, settlement panel, and inventory. */
+
+body.app-mode #expenseView {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar[data-active-tab="expenses"] .global-search {
+  flex: 1;
+  max-width: 720px;
+}
+
+.expense-topbar-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.expense-topbar-controls .btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+}
+
+.expense-view {
+  min-height: 0;
+  background: color-mix(in srgb, var(--bg) 88%, var(--text) 12%);
+}
+
+.expense-balance-strip,
+.expense-category-filters {
+  flex: none;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+}
+
+.expense-balance-strip::-webkit-scrollbar,
+.expense-category-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.expense-balance-strip {
+  min-height: 38px;
+  padding: 5px 9px;
+}
+
+.expense-category-filters {
+  min-height: 39px;
+  padding: 5px 9px;
+  background: var(--surface-faint);
+}
+
+.expense-balance-chip,
+.expense-balance-balanced,
+.expense-category-filter {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+.expense-balance-chip.is-positive {
+  border-color: color-mix(in srgb, var(--accent-2) 55%, var(--border));
+  color: var(--accent-2);
+}
+
+.expense-balance-chip.is-negative {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
+}
+
+.expense-balance-balanced {
+  color: var(--muted);
+}
+
+.expense-category-filter {
+  --expense-category-color: var(--border);
+  min-height: 29px;
+  border-left: 4px solid var(--expense-category-color);
+  background: var(--surface-faint);
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.expense-category-filter:hover,
+.expense-category-filter:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.7);
+  color: var(--text);
+}
+
+.expense-category-filter[aria-pressed="true"] {
+  border-color: rgba(var(--accent-rgb), 0.9);
+  border-left-color: var(--expense-category-color);
+  background: rgba(var(--accent-rgb), 0.22);
+  color: var(--text);
+}
+
+.expense-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 5px 6px 20px;
+  outline: none;
+}
+
+.expense-list:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.42);
+}
+
+.expense-row {
+  --expense-category-color: var(--border);
+  position: relative;
+  min-height: 54px;
+  margin-bottom: 4px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--expense-category-color);
+  border-radius: 6px;
+  background: var(--surface-faint);
+  display: grid;
+  grid-template-columns: minmax(92px, 0.16fr) minmax(0, 1fr) minmax(90px, auto) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  cursor: default;
+}
+
+.expense-row.is-transfer {
+  border-left-color: var(--accent-2);
+}
+
+.expense-row:hover {
+  background: var(--surface-soft);
+}
+
+.expense-row.is-selected {
+  border-color: rgba(var(--accent-rgb), 0.56);
+  border-left-color: var(--expense-category-color);
+  background: rgba(var(--accent-rgb), 0.13);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.24);
+}
+
+.expense-row.is-transfer.is-selected {
+  border-left-color: var(--accent-2);
+}
+
+.expense-row-date {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+}
+
+.expense-row-body {
+  min-width: 0;
+}
+
+.expense-row-title,
+.expense-row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expense-row-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.expense-row-meta {
+  margin-top: 2px;
+  font-size: 0.58rem;
+}
+
+.expense-row-amount {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.expense-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.expense-row:hover .expense-row-actions,
+.expense-row.is-selected .expense-row-actions,
+.expense-row:focus-within .expense-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.expense-row-action {
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--control-bg);
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.expense-row-action:hover,
+.expense-row-action:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.75);
+  color: var(--text);
+}
+
+.expense-row-action.is-danger:hover,
+.expense-row-action.is-danger:focus-visible {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.expense-empty {
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 0.72rem;
+}
+
+.expense-dialog-card,
+.expense-inventory-card {
+  width: min(760px, calc(100vw - 24px));
+  max-height: min(900px, calc(100dvh - 24px));
+  overflow: auto;
+}
+
+.expense-settlement-card {
+  width: min(620px, calc(100vw - 24px));
+}
+
+.expense-main-fields {
+  margin-bottom: 12px;
+}
+
+.expense-split-heading,
+.expense-split-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.65fr) minmax(100px, 0.65fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.expense-split-heading {
+  padding: 7px 8px;
+  border-block: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.expense-split-rows {
+  margin-bottom: 10px;
+}
+
+.expense-split-row {
+  min-height: 44px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.expense-split-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.expense-split-row input {
+  min-width: 0;
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.expense-settlement-list {
+  display: grid;
+  gap: 6px;
+}
+
+.expense-settlement-row {
+  min-height: 48px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.7rem;
+}
+
+.expense-settlement-row .btn {
+  flex: none;
+}
+
+.expense-inventory-section + .expense-inventory-section {
+  margin-top: 18px;
+}
+
+.expense-inventory-heading {
+  min-height: 36px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.expense-inventory-heading strong {
+  font-size: 0.76rem;
+}
+
+.expense-inventory-list {
+  display: grid;
+  gap: 5px;
+}
+
+.expense-inventory-row {
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-faint);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.expense-category-row {
+  grid-template-columns: minmax(0, 1fr) 42px auto;
+}
+
+.expense-inventory-color {
+  width: 42px;
+  min-width: 42px;
+  padding: 3px;
+}
+
+.expense-inventory-archived {
+  margin: 0;
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+
+html.ui-narrow .expense-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 9px;
+}
+
+html.ui-narrow .expense-row-date {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+html.ui-narrow .expense-row-body {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+html.ui-narrow .expense-row-amount {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+html.ui-narrow .expense-row-actions {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+html.ui-narrow .expense-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+html.ui-narrow .expense-dialog-card,
+html.ui-narrow .expense-inventory-card,
+html.ui-narrow .expense-settlement-card {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+
+html.ui-narrow .expense-split-heading,
+html.ui-narrow .expense-split-row {
+  grid-template-columns: minmax(95px, 1fr) minmax(74px, 0.7fr) minmax(74px, 0.7fr);
+  gap: 5px;
+}
+
+html.ui-narrow .expense-dialog input,
+html.ui-narrow .expense-dialog select,
+html.ui-narrow .expense-dialog textarea,
+html.ui-narrow .expense-inventory-dialog input {
+  font-size: 16px;
+}
+
+html.ui-toolbar-compact .expense-topbar-controls .btn:nth-child(n + 3) {
+  display: none;
+}

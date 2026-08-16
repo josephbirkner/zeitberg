@@ -311,9 +311,11 @@ function parseViewState(component, panel, params) {
         if (openOnly !== null) state.openOnly = openOnly;
     } else if (component === "expenses") {
         const ledger = stringParameter(params, "ledger", 256);
+        const category = stringParameter(params, "category", 256);
         const query = stringParameter(params, "q", 1024);
         const selectedExpenseId = stringParameter(params, "expense", 256);
         if (ledger) state.ledger = ledger;
+        if (category) state.category = category;
         if (query) state.query = query;
         if (selectedExpenseId) state.selectedExpenseId = selectedExpenseId;
     }
@@ -473,6 +475,7 @@ export function formatAppRoute(route, basePath = "/") {
         setStateParameter(params, "open", state.openOnly);
     } else if (component === "expenses") {
         setStateParameter(params, "ledger", state.ledger);
+        setStateParameter(params, "category", state.category);
         setStateParameter(params, "q", state.query);
         setStateParameter(params, "expense", state.selectedExpenseId);
     }

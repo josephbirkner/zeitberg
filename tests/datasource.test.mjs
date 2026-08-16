@@ -64,6 +64,13 @@ function base64(value) {
 function makeWorkspace() {
     return Workspace.fromRaw({
         components: {
+            expenses: {
+                paths: {
+                    document: "data/expenses.json",
+                    manifest: "data/index/expenses-manifest.json",
+                },
+                type: "expenses",
+            },
             tasks: { paths: { document: "data/todos.json" }, type: "todos" },
             time: {
                 paths: {
@@ -182,6 +189,13 @@ test("GitHub issue writes can target a repository other than the workspace", asy
 test("GitHub data source bootstraps configured workspace document paths", async (context) => {
     const workspaceRaw = {
         components: {
+            expenses: {
+                paths: {
+                    document: "records/expenses.json",
+                    manifest: "records/expenses-manifest.json",
+                },
+                type: "expenses",
+            },
             tasks: { paths: { document: "records/todos.json" }, type: "todos" },
             time: {
                 paths: {
@@ -209,6 +223,8 @@ test("GitHub data source bootstraps configured workspace document paths", async 
             "records/projects.json": { projects: [], schema_version: 2 },
             "records/requirements.json": { default_required_hours: 40, schema_version: 2, weeks: [] },
             "records/todos.json": { schema_version: 3, todos: [] },
+            "records/expenses.json": { categories: [], expenses: [], participants: [], schema_version: 1, transfers: [] },
+            "records/expenses-manifest.json": { expenses: 0, schema_version: 1 },
         };
         return new Response(JSON.stringify(documents[path]), { status: documents[path] ? 200 : 404 });
     });
@@ -218,7 +234,14 @@ test("GitHub data source bootstraps configured workspace document paths", async 
         "token",
     );
     source.setWorkspace(Workspace.fromRaw(await source.fetchWorkspace()));
-    await Promise.all([source.fetchManifest(), source.fetchProjects(), source.fetchWeekRequirements(), source.fetchTodos()]);
+    await Promise.all([
+        source.fetchManifest(),
+        source.fetchProjects(),
+        source.fetchWeekRequirements(),
+        source.fetchTodos(),
+        source.fetchExpensesText(),
+        source.fetchExpensesManifest(),
+    ]);
 
     assert.deepEqual(requestedPaths, [
         "/repos/owner/repo/contents/config/workspace.json",
@@ -226,6 +249,8 @@ test("GitHub data source bootstraps configured workspace document paths", async 
         "/repos/owner/repo/contents/records/projects.json",
         "/repos/owner/repo/contents/records/requirements.json",
         "/repos/owner/repo/contents/records/todos.json",
+        "/repos/owner/repo/contents/records/expenses.json",
+        "/repos/owner/repo/contents/records/expenses-manifest.json",
     ]);
 });
 

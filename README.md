@@ -15,7 +15,7 @@
 
 ---
 
-zeitplural manages time and TODOs today, with expenses planned next. The public application is plain HTML, CSS, and JavaScript. It has no zeitplural-operated application server or database.
+zeitplural manages time, TODOs, and shared expenses. The public application is plain HTML, CSS, and JavaScript. It has no zeitplural-operated application server or database.
 
 You choose a Git repository as the workspace. The browser reads and writes versioned documents directly through the provider API. The repository remains independently inspectable, cloneable, and portable.
 
@@ -34,10 +34,11 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | --- | --- |
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual Git commits. |
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
+| **Expenses** | Exact multi-currency splits, participant balances, deterministic settlement suggestions, categories, shared project assignments, durable drafts, and atomic Git saves. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, direct browser-to-provider persistence, and English/German UI. |
-| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [bidirectional issue projects](https://github.com/josephbirkner/zeitplural/issues/26), and [test coverage](https://github.com/josephbirkner/zeitplural/issues/29). |
+| **Next** | [Bidirectional issue projects](https://github.com/josephbirkner/zeitplural/issues/26) and [test coverage](https://github.com/josephbirkner/zeitplural/issues/29). |
 
-The project is intentionally one application: time, tasks, and future components share a project inventory and workspace identity while retaining separate documents and views.
+The project is intentionally one application: time, tasks, and expenses share a project inventory and workspace identity while retaining separate documents and views.
 
 ## Similar projects
 
@@ -107,14 +108,18 @@ zeitplural.json
 data/
 ├── entries/                     # weekly files created as needed
 ├── index/entries-manifest.json
-├── projects.json                # shared by time entries and TODOs
+├── index/expenses-manifest.json
+├── expenses.json
+├── projects.json                # shared by time entries, TODOs, and expenses
 ├── todos.json
 └── week-requirements.json
 ```
 
-Time entries are normalized into ISO-week files. Their manifest records immutable Git blob SHAs, allowing IndexedDB to cache chunks safely without confusing an old revision for a new one. Unsaved time and TODO changes are also journaled in IndexedDB and removed only after a successful manual save; that journal protects against reloads but is not a substitute for a Git commit.
+Time entries are normalized into ISO-week files. Their manifest records immutable Git blob SHAs, allowing IndexedDB to cache chunks safely without confusing an old revision for a new one.
 
-TODOs and time entries share the schema-v2 project/section taxonomy. Assignments use stable `project_key` and `section_key` values, so display names can change without rewriting historical entries.
+The expense ledger stores money only as integer minor units with an explicit ISO currency. Exact payer contributions and owed allocations are authoritative; equal, percentage, and share rules are retained only as reproducible editing metadata. Its manifest hashes the precise ledger blob, and every save commits both files atomically.
+
+TODOs, time entries, and expenses share the schema-v2 project/section taxonomy. Assignments use stable `project_key` and `section_key` values, so display names can change without rewriting historical records. Unsaved edits for all three components are journaled in IndexedDB and removed only after a successful manual save; that journal protects against reloads but is not a substitute for a Git commit.
 
 ## Routes and browser history
 
@@ -122,7 +127,7 @@ The public root remains the landing and connection page. Initialized views use c
 
 - `/time` for the week timeline and Time search;
 - `/todos` for tasks;
-- `/expenses` for the upcoming expense component.
+- `/expenses` for shared-expense ledgers and settlements.
 
 The query string records the credential-free workspace locator and navigation state such as the selected week or TODO, filters, timeline zoom, and scroll time. PATs are never part of an ordinary route. Meaningful view changes create browser-history entries; high-frequency selection, filter, zoom, and scroll changes update the current entry. A small `404.html` handoff makes direct component-route reloads work on GitHub Pages without server-side rewrites.
 
@@ -172,7 +177,7 @@ The server reads each repository's `workspace_id`, exposes only those explicitly
 
 ### Stylesheet ownership
 
-Styles are loaded explicitly from `styles/`: shared tokens, controls, application chrome, and dialogs belong in `common.css`; time tracking and time search belong in `time.css`; TODOs belong in `todos.css`; and the public site plus login belong in `landing.css`. Keep theme and responsive overrides beside the component they affect. New sub-apps should receive their own stylesheet instead of growing `common.css` by default.
+Styles are loaded explicitly from `styles/`: shared tokens, controls, application chrome, and dialogs belong in `common.css`; time tracking and time search belong in `time.css`; TODOs belong in `todos.css`; expenses belong in `expenses.css`; and the public site plus login belong in `landing.css`. Keep theme and responsive overrides beside the component they affect. New sub-apps should receive their own stylesheet instead of growing `common.css` by default.
 
 Useful checks:
 

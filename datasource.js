@@ -346,6 +346,22 @@ export class DataSource {
     }
 
     /**
+     * Returns the provider-neutral expense ledger document path.
+     * @returns {string}
+     */
+    getExpensesPath() {
+        return this.getWorkspace().getComponentPath("expenses", "document");
+    }
+
+    /**
+     * Returns the integrity manifest path paired with the expense ledger.
+     * @returns {string}
+     */
+    getExpensesManifestPath() {
+        return this.getWorkspace().getComponentPath("expenses", "manifest");
+    }
+
+    /**
      * Loads the root workspace bootstrap document before any component-specific data.
      * @returns {Promise<Object>}
      */
@@ -411,6 +427,22 @@ export class DataSource {
      * @returns {Promise<Object>}
      */
     async fetchTodos() {
+        throw new Error("Not implemented");
+    }
+
+    /**
+     * Loads the exact UTF-8 expense document text so its Git blob hash can be checked before parsing.
+     * @returns {Promise<string>}
+     */
+    async fetchExpensesText() {
+        throw new Error("Not implemented");
+    }
+
+    /**
+     * Loads the expense integrity and summary manifest.
+     * @returns {Promise<Object>}
+     */
+    async fetchExpensesManifest() {
         throw new Error("Not implemented");
     }
 
@@ -884,6 +916,24 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
+     * Loads exact expense-ledger bytes through GitHub's authenticated contents API.
+     * Keeping the response as text allows ExpenseManifest to verify the same Git blob representation used by saves.
+     * @returns {Promise<string>}
+     */
+    async fetchExpensesText() {
+        return await this.fetchRaw(this.buildContentsUrl(this.getExpensesPath()));
+    }
+
+    /**
+     * Loads and parses expense integrity metadata through GitHub's authenticated contents API.
+     * @returns {Promise<Object>}
+     */
+    async fetchExpensesManifest() {
+        const raw = await this.fetchRaw(this.buildContentsUrl(this.getExpensesManifestPath()));
+        return parseJsonDocument(raw, "expenses-manifest.json");
+    }
+
+    /**
      * Commits a set of files to the repository.
      * Used by the app to read or persist data.
      * @param {SaveFile[]} files
@@ -1172,6 +1222,25 @@ class HostedFileDataSource extends DataSource {
             }
             throw error;
         }
+    }
+
+    /**
+     * Loads exact expense-ledger text through the provider-specific repository file endpoint.
+     * @returns {Promise<string>}
+     */
+    async fetchExpensesText() {
+        return await this.fetchRepositoryFileText(this.getExpensesPath());
+    }
+
+    /**
+     * Loads and parses the expense manifest through the shared hosted-provider file path.
+     * @returns {Promise<Object>}
+     */
+    async fetchExpensesManifest() {
+        return parseJsonDocument(
+            await this.fetchRepositoryFileText(this.getExpensesManifestPath()),
+            "expenses-manifest.json",
+        );
     }
 
     /**
@@ -1599,6 +1668,16 @@ export class CustomGitDataSource extends DataSource {
         return await (await this.ensureDelegate()).fetchTodos();
     }
 
+    /** @returns {Promise<string>} Loads the custom provider's exact expense document text. */
+    async fetchExpensesText() {
+        return await (await this.ensureDelegate()).fetchExpensesText();
+    }
+
+    /** @returns {Promise<Object>} Loads the custom provider's expense manifest. */
+    async fetchExpensesManifest() {
+        return await (await this.ensureDelegate()).fetchExpensesManifest();
+    }
+
     /** @param {SaveFile[]} files @param {string} message @returns {Promise<SaveResult>} Saves through the detected provider. */
     async saveFiles(files, message) {
         return await (await this.ensureDelegate()).saveFiles(files, message);
@@ -1775,6 +1854,26 @@ export class LocalDataSource extends DataSource {
         }
 
         return parseJsonDocument(await resp.text(), "todos.json");
+    }
+
+    /**
+     * Loads exact local expense-ledger text without browser caching for manifest verification.
+     * @returns {Promise<string>}
+     */
+    async fetchExpensesText() {
+        const resp = await fetch(this.buildWorkspaceUrl(this.getExpensesPath()), { cache: "no-store" });
+        if (!resp.ok) throw new Error(`Local expenses.json not found (${resp.status}).`);
+        return await resp.text();
+    }
+
+    /**
+     * Loads the local expense integrity manifest without browser caching.
+     * @returns {Promise<Object>}
+     */
+    async fetchExpensesManifest() {
+        const resp = await fetch(this.buildWorkspaceUrl(this.getExpensesManifestPath()), { cache: "no-store" });
+        if (!resp.ok) throw new Error(`Local expenses-manifest.json not found (${resp.status}).`);
+        return parseJsonDocument(await resp.text(), "expenses-manifest.json");
     }
 
     /**
