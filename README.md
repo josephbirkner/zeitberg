@@ -218,6 +218,6 @@ Zeitplural is available under the [Apache License 2.0](./LICENSE).
 
 The code for this project was written using large language models with extensive human supervision.
 
-The zeitplural owl mark adapts the **owl** glyph from [Google Material Symbols](https://github.com/google/material-design-icons), used under the [Apache License 2.0](./icons/LICENSE). The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
+The zeitplural owl mark adapts the **owl** glyph from [Google Material Symbols](https://github.com/google/material-design-icons), used under the [Apache License 2.0](./icons/LICENSE). Its iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitplural-mark.svg`](./assets/zeitplural-mark.svg) by `npm run build:icons`. The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
 
 No generative or diffusion-based image model was used for the logo or architecture graphic.

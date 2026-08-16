@@ -1,0 +1,31 @@
+{
+  "id": "./",
+  "name": "zeitplural",
+  "short_name": "zeitplural",
+  "description": "Time, tasks, and expenses backed by Git repositories you control.",
+  "start_url": "./time",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#17191f",
+  "theme_color": "#17191f",
+  "icons": [
+    {
+      "src": "./assets/zeitplural-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/zeitplural-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/zeitplural-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

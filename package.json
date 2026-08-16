@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:icons": "node scripts/build-icons.mjs",
     "check:data": "node scripts/validate-workspace.mjs",
     "import:todoist": "node scripts/import-todoist.mjs",
     "split:prepare": "node scripts/split-repositories.mjs",
@@ -12,6 +13,7 @@
     "typecheck": "npx tsc --noEmit"
   },
   "devDependencies": {
+    "sharp": "^0.35.3",
     "typescript": "^5.9.3"
   }
 }

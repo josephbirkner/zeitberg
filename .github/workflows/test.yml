@@ -21,6 +21,10 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Verify generated install icons
+        run: |
+          npm run build:icons
+          git diff --exit-code -- apple-touch-icon.png assets/apple-touch-icon.png assets/zeitplural-icon-192.png assets/zeitplural-icon-512.png assets/zeitplural-maskable-512.png
       - name: Run tests
         run: npm test
       - name: Type-check JavaScript
