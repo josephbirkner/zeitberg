@@ -3,20 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self'"
+    />
     <meta name="theme-color" content="#17191f" />
+    <meta name="zeitplural-oauth-gitlab-client-id" content="" />
+    <meta name="zeitplural-oauth-codeberg-client-id" content="" />
     <meta
       name="description"
       content="A static browser application for time, tasks, and expenses. Your data lives in a Git repository you control."
     />
     <title>zeitplural — time, tasks, expenses → Git</title>
-    <script>
-      try {
-        const savedConfig = JSON.parse(localStorage.getItem("tt_viewer:config:v1") || "{}");
-        if (savedConfig.theme === "light") document.documentElement.dataset.theme = "light";
-      } catch {
-        // Invalid or unavailable browser storage leaves the dark default intact.
-      }
-    </script>
+    <script src="./theme-init.js"></script>
     <link rel="icon" href="./assets/zeitplural-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles/common.css" />
     <link rel="stylesheet" href="./styles/time.css" />
@@ -200,8 +199,18 @@
               <form id="loginForm" class="landing-login" autocomplete="off">
                 <div class="landing-login-head">
                   <span class="landing-card-tag">OPEN WORKSPACE</span>
-                  <span class="landing-live"><i aria-hidden="true"></i>GitHub API</span>
+                  <span id="landingProviderStatus" class="landing-live"><i aria-hidden="true"></i><span id="landingProviderStatusText">GitHub API</span></span>
                 </div>
+                <label>
+                  <span>Provider</span>
+                  <select id="providerInput" name="provider">
+                    <option value="github">GitHub</option>
+                    <option value="gitlab">GitLab.com</option>
+                    <option value="codeberg">Codeberg</option>
+                    <option value="forgejo">Forgejo (self-hosted)</option>
+                    <option value="custom">Auto-detect self-hosted</option>
+                  </select>
+                </label>
                 <label>
                   <span>Workspace repository</span>
                   <input
@@ -219,7 +228,7 @@
                   <input id="refInput" name="ref" type="text" spellcheck="false" required />
                 </label>
                 <label>
-                  <span>Fine-grained personal access token</span>
+                  <span>Provider access token</span>
                   <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" />
                 </label>
 
@@ -230,10 +239,12 @@
 
                 <div class="landing-login-actions">
                   <button class="landing-button landing-button-primary" type="submit">Open workspace</button>
+                  <button id="loginOAuthBtn" class="landing-button" type="button">Use OAuth</button>
+                  <button id="createWorkspaceBtn" class="landing-button" type="button">Create workspace</button>
                   <button id="clearSavedBtn" class="landing-button" type="button">Clear saved connection</button>
                 </div>
                 <p class="landing-security-note">
-                  The token stays in browser storage and is sent only to GitHub’s API.
+                  The token stays in browser storage and is sent only to the selected repository provider.
                 </p>
                 <pre id="loginError" class="error" hidden></pre>
               </form>
@@ -272,12 +283,13 @@
                 <a class="landing-text-link" href="https://github.com/josephbirkner/zeitplural#workspace-setup">Detailed setup ↗</a>
               </article>
               <article>
-                <span class="landing-card-tag">OTHER ROUTES</span>
-                <h3>Planned or self-hosted</h3>
+                <span class="landing-card-tag">GITLAB · CODEBERG · AVAILABLE</span>
+                <h3>Connect or create</h3>
                 <ul>
-                  <li>Codeberg and GitLab connectors are planned.</li>
-                  <li>Compatible private Git servers are planned.</li>
-                  <li>You can fork and host the static application yourself now.</li>
+                  <li>Connect an existing private repository with a provider token.</li>
+                  <li>Create and initialize a private GitLab.com or Codeberg workspace above.</li>
+                  <li>PKCE OAuth activates when this deployment has public client IDs.</li>
+                  <li>CORS-enabled self-hosted GitLab and Forgejo servers are detected explicitly.</li>
                 </ul>
               </article>
             </div>
@@ -427,8 +439,10 @@
               <span>Provider</span>
               <select id="workspaceProvider">
                 <option value="github">GitHub</option>
-                <option value="gitlab" disabled>GitLab (coming soon)</option>
-                <option value="codeberg" disabled>Codeberg (coming soon)</option>
+                <option value="gitlab">GitLab.com</option>
+                <option value="codeberg">Codeberg</option>
+                <option value="forgejo">Forgejo (self-hosted)</option>
+                <option value="custom">Auto-detect self-hosted</option>
               </select>
             </label>
             <label class="col-span-2">
@@ -444,7 +458,7 @@
               <input id="workspacePath" type="text" value="zeitplural.json" spellcheck="false" required />
             </label>
             <label class="col-span-2">
-              <span>Fine-grained personal access token</span>
+              <span>Provider access token</span>
               <input id="workspaceToken" type="password" autocomplete="current-password" spellcheck="false" required />
             </label>
             <label class="workspace-remember col-span-2">
@@ -455,11 +469,64 @@
           <pre id="workspaceError" class="error" hidden></pre>
           <div class="row dialog-actions workspace-dialog-actions">
             <button id="workspaceShareBtn" class="btn btn-secondary" type="button">Share active workspace</button>
+            <button id="workspaceCreateBtn" class="btn btn-secondary" type="button">Create private workspace</button>
             <span class="topbar-spacer"></span>
+            <button id="workspaceOAuthBtn" class="btn btn-secondary" type="button">Use OAuth</button>
             <button class="btn" type="submit">Connect</button>
           </div>
         </form>
       </div>
+    </dialog>
+
+    <dialog id="workspaceCreateDialog" class="dialog workspace-create-dialog">
+      <form id="workspaceCreateForm" class="dialog-card workspace-create-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title">Create private workspace</div>
+            <div class="dialog-meta muted">Create and initialize a repository without a zeitplural backend.</div>
+          </div>
+          <button id="workspaceCreateCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+          </button>
+        </div>
+        <div class="grid dialog-grid workspace-create-grid">
+          <label>
+            <span>Provider</span>
+            <select id="workspaceCreateProvider">
+              <option value="gitlab">GitLab.com</option>
+              <option value="codeberg">Codeberg</option>
+            </select>
+          </label>
+          <label>
+            <span>Repository name</span>
+            <input id="workspaceCreateRepository" type="text" value="zeitplural-data" spellcheck="false" required />
+          </label>
+          <label>
+            <span>Workspace name</span>
+            <input id="workspaceCreateName" type="text" value="My workspace" required />
+          </label>
+          <label>
+            <span>Timezone</span>
+            <input id="workspaceCreateTimezone" type="text" value="Europe/Berlin" spellcheck="false" required />
+          </label>
+          <label class="col-span-2">
+            <span>Provider access token</span>
+            <input id="workspaceCreateToken" type="password" autocomplete="current-password" spellcheck="false" />
+          </label>
+          <label class="workspace-remember col-span-2">
+            <input id="workspaceCreateRemember" type="checkbox" />
+            <span>Remember the resulting workspace credential on this device</span>
+          </label>
+        </div>
+        <p id="workspaceCreateProviderNote" class="muted"></p>
+        <pre id="workspaceCreateError" class="error" hidden></pre>
+        <div class="row dialog-actions">
+          <button id="workspaceCreateCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <span class="topbar-spacer"></span>
+          <button id="workspaceCreateOAuthBtn" class="btn btn-secondary" type="button">Authorize with OAuth</button>
+          <button class="btn" type="submit">Create with token</button>
+        </div>
+      </form>
     </dialog>
 
     <dialog id="workspaceShareDialog" class="dialog workspace-share-dialog">

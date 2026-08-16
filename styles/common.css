@@ -853,6 +853,27 @@ body.is-entry-moving * {
   align-items: center;
 }
 
+.workspace-create-dialog {
+  max-width: min(650px, calc(100vw - 24px));
+}
+
+.workspace-create-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workspace-create-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#workspaceCreateProviderNote {
+  min-height: 2.6em;
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .workspace-share-dialog,
 .capability-import-dialog {
   max-width: min(620px, calc(100vw - 24px));
@@ -1067,6 +1088,7 @@ html.ui-narrow #entryDialog,
 html.ui-narrow #todoDialog,
 html.ui-narrow #weekReqDialog,
 html.ui-narrow #workspaceDialog,
+html.ui-narrow #workspaceCreateDialog,
 html.ui-narrow #workspaceShareDialog,
 html.ui-narrow #capabilityImportDialog {
   inset: 0;
@@ -1082,6 +1104,7 @@ html.ui-narrow #entryDialog .dialog-card,
 html.ui-narrow #todoDialog .dialog-card,
 html.ui-narrow #weekReqDialog .dialog-card,
 html.ui-narrow #workspaceDialog .dialog-card,
+html.ui-narrow #workspaceCreateDialog .dialog-card,
 html.ui-narrow #workspaceShareDialog .dialog-card,
 html.ui-narrow #capabilityImportDialog .dialog-card {
   width: 100%;
@@ -1100,6 +1123,7 @@ html.ui-narrow #entryDialog .dialog-grid,
 html.ui-narrow #todoDialog .dialog-grid,
 html.ui-narrow #weekReqDialog .dialog-grid,
 html.ui-narrow #workspaceDialog .dialog-grid,
+html.ui-narrow #workspaceCreateDialog .dialog-grid,
 html.ui-narrow #workspaceShareDialog .dialog-grid,
 html.ui-narrow #capabilityImportDialog .dialog-grid {
   flex: 1;
@@ -1110,6 +1134,7 @@ html.ui-narrow #entryDialog .dialog-actions,
 html.ui-narrow #todoDialog .dialog-actions,
 html.ui-narrow #weekReqDialog .dialog-actions,
 html.ui-narrow #workspaceDialog .dialog-actions,
+html.ui-narrow #workspaceCreateDialog .dialog-actions,
 html.ui-narrow #workspaceShareDialog .dialog-actions,
 html.ui-narrow #capabilityImportDialog .dialog-actions {
   position: sticky;
@@ -1142,6 +1167,10 @@ html.ui-narrow .workspace-section-heading {
 }
 
 html.ui-narrow .workspace-share-option {
+  grid-template-columns: 1fr;
+}
+
+html.ui-narrow .workspace-create-grid {
   grid-template-columns: 1fr;
 }
 

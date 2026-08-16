@@ -259,6 +259,36 @@ test("workspace locators reject credential-confusing repository URLs", () => {
     );
 });
 
+test("workspace locators normalize GitLab groups and bound Forgejo repository paths", () => {
+    assert.deepEqual(
+        normalizeWorkspaceRouteLocator({
+            provider: "gitlab",
+            repositoryUrl: "https://gitlab.com/group/subgroup/workspace.git/",
+            ref: "main",
+            workspacePath: "zeitplural.json",
+            expectedWorkspaceId: "",
+        }),
+        {
+            provider: "gitlab",
+            repositoryUrl: "https://gitlab.com/group/subgroup/workspace",
+            ref: "main",
+            workspacePath: "zeitplural.json",
+            expectedWorkspaceId: "",
+        },
+    );
+    assert.throws(
+        () =>
+            normalizeWorkspaceRouteLocator({
+                provider: "forgejo",
+                repositoryUrl: "https://git.example.test/group/subgroup/workspace",
+                ref: "main",
+                workspacePath: "zeitplural.json",
+                expectedWorkspaceId: "",
+            }),
+        /exactly one owner/,
+    );
+});
+
 test("route base paths remain stable for root and project-page deployments", () => {
     assert.equal(normalizeRouteBasePath("/"), "/");
     assert.equal(normalizeRouteBasePath("zeitplural"), "/zeitplural/");

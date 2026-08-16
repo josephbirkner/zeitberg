@@ -8,15 +8,34 @@ import { normalizeWorkspaceRouteLocator, workspaceRouteLocatorKey } from "./rout
  * @property {string} ref
  * @property {string} workspacePath
  * @property {string} [localWorkspaceId]
+ * @property {"github" | "gitlab" | "codeberg" | "forgejo" | "custom" | "local"} [provider]
+ * @property {string} [repositoryUrl]
  * @property {string} timezone
  * @property {number} uiZoom
  * @property {"auto" | "manual"} uiZoomMode
  * @property {"dark" | "light"} theme
  */
 
+/**
+ * @typedef {Object} WorkspaceCredentialRecord
+ * @description Runtime representation of either a manually supplied provider token or a refreshable public-client OAuth grant.
+ * @property {"token" | "oauth"} kind
+ * @property {string} accessToken
+ * @property {string} [refreshToken]
+ * @property {number} [expiresAt]
+ * @property {string} [provider]
+ * @property {string} [clientId]
+ * @property {string} [redirectUri]
+ * @property {string} [tokenType]
+ */
+
+const OAUTH_CREDENTIAL_PREFIX = "oauth-v1:";
+
 export const DEFAULT_CONFIG = {
     owner: "josephbirkner",
     repo: "zeitplural-data",
+    provider: "github",
+    repositoryUrl: "https://github.com/josephbirkner/zeitplural-data",
     ref: "main",
     workspacePath: "zeitplural.json",
     timezone: "Europe/Berlin",
@@ -34,11 +53,36 @@ export const DEFAULT_CONFIG = {
 export function migrateRenamedWorkspaceConfig(config) {
     const migrated = { ...config };
     const isFirstPartyWorkspace =
-        migrated.owner === "josephbirkner" && ["planplural-data", "zeitplural-data"].includes(migrated.repo);
+        (!migrated.provider || migrated.provider === "github") &&
+        migrated.owner === "josephbirkner" &&
+        ["planplural-data", "zeitplural-data"].includes(migrated.repo);
     if (!isFirstPartyWorkspace) return migrated;
     if (migrated.repo === "planplural-data") migrated.repo = "zeitplural-data";
     if (migrated.workspacePath === "planplural.json") migrated.workspacePath = "zeitplural.json";
+    migrated.provider = "github";
+    migrated.repositoryUrl = formatGitHubRepositoryUrl(migrated.owner, migrated.repo);
     return migrated;
+}
+
+/**
+ * Infers one built-in provider from a full HTTPS repository URL.
+ * Unknown hosts remain `custom` and therefore pass through explicit host trust plus GitLab/Forgejo CORS detection instead of receiving GitHub credentials accidentally.
+ * @param {string} repositoryUrl User-entered repository browser URL.
+ * @returns {"github" | "gitlab" | "codeberg" | "custom"}
+ */
+export function inferHostedProvider(repositoryUrl) {
+    let url;
+    try {
+        url = new URL(String(repositoryUrl || "").trim());
+    } catch {
+        throw new Error("Enter a full HTTPS repository URL.");
+    }
+    if (url.protocol !== "https:") throw new Error("Repository URLs must use HTTPS.");
+    const host = url.hostname.toLowerCase();
+    if (host === "github.com") return "github";
+    if (host === "gitlab.com") return "gitlab";
+    if (host === "codeberg.org") return "codeberg";
+    return "custom";
 }
 
 /**
@@ -499,18 +543,80 @@ export class ConfigService {
     }
 
     /**
+     * Parses one stored credential value without exposing it to route or registry models.
+     * Legacy/plain strings remain ordinary PAT records, while malformed OAuth envelopes are treated as absent instead of accidentally being sent as bearer tokens.
+     * @param {string} storedValue Value from a credential map.
+     * @returns {WorkspaceCredentialRecord | null}
+     */
+    parseWorkspaceCredential(storedValue) {
+        const value = String(storedValue || "");
+        if (!value) return null;
+        if (!value.startsWith(OAUTH_CREDENTIAL_PREFIX)) return { kind: "token", accessToken: value };
+        try {
+            const parsed = JSON.parse(value.slice(OAUTH_CREDENTIAL_PREFIX.length));
+            const accessToken = String(parsed?.access_token || "");
+            const provider = String(parsed?.provider || "");
+            const clientId = String(parsed?.client_id || "");
+            const redirectUri = String(parsed?.redirect_uri || "");
+            if (!accessToken || !provider || !clientId || !redirectUri) return null;
+            return {
+                kind: "oauth",
+                accessToken,
+                refreshToken: String(parsed?.refresh_token || ""),
+                expiresAt: Number.isFinite(Number(parsed?.expires_at)) ? Number(parsed.expires_at) : 0,
+                provider,
+                clientId,
+                redirectUri,
+                tokenType: String(parsed?.token_type || "Bearer"),
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Serializes one validated OAuth grant for the existing per-workspace credential map.
+     * The envelope remains exclusively in browser credential storage and is never included in workspace metadata, routes, cache keys, or repository files.
+     * @param {WorkspaceCredentialRecord} credential OAuth credential to persist.
+     * @returns {string}
+     */
+    serializeWorkspaceOAuthCredential(credential) {
+        if (credential.kind !== "oauth" || !credential.accessToken || !credential.provider || !credential.clientId || !credential.redirectUri) {
+            throw new Error("The OAuth credential is incomplete.");
+        }
+        return `${OAUTH_CREDENTIAL_PREFIX}${JSON.stringify({
+            access_token: credential.accessToken,
+            client_id: credential.clientId,
+            expires_at: Number(credential.expiresAt) || 0,
+            provider: credential.provider,
+            redirect_uri: credential.redirectUri,
+            refresh_token: credential.refreshToken || "",
+            token_type: credential.tokenType || "Bearer",
+        })}`;
+    }
+
+    /**
+     * Loads the complete session or remembered credential record for one connection.
+     * Session storage wins when both tiers contain a value, mirroring temporary re-authentication behavior for plain tokens.
+     * @param {string} connectionId Registry connection id.
+     * @returns {WorkspaceCredentialRecord | null}
+     */
+    loadWorkspaceCredentialRecord(connectionId) {
+        const id = String(connectionId || "");
+        if (!id) return null;
+        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
+        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        return this.parseWorkspaceCredential(sessionCredentials[id] || rememberedCredentials[id] || "");
+    }
+
+    /**
      * Loads the session or remembered credential for one workspace connection.
      * Session storage wins if both maps contain a value, matching an explicit temporary re-authentication.
      * @param {string} connectionId Registry connection id.
      * @returns {string}
      */
     loadWorkspaceCredential(connectionId) {
-        const id = String(connectionId || "");
-        if (!id) return "";
-        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
-        if (sessionCredentials[id]) return sessionCredentials[id];
-        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
-        return rememberedCredentials[id] || "";
+        return this.loadWorkspaceCredentialRecord(connectionId)?.accessToken || "";
     }
 
     /**
@@ -534,6 +640,18 @@ export class ConfigService {
         }
         this.writeCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
         this.writeCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
+    }
+
+    /**
+     * Stores a refreshable OAuth grant in the same isolated persistence tier as a PAT connection.
+     * Reusing the credential maps keeps disconnect/logout semantics identical across authentication methods.
+     * @param {string} connectionId Registry connection id.
+     * @param {WorkspaceCredentialRecord} credential OAuth grant returned or refreshed by the provider.
+     * @param {boolean} remember Whether the grant should survive browser restarts.
+     * @returns {void}
+     */
+    saveWorkspaceOAuthCredential(connectionId, credential, remember) {
+        this.saveWorkspaceCredential(connectionId, this.serializeWorkspaceOAuthCredential(credential), remember);
     }
 
     /**

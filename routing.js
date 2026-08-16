@@ -133,13 +133,30 @@ export function normalizeWorkspaceRouteLocator(value) {
     if (expectedHost && repositoryUrl.hostname.toLowerCase() !== expectedHost) {
         throw new Error(`The ${provider} provider requires a ${expectedHost} repository URL.`);
     }
-    repositoryUrl.pathname = repositoryUrl.pathname.replace(/\/+$/, "");
-    if (provider === "github" || provider === "codeberg") {
-        const repositoryParts = repositoryUrl.pathname.split("/").filter(Boolean);
-        if (repositoryParts.length !== 2 || repositoryParts.some((part) => !/^[A-Za-z0-9_.-]+(?:\.git)?$/.test(part))) {
-            throw new Error(`The ${provider} repository URL must identify exactly one owner and repository.`);
-        }
+    const repositoryParts = repositoryUrl.pathname
+        .replace(/\/+$/, "")
+        .split("/")
+        .filter(Boolean)
+        .map((part) => {
+            try {
+                return decodeURIComponent(part);
+            } catch {
+                throw new Error("The workspace repository URL contains an invalid path escape.");
+            }
+        });
+    if (repositoryParts.length) {
+        repositoryParts[repositoryParts.length - 1] = repositoryParts[repositoryParts.length - 1].replace(/\.git$/i, "");
     }
+    const exactlyTwoParts = provider === "github" || provider === "codeberg" || provider === "forgejo";
+    if (
+        repositoryParts.length < 2 ||
+        (exactlyTwoParts && repositoryParts.length !== 2) ||
+        repositoryParts.some((part) => !/^[A-Za-z0-9_.-]+$/.test(part))
+    ) {
+        const shape = exactlyTwoParts ? "exactly one owner and repository" : "a namespace and repository";
+        throw new Error(`The ${provider} repository URL must identify ${shape}.`);
+    }
+    repositoryUrl.pathname = `/${repositoryParts.map((part) => encodeURIComponent(part)).join("/")}`;
     const ref = boundedText(candidate.ref || "main", 256);
     if (!ref) throw new Error("The workspace ref must not be empty.");
 

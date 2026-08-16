@@ -111,6 +111,36 @@ test("ConfigService isolates session and remembered credentials by workspace", (
     assert.equal(service.loadWorkspaceCredential(shared.id), "remembered-secret");
 });
 
+test("ConfigService preserves refreshable OAuth grants without exposing them through the registry", (testContext) => {
+    const { local } = installBrowserStorage(testContext);
+    const service = new ConfigService();
+    const connection = WorkspaceConnection.fromLocator({
+        provider: "gitlab",
+        repositoryUrl: "https://gitlab.com/example/workspace",
+        ref: "main",
+        workspacePath: "zeitplural.json",
+        expectedWorkspaceId: "",
+    });
+    const credential = {
+        kind: "oauth",
+        accessToken: "oauth-access",
+        refreshToken: "oauth-refresh",
+        expiresAt: 123456789,
+        provider: "gitlab",
+        clientId: "public-client-id",
+        redirectUri: "https://zeitplural.io/?oauth_provider=gitlab",
+        tokenType: "Bearer",
+    };
+
+    service.saveWorkspaceOAuthCredential(connection.id, credential, true);
+
+    assert.equal(service.loadWorkspaceCredential(connection.id), "oauth-access");
+    assert.deepEqual(service.loadWorkspaceCredentialRecord(connection.id), credential);
+    assert.equal(service.isWorkspaceCredentialRemembered(connection.id), true);
+    assert.match(local.getItem("zeitplural:workspace-credentials:local:v1") || "", /oauth-v1/);
+    assert.equal(JSON.stringify(connection.toObject()).includes("oauth-access"), false);
+});
+
 test("legacy single-workspace storage migrates once into the registry", (testContext) => {
     const { local } = installBrowserStorage(testContext);
     local.setItem(

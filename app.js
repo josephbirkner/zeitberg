@@ -6,10 +6,11 @@ import {
     formatGitHubRepositoryUrl,
     getEffectiveUiViewportWidth,
     getRecommendedUiZoom,
+    inferHostedProvider,
     parseGitHubRepository,
     WorkspaceRegistry,
 } from "./config.js";
-import { GitHubDataSource, LocalDataSource } from "./datasource.js";
+import { createHostedDataSource, LocalDataSource } from "./datasource.js";
 import { EntryStore, TodoStore } from "./store.js";
 import { SearchView } from "./search.view.js";
 import { TodoView } from "./todo.view.js";
@@ -26,11 +27,19 @@ import {
 } from "./utils.js";
 import { Manifest, ProjectList, TodoList, WeekRequirements, Workspace } from "./model.js";
 import {
+    consumeOAuthCallback,
+    readOAuthClientId,
+    refreshOAuthCredential,
+    startOAuthAuthorization,
+} from "./oauth.js";
+import {
     consumeCapabilityLink,
     formatAppRoute,
     formatCapabilityLink,
     getApplicationBasePath,
+    normalizeWorkspaceRouteLocator,
     RouteController,
+    workspaceRouteLocatorKey,
 } from "./routing.js";
 
 const MIN_APP_ZOOM = 0.8;
@@ -46,22 +55,59 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
 ];
 
 /**
- * Applies a credential-free route locator to the legacy active-repository configuration shape.
- * Multi-workspace persistence builds on this adapter while current views and the GitHub data source continue consuming owner, repo, ref, and workspacePath directly.
+ * Applies a credential-free route locator to the active provider configuration.
+ * GitHub retains owner/repo fields for its REST and GraphQL endpoints; every provider also receives the full normalized repository URL used by the shared data-source factory.
  * @param {import("./config.js").AppConfig} config Existing application configuration.
  * @param {import("./routing.js").WorkspaceRouteLocator | null} locator Parsed route locator.
  * @returns {import("./config.js").AppConfig}
  */
 function configForRouteWorkspace(config, locator) {
-    if (!locator || locator.provider !== "github") return { ...config };
-    const repository = parseGitHubRepository(locator.repositoryUrl);
-    return {
+    if (!locator) return { ...config };
+    const next = {
         ...config,
-        owner: repository.owner,
-        repo: repository.repo,
+        provider: locator.provider,
+        repositoryUrl: locator.repositoryUrl,
         ref: locator.ref,
         workspacePath: locator.workspacePath,
     };
+    if (locator.provider === "github") {
+        const repository = parseGitHubRepository(locator.repositoryUrl);
+        next.owner = repository.owner;
+        next.repo = repository.repo;
+    } else if (locator.provider !== "local") {
+        const parts = new URL(locator.repositoryUrl).pathname.split("/").filter(Boolean);
+        next.owner = parts[0] || "";
+        next.repo = String(parts[parts.length - 1] || "").replace(/\.git$/i, "");
+    }
+    return next;
+}
+
+/**
+ * Converts one connection form into the same normalized, credential-free locator used by routes and the workspace registry.
+ * GitHub's historical owner/repository shorthand remains accepted; every other provider requires a full HTTPS URL so credentials cannot be redirected through an inferred host.
+ * @param {string} provider Selected provider identifier.
+ * @param {string} repositoryValue Repository URL or GitHub shorthand.
+ * @param {string} ref Branch or ref.
+ * @param {string} workspacePath Repository-relative bootstrap path.
+ * @param {string} [expectedWorkspaceId] Optional identity asserted by a route.
+ * @returns {import("./routing.js").WorkspaceRouteLocator}
+ */
+function buildHostedWorkspaceLocator(provider, repositoryValue, ref, workspacePath, expectedWorkspaceId = "") {
+    const selectedProvider = String(provider || "").trim().toLowerCase();
+    let repositoryUrl = String(repositoryValue || "").trim();
+    if (selectedProvider === "github") {
+        const repository = parseGitHubRepository(repositoryUrl);
+        repositoryUrl = formatGitHubRepositoryUrl(repository.owner, repository.repo);
+    }
+    const locator = normalizeWorkspaceRouteLocator({
+        provider: selectedProvider,
+        repositoryUrl,
+        ref: String(ref || "").trim(),
+        workspacePath: String(workspacePath || "zeitplural.json").trim(),
+        expectedWorkspaceId: String(expectedWorkspaceId || "").trim(),
+    });
+    if (!locator || locator.provider === "local") throw new Error("Select a supported hosted Git provider.");
+    return locator;
 }
 
 /**
@@ -520,7 +566,13 @@ class App {
      */
     constructor() {
         this.routeController = new RouteController(window, getApplicationBasePath(document));
-        this.routeController.restoreStaticRoute();
+        const oauthCallbackRequested = new URL(window.location.href).searchParams.has("oauth_provider");
+        if (!oauthCallbackRequested) this.routeController.restoreStaticRoute();
+        /** @type {Promise<import("./oauth.js").OAuthCallbackResult | null>} */
+        this.oauthCallbackPromise = oauthCallbackRequested
+            ? consumeOAuthCallback(window, this.routeController.basePath)
+            : Promise.resolve(null);
+        this.oauthCallbackRequested = oauthCallbackRequested;
         /** @type {import("./routing.js").CapabilityLink | null} */
         this.capabilityImport = null;
         this.capabilityImportStartupError = "";
@@ -576,13 +628,17 @@ class App {
         /** @type {Workspace | null} */
         this.workspace = null;
 
-        this.dataSource = this.isLocalMode ? new LocalDataSource(this.config) : new GitHubDataSource(this.config, this.token);
+        this.dataSource = this.isLocalMode
+            ? new LocalDataSource(this.config)
+            : createHostedDataSource(this.config, this.token);
 
         this.authStatusEl = getRequiredElement("authStatus", HTMLElement);
         this.logoutBtn = getRequiredElement("logoutBtn", HTMLButtonElement);
         this.loginSection = getRequiredElement("loginSection", HTMLElement);
         this.loginForm = getRequiredElement("loginForm", HTMLFormElement);
         this.loginErrorEl = getRequiredElement("loginError", HTMLElement);
+        this.loginOAuthBtn = getRequiredElement("loginOAuthBtn", HTMLButtonElement);
+        this.createWorkspaceBtn = getRequiredElement("createWorkspaceBtn", HTMLButtonElement);
         this.clearSavedBtn = getRequiredElement("clearSavedBtn", HTMLButtonElement);
 
         this.sidebarEl = getRequiredElement("appSidebar", HTMLElement);
@@ -692,6 +748,8 @@ class App {
         this.todoLabelsInput = getRequiredElement("todoLabels", HTMLInputElement);
         this.todoDialogMetaEl = getRequiredElement("todoDialogMeta", HTMLElement);
 
+        this.providerInput = getRequiredElement("providerInput", HTMLSelectElement);
+        this.landingProviderStatusTextEl = getRequiredElement("landingProviderStatusText", HTMLElement);
         this.repositoryInput = getRequiredElement("repositoryInput", HTMLInputElement);
         this.refInput = getRequiredElement("refInput", HTMLInputElement);
         this.tokenInput = getRequiredElement("tokenInput", HTMLInputElement);
@@ -709,6 +767,22 @@ class App {
         this.workspaceRememberInput = getRequiredElement("workspaceRemember", HTMLInputElement);
         this.workspaceErrorEl = getRequiredElement("workspaceError", HTMLElement);
         this.workspaceShareBtn = getRequiredElement("workspaceShareBtn", HTMLButtonElement);
+        this.workspaceOAuthBtn = getRequiredElement("workspaceOAuthBtn", HTMLButtonElement);
+        this.workspaceCreateBtn = getRequiredElement("workspaceCreateBtn", HTMLButtonElement);
+
+        this.workspaceCreateDialog = getRequiredElement("workspaceCreateDialog", HTMLDialogElement);
+        this.workspaceCreateForm = getRequiredElement("workspaceCreateForm", HTMLFormElement);
+        this.workspaceCreateCloseBtn = getRequiredElement("workspaceCreateCloseBtn", HTMLButtonElement);
+        this.workspaceCreateCancelBtn = getRequiredElement("workspaceCreateCancelBtn", HTMLButtonElement);
+        this.workspaceCreateProviderInput = getRequiredElement("workspaceCreateProvider", HTMLSelectElement);
+        this.workspaceCreateRepositoryInput = getRequiredElement("workspaceCreateRepository", HTMLInputElement);
+        this.workspaceCreateNameInput = getRequiredElement("workspaceCreateName", HTMLInputElement);
+        this.workspaceCreateTimezoneInput = getRequiredElement("workspaceCreateTimezone", HTMLInputElement);
+        this.workspaceCreateTokenInput = getRequiredElement("workspaceCreateToken", HTMLInputElement);
+        this.workspaceCreateRememberInput = getRequiredElement("workspaceCreateRemember", HTMLInputElement);
+        this.workspaceCreateProviderNoteEl = getRequiredElement("workspaceCreateProviderNote", HTMLElement);
+        this.workspaceCreateErrorEl = getRequiredElement("workspaceCreateError", HTMLElement);
+        this.workspaceCreateOAuthBtn = getRequiredElement("workspaceCreateOAuthBtn", HTMLButtonElement);
         this.workspaceShareDialog = getRequiredElement("workspaceShareDialog", HTMLDialogElement);
         this.workspaceShareCloseBtn = getRequiredElement("workspaceShareCloseBtn", HTMLButtonElement);
         this.workspaceShareDetailsEl = getRequiredElement("workspaceShareDetails", HTMLElement);
@@ -1008,6 +1082,370 @@ class App {
     }
 
     /**
+     * Returns the concise provider label used in connection progress and form hints.
+     * @param {string} provider Provider identifier from a locator or select control.
+     * @returns {string}
+     */
+    providerDisplayName(provider) {
+        const labels = {
+            github: "GitHub",
+            gitlab: "GitLab.com",
+            codeberg: "Codeberg",
+            forgejo: "Forgejo",
+            custom: "Self-hosted Git",
+            local: "Local server",
+        };
+        return labels[provider] || "Git provider";
+    }
+
+    /**
+     * Updates provider-specific labels and URL examples without altering credentials or an already entered repository.
+     * @param {HTMLSelectElement} providerInput Provider selector that changed.
+     * @param {HTMLInputElement} repositoryInput Related repository URL field.
+     * @returns {void}
+     */
+    updateProviderForm(providerInput, repositoryInput) {
+        const provider = providerInput.value;
+        const placeholders = {
+            github: "https://github.com/you/zeitplural-data",
+            gitlab: "https://gitlab.com/you/zeitplural-data",
+            codeberg: "https://codeberg.org/you/zeitplural-data",
+            forgejo: "https://git.example.org/you/zeitplural-data",
+            custom: "https://git.example.org/you/zeitplural-data",
+        };
+        repositoryInput.placeholder = placeholders[provider] || placeholders.custom;
+        if (providerInput === this.providerInput) {
+            this.landingProviderStatusTextEl.textContent = `${this.providerDisplayName(provider)} API`;
+        }
+    }
+
+    /**
+     * Selects the safe built-in provider implied by a pasted repository URL.
+     * Unknown hosts switch only the generic GitHub default to auto-detection, preserving an explicit Forgejo choice for self-hosted instances.
+     * @param {HTMLSelectElement} providerInput Provider selector paired with the URL.
+     * @param {HTMLInputElement} repositoryInput Repository URL field.
+     * @returns {void}
+     */
+    inferProviderForForm(providerInput, repositoryInput) {
+        try {
+            const inferred = inferHostedProvider(repositoryInput.value);
+            if (inferred !== "custom" || providerInput.value === "github") providerInput.value = inferred;
+            this.updateProviderForm(providerInput, repositoryInput);
+            this.refreshOAuthControls();
+        } catch {
+            // Incomplete input remains available for ordinary native form validation.
+        }
+    }
+
+    /**
+     * Synchronizes OAuth actions with the selected provider and deployment client-id configuration.
+     * Empty public client ids disable only OAuth; manually supplied scoped tokens remain available for every hosted connector.
+     * @returns {void}
+     */
+    refreshOAuthControls() {
+        const configure = (button, provider) => {
+            const supported = provider === "gitlab" || provider === "codeberg";
+            const clientId = supported ? readOAuthClientId(document, provider) : "";
+            button.hidden = !supported;
+            button.disabled = supported && !clientId;
+            button.title = !supported
+                ? "OAuth is available for GitLab.com and Codeberg."
+                : clientId
+                  ? `Authorize with ${this.providerDisplayName(provider)} using PKCE`
+                  : `${this.providerDisplayName(provider)} OAuth needs a public client id in this deployment; use a scoped token for now.`;
+        };
+        configure(this.loginOAuthBtn, this.providerInput.value);
+        configure(this.workspaceOAuthBtn, this.workspaceProviderInput.value);
+        configure(this.workspaceCreateOAuthBtn, this.workspaceCreateProviderInput.value);
+        this.workspaceCreateProviderNoteEl.textContent =
+            this.workspaceCreateProviderInput.value === "codeberg"
+                ? "Forgejo OAuth grants are not fine-grained today. Prefer a repository-scoped Codeberg token when least privilege is important."
+                : "GitLab OAuth requests API access so zeitplural can create, initialize, read, and write the private project.";
+    }
+
+    /**
+     * Starts provider authorization for an existing repository connection form.
+     * Only repository coordinates and the remember choice cross the redirect in session storage; no token is present before the provider returns a code.
+     * @param {"landing" | "settings"} source Connection form supplying the intent.
+     * @returns {Promise<void>}
+     */
+    async beginOAuthConnection(source) {
+        const isSettings = source === "settings";
+        const providerInput = isSettings ? this.workspaceProviderInput : this.providerInput;
+        const repositoryInput = isSettings ? this.workspaceRepositoryInput : this.repositoryInput;
+        const refInput = isSettings ? this.workspaceRefInput : this.refInput;
+        const pathInput = isSettings ? this.workspacePathInput : null;
+        const rememberInput = isSettings ? this.workspaceRememberInput : this.rememberInput;
+        const errorElement = isSettings ? this.workspaceErrorEl : this.loginErrorEl;
+        this.setError(errorElement, "");
+        try {
+            const locator = buildHostedWorkspaceLocator(
+                providerInput.value,
+                repositoryInput.value,
+                refInput.value,
+                pathInput?.value || this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath,
+                this.pendingRoute?.workspace?.expectedWorkspaceId || "",
+            );
+            const clientId = readOAuthClientId(document, locator.provider);
+            await startOAuthAuthorization(
+                window,
+                locator.provider,
+                clientId,
+                {
+                    mode: "connect",
+                    repositoryUrl: locator.repositoryUrl,
+                    ref: locator.ref,
+                    workspacePath: locator.workspacePath,
+                    expectedWorkspaceId: locator.expectedWorkspaceId,
+                    remember: rememberInput.checked,
+                },
+                this.routeController.basePath,
+            );
+        } catch (error) {
+            this.setError(errorElement, safeText(error));
+        }
+    }
+
+    /**
+     * Opens the repository-creation dialog with safe defaults and provider-specific access guidance.
+     * @returns {void}
+     */
+    openWorkspaceCreateDialog() {
+        this.workspaceCreateTokenInput.value = "";
+        this.workspaceCreateRememberInput.checked = false;
+        this.workspaceCreateTimezoneInput.value = this.workspace?.timezone || this.config.timezone || "Europe/Berlin";
+        this.setError(this.workspaceCreateErrorEl, "");
+        this.refreshOAuthControls();
+        if (!this.workspaceCreateDialog.open) this.workspaceCreateDialog.showModal();
+    }
+
+    /**
+     * Closes repository creation and clears any unsubmitted token from the DOM.
+     * @returns {void}
+     */
+    closeWorkspaceCreateDialog() {
+        this.workspaceCreateTokenInput.value = "";
+        this.setError(this.workspaceCreateErrorEl, "");
+        if (this.workspaceCreateDialog.open) this.workspaceCreateDialog.close();
+    }
+
+    /**
+     * Starts OAuth authorization for private repository creation.
+     * Repository and workspace names remain short-lived session intent until the provider returns consent.
+     * @returns {Promise<void>}
+     */
+    async beginOAuthWorkspaceCreation() {
+        this.setError(this.workspaceCreateErrorEl, "");
+        const provider = this.workspaceCreateProviderInput.value;
+        try {
+            await startOAuthAuthorization(
+                window,
+                provider,
+                readOAuthClientId(document, provider),
+                {
+                    mode: "create",
+                    repositoryUrl: "",
+                    ref: "main",
+                    workspacePath: "zeitplural.json",
+                    expectedWorkspaceId: "",
+                    remember: this.workspaceCreateRememberInput.checked,
+                    repositoryName: this.workspaceCreateRepositoryInput.value,
+                    workspaceName: this.workspaceCreateNameInput.value,
+                    timezone: this.workspaceCreateTimezoneInput.value,
+                },
+                this.routeController.basePath,
+            );
+        } catch (error) {
+            this.setError(this.workspaceCreateErrorEl, safeText(error));
+        }
+    }
+
+    /**
+     * Loads the checked-in workspace template and specializes its identity, name, timezone, and empty time index.
+     * The template directory remains the single source of initial document shapes for manual copying and provider-assisted creation.
+     * @param {string} workspaceName Human-readable workspace name.
+     * @param {string} timezone IANA timezone identifier.
+     * @returns {Promise<{files: import("./datasource.js").SaveFile[], workspace: Workspace}>}
+     */
+    async loadWorkspaceTemplateFiles(workspaceName, timezone) {
+        const paths = [
+            "README.md",
+            "zeitplural.json",
+            "data/projects.json",
+            "data/todos.json",
+            "data/week-requirements.json",
+            "data/index/entries-manifest.json",
+        ];
+        const files = await Promise.all(
+            paths.map(async (path) => {
+                const response = await fetch(new URL(`./workspace-template/${path}`, import.meta.url), { cache: "no-store" });
+                if (!response.ok) throw new Error(`Could not load workspace template file ${path}.`);
+                return { path, content: await response.text() };
+            }),
+        );
+        const workspaceFile = files.find((file) => file.path === "zeitplural.json");
+        const manifestFile = files.find((file) => file.path === "data/index/entries-manifest.json");
+        if (!workspaceFile || !manifestFile) throw new Error("The workspace template is incomplete.");
+        const workspaceRaw = JSON.parse(workspaceFile.content);
+        workspaceRaw.workspace_id = crypto.randomUUID();
+        workspaceRaw.name = String(workspaceName || "").trim();
+        workspaceRaw.timezone = String(timezone || "").trim();
+        const workspace = Workspace.fromRaw(workspaceRaw);
+        workspaceFile.content = workspace.toJson();
+
+        const manifestRaw = JSON.parse(manifestFile.content);
+        manifestRaw.timezone = workspace.timezone;
+        manifestFile.content = `${JSON.stringify(manifestRaw, null, 2)}\n`;
+        return { files, workspace };
+    }
+
+    /**
+     * Creates, initializes, registers, and opens one private GitLab or Codeberg workspace using a PAT or OAuth grant.
+     * All post-creation loading uses the ordinary data-source and registry path, ensuring assisted onboarding does not become a second application mode.
+     * @param {"gitlab" | "codeberg"} provider Hosted provider.
+     * @param {string} repositoryName New repository name.
+     * @param {string} workspaceName New workspace display name.
+     * @param {string} timezone IANA timezone.
+     * @param {string} accessToken PAT or OAuth access token.
+     * @param {boolean} remember Whether browser credential storage survives restarts.
+     * @param {import("./config.js").WorkspaceCredentialRecord | null} [oauthCredential] Refreshable OAuth record, when applicable.
+     * @returns {Promise<void>}
+     */
+    async createAndOpenWorkspace(
+        provider,
+        repositoryName,
+        workspaceName,
+        timezone,
+        accessToken,
+        remember,
+        oauthCredential = null,
+    ) {
+        const placeholderUrl =
+            provider === "gitlab"
+                ? "https://gitlab.com/zeitplural-onboarding/placeholder"
+                : "https://codeberg.org/zeitplural-onboarding/placeholder";
+        const placeholderLocator = buildHostedWorkspaceLocator(provider, placeholderUrl, "main", "zeitplural.json");
+        const creationConfig = configForRouteWorkspace(this.config, placeholderLocator);
+        const creationSource = createHostedDataSource(creationConfig, accessToken);
+        const { files, workspace } = await this.loadWorkspaceTemplateFiles(workspaceName, timezone);
+        let repositoryUrl = "";
+        try {
+            const created = await creationSource.createPrivateRepository(repositoryName);
+            repositoryUrl = created.repositoryUrl;
+            const locator = buildHostedWorkspaceLocator(
+                provider,
+                repositoryUrl,
+                "main",
+                "zeitplural.json",
+                workspace.workspace_id,
+            );
+            const initializedSource = createHostedDataSource(configForRouteWorkspace(this.config, locator), accessToken);
+            await initializedSource.saveFiles(files, "Initialize zeitplural workspace");
+
+            const connection = this.workspaceRegistry.upsert(locator, {
+                displayName: workspace.name,
+                expectedWorkspaceId: workspace.workspace_id,
+            });
+            this.workspaceRegistry.setActive(connection.id);
+            this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+            if (oauthCredential) {
+                this.configService.saveWorkspaceOAuthCredential(connection.id, oauthCredential, remember);
+            } else {
+                this.configService.saveWorkspaceCredential(connection.id, accessToken, remember);
+            }
+            this.activateWorkspaceConnection(connection, accessToken);
+            this.pendingRoute = {
+                version: 1,
+                component: "time",
+                panel: "main",
+                workspace: connection.toLocator(),
+                state: {},
+            };
+            this.closeWorkspaceCreateDialog();
+            this.closeWorkspaceSettings("none");
+            await this.connectWithToken(accessToken);
+        } catch (error) {
+            if (repositoryUrl) {
+                throw new Error(`The private repository was created at ${repositoryUrl}, but initialization failed: ${safeText(error)}`);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Handles token-based repository creation from the modal form.
+     * @param {Event} event Form submission event.
+     * @returns {Promise<void>}
+     */
+    async handleWorkspaceCreateSubmit(event) {
+        event.preventDefault();
+        this.setError(this.workspaceCreateErrorEl, "");
+        const token = this.workspaceCreateTokenInput.value.trim();
+        if (!token) {
+            this.setError(this.workspaceCreateErrorEl, "Enter a provider token or use OAuth.");
+            return;
+        }
+        this.setBusy(true);
+        try {
+            await this.createAndOpenWorkspace(
+                /** @type {"gitlab" | "codeberg"} */ (this.workspaceCreateProviderInput.value),
+                this.workspaceCreateRepositoryInput.value,
+                this.workspaceCreateNameInput.value,
+                this.workspaceCreateTimezoneInput.value,
+                token,
+                this.workspaceCreateRememberInput.checked,
+            );
+        } catch (error) {
+            this.setError(this.workspaceCreateErrorEl, safeText(error));
+        } finally {
+            this.setBusy(false);
+        }
+    }
+
+    /**
+     * Completes a scrubbed OAuth callback by registering an existing repository or creating and initializing a new one.
+     * The refreshable grant is persisted only after a concrete workspace connection id exists.
+     * @param {import("./oauth.js").OAuthCallbackResult} result Validated callback result.
+     * @returns {Promise<void>}
+     */
+    async handleOAuthCallbackResult(result) {
+        const { credential, intent } = result;
+        if (intent.mode === "create") {
+            await this.createAndOpenWorkspace(
+                credential.provider,
+                intent.repositoryName || "zeitplural-data",
+                intent.workspaceName || "My workspace",
+                intent.timezone || "Europe/Berlin",
+                credential.accessToken,
+                intent.remember,
+                credential,
+            );
+            return;
+        }
+
+        const locator = buildHostedWorkspaceLocator(
+            credential.provider,
+            intent.repositoryUrl,
+            intent.ref,
+            intent.workspacePath,
+            intent.expectedWorkspaceId || "",
+        );
+        const connection = this.workspaceRegistry.upsert(locator);
+        this.workspaceRegistry.setActive(connection.id);
+        this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
+        this.configService.saveWorkspaceOAuthCredential(connection.id, credential, intent.remember);
+        this.activateWorkspaceConnection(connection, credential.accessToken);
+        this.pendingRoute = {
+            version: 1,
+            component: "time",
+            panel: "main",
+            workspace: connection.toLocator(),
+            state: {},
+        };
+        await this.connectWithToken(credential.accessToken);
+    }
+
+    /**
      * Creates one consistently styled action for a workspace registry row.
      * Action names and connection ids are stored in data attributes so one delegated list listener can handle rows rebuilt after reordering.
      * @param {string} label Visible action label.
@@ -1188,6 +1626,7 @@ class App {
         this.workspacePathInput.value = connection.workspacePath;
         this.workspaceTokenInput.value = "";
         this.workspaceRememberInput.checked = false;
+        this.updateProviderForm(this.workspaceProviderInput, this.workspaceRepositoryInput);
         this.setError(this.workspaceErrorEl, `Enter a token to authenticate ${connection.displayName}.`);
         queueMicrotask(() => this.workspaceTokenInput.focus());
     }
@@ -1215,8 +1654,10 @@ class App {
         this.state.setConfig(this.config);
         this.token = token;
         this.state.setToken(token);
+        this.providerInput.value = connection.provider;
         this.repositoryInput.value = connection.repositoryUrl;
         this.refInput.value = connection.ref;
+        this.updateProviderForm(this.providerInput, this.repositoryInput);
         this.rememberInput.checked = this.configService.isWorkspaceCredentialRemembered(connection.id);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
@@ -1241,6 +1682,32 @@ class App {
     }
 
     /**
+     * Loads one connection credential and refreshes an expiring public-client OAuth grant before it reaches a provider request.
+     * Refreshed material is written back to the same session/remembered tier; PAT records pass through unchanged.
+     * @param {import("./config.js").WorkspaceConnection} connection Workspace requiring authentication.
+     * @returns {Promise<string>}
+     */
+    async loadUsableWorkspaceCredential(connection) {
+        const credential = this.configService.loadWorkspaceCredentialRecord(connection.id);
+        if (!credential) return "";
+        if (credential.kind !== "oauth") return credential.accessToken;
+        const refreshed = await refreshOAuthCredential(credential);
+        if (refreshed.kind !== "oauth") throw new Error("The OAuth credential could not be refreshed.");
+        if (
+            refreshed.accessToken !== credential.accessToken ||
+            refreshed.refreshToken !== credential.refreshToken ||
+            refreshed.expiresAt !== credential.expiresAt
+        ) {
+            this.configService.saveWorkspaceOAuthCredential(
+                connection.id,
+                refreshed,
+                this.configService.isWorkspaceCredentialRemembered(connection.id),
+            );
+        }
+        return refreshed.accessToken;
+    }
+
+    /**
      * Verifies repository access before an already loaded workspace is replaced.
      * This deliberately uses a temporary data source, so failed credentials or an unavailable repository cannot mutate active stores or Git save state.
      * @param {import("./config.js").WorkspaceConnection} connection Candidate connection.
@@ -1249,7 +1716,7 @@ class App {
      */
     async preflightWorkspaceConnection(connection, token) {
         const candidateConfig = configForRouteWorkspace(this.config, connection.toLocator());
-        const candidateSource = new GitHubDataSource(candidateConfig, token);
+        const candidateSource = createHostedDataSource(candidateConfig, token);
         return await candidateSource.checkConnection();
     }
 
@@ -1283,16 +1750,16 @@ class App {
             await this.reloadData();
             return;
         }
-        const credential = this.configService.loadWorkspaceCredential(connection.id);
-        if (!credential) {
-            this.requestWorkspaceCredential(connection);
-            return;
-        }
-
         this.setError(this.workspaceErrorEl, "");
         this.setBusy(true);
+        let credential = "";
         let connectionInfo;
         try {
+            credential = await this.loadUsableWorkspaceCredential(connection);
+            if (!credential) {
+                this.requestWorkspaceCredential(connection);
+                return;
+            }
             connectionInfo = await this.preflightWorkspaceConnection(connection, credential);
         } catch (error) {
             const message = `Could not open ${connection.displayName}: ${safeText(error)}`;
@@ -1315,7 +1782,7 @@ class App {
     }
 
     /**
-     * Adds or re-authenticates a GitHub workspace from the settings form, then opens it through the same switch pipeline as registry rows.
+     * Adds or re-authenticates one hosted workspace from the settings form, then opens it through the same provider-neutral switch pipeline as registry rows.
      * The new credential is persisted only in the selected browser tier and never in the registry record.
      * @param {Event} event Workspace form submission.
      * @returns {Promise<void>}
@@ -1323,27 +1790,19 @@ class App {
     async handleWorkspaceAdd(event) {
         event.preventDefault();
         this.setError(this.workspaceErrorEl, "");
-        if (this.workspaceProviderInput.value !== "github") {
-            this.setError(this.workspaceErrorEl, "This provider is not available yet.");
-            return;
-        }
 
         const token = this.workspaceTokenInput.value.trim();
         if (!token) {
             this.setError(this.workspaceErrorEl, "Enter a token for this workspace.");
             return;
         }
-        let locator;
         try {
-            const repository = parseGitHubRepository(this.workspaceRepositoryInput.value);
-            locator = {
-                provider: "github",
-                repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
-                ref: this.workspaceRefInput.value.trim(),
-                workspacePath: this.workspacePathInput.value.trim(),
-                expectedWorkspaceId: "",
-            };
-            if (!locator.ref) throw new Error("Enter a branch or ref.");
+            const locator = buildHostedWorkspaceLocator(
+                this.workspaceProviderInput.value,
+                this.workspaceRepositoryInput.value,
+                this.workspaceRefInput.value,
+                this.workspacePathInput.value,
+            );
             const connection = this.workspaceRegistry.upsert(locator);
             this.configService.saveWorkspaceCredential(connection.id, token, this.workspaceRememberInput.checked);
             this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
@@ -1527,11 +1986,6 @@ class App {
             this.setError(this.capabilityImportErrorEl, "Confirm the custom provider host before opening this capability.");
             return;
         }
-        if (locator.provider !== "github") {
-            this.setError(this.capabilityImportErrorEl, `${locator.provider} connections are not available yet.`);
-            return;
-        }
-
         try {
             const connection = this.workspaceRegistry.upsert(locator, {
                 expectedWorkspaceId: locator.expectedWorkspaceId,
@@ -1563,14 +2017,16 @@ class App {
             return `local:${this.activeWorkspaceConnection?.expectedWorkspaceId || this.workspace?.workspace_id || "default"}`;
         }
         if (this.activeWorkspaceConnection) return `workspace:${this.activeWorkspaceConnection.id}`;
-        const owner = String(this.config.owner || "").trim();
-        const repo = String(this.config.repo || "").trim();
+        const provider = String(this.config.provider || "github").trim();
+        const repository = String(
+            this.config.repositoryUrl || formatGitHubRepositoryUrl(this.config.owner, this.config.repo),
+        ).trim();
         const ref = String(this.config.ref || "").trim();
-        return `github:${owner}/${repo}@${ref}`;
+        return `${provider}:${repository}@${ref}`;
     }
 
     /**
-     * Returns the public locator for the active local folder or GitHub repository.
+     * Returns the public locator for the active local folder or hosted Git repository.
      * The expected workspace id is included only after zeitplural.json has loaded; credentials are held separately and can never enter this object.
      * @returns {import("./routing.js").WorkspaceRouteLocator}
      */
@@ -1594,8 +2050,11 @@ class App {
             };
         }
         return {
-            provider: "github",
-            repositoryUrl: formatGitHubRepositoryUrl(this.config.owner, this.config.repo),
+            provider: /** @type {import("./routing.js").WorkspaceRouteLocator["provider"]} */ (
+                this.config.provider || "github"
+            ),
+            repositoryUrl:
+                this.config.repositoryUrl || formatGitHubRepositoryUrl(this.config.owner, this.config.repo),
             ref: this.config.ref,
             workspacePath: this.config.workspacePath || "zeitplural.json",
             expectedWorkspaceId: this.workspace?.workspace_id || "",
@@ -1734,14 +2193,10 @@ class App {
                         (this.activeWorkspaceConnection?.expectedWorkspaceId || this.workspace?.workspace_id || ""))
             );
         }
-        if (locator.provider !== "github") return false;
         try {
-            const repository = parseGitHubRepository(locator.repositoryUrl);
-            return (
-                repository.owner.toLowerCase() === this.config.owner.toLowerCase() &&
-                repository.repo.toLowerCase() === this.config.repo.toLowerCase() &&
-                locator.ref === this.config.ref &&
-                locator.workspacePath === (this.config.workspacePath || "zeitplural.json")
+            return Boolean(
+                this.activeWorkspaceConnection &&
+                    workspaceRouteLocatorKey(locator) === this.activeWorkspaceConnection.id,
             );
         } catch {
             return false;
@@ -1777,9 +2232,11 @@ class App {
                 this.toast("That workspace is not exposed by the local server.", 5000);
                 return;
             }
-            if (route.workspace?.provider === "github") {
+            if (route.workspace && route.workspace.provider !== "local") {
+                this.providerInput.value = route.workspace.provider;
                 this.repositoryInput.value = route.workspace.repositoryUrl;
                 this.refInput.value = route.workspace.ref;
+                this.updateProviderForm(this.providerInput, this.repositoryInput);
                 const registered = this.workspaceRegistry.findByLocator(route.workspace);
                 if (registered) {
                     const credential = this.configService.loadWorkspaceCredential(registered.id);
@@ -1887,17 +2344,50 @@ class App {
     /**
      * Boots the application and triggers the initial load flow.
      * Keeps the main UI flow and data loading coordinated.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    start() {
-        this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
+    async start() {
+        const initialProvider = this.activeWorkspaceConnection?.provider || this.initialRoute.workspace?.provider || this.config.provider || "github";
+        const initialRepository =
+            this.activeWorkspaceConnection?.repositoryUrl ||
+            this.initialRoute.workspace?.repositoryUrl ||
+            this.config.repositoryUrl ||
+            formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
+        this.providerInput.value = initialProvider;
+        this.repositoryInput.value = initialRepository;
         this.refInput.value = this.config.ref;
+        this.updateProviderForm(this.providerInput, this.repositoryInput);
         this.rememberInput.checked = this.activeWorkspaceConnection
             ? this.configService.isWorkspaceCredentialRemembered(this.activeWorkspaceConnection.id)
             : this.configService.isTokenRemembered();
         if (this.pendingRoute) this.state.setActiveTab(this.tabForRoute(this.pendingRoute));
 
         this.loginForm.addEventListener("submit", (ev) => this.handleLoginSubmit(ev));
+        this.providerInput.addEventListener("change", () => {
+            this.updateProviderForm(this.providerInput, this.repositoryInput);
+            this.refreshOAuthControls();
+        });
+        this.repositoryInput.addEventListener("change", () => this.inferProviderForForm(this.providerInput, this.repositoryInput));
+        this.workspaceProviderInput.addEventListener("change", () => {
+            this.updateProviderForm(this.workspaceProviderInput, this.workspaceRepositoryInput);
+            this.refreshOAuthControls();
+        });
+        this.workspaceRepositoryInput.addEventListener("change", () =>
+            this.inferProviderForForm(this.workspaceProviderInput, this.workspaceRepositoryInput),
+        );
+        this.loginOAuthBtn.addEventListener("click", () => void this.beginOAuthConnection("landing"));
+        this.workspaceOAuthBtn.addEventListener("click", () => void this.beginOAuthConnection("settings"));
+        this.createWorkspaceBtn.addEventListener("click", () => this.openWorkspaceCreateDialog());
+        this.workspaceCreateBtn.addEventListener("click", () => this.openWorkspaceCreateDialog());
+        this.workspaceCreateProviderInput.addEventListener("change", () => this.refreshOAuthControls());
+        this.workspaceCreateCloseBtn.addEventListener("click", () => this.closeWorkspaceCreateDialog());
+        this.workspaceCreateCancelBtn.addEventListener("click", () => this.closeWorkspaceCreateDialog());
+        this.workspaceCreateDialog.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            this.closeWorkspaceCreateDialog();
+        });
+        this.workspaceCreateOAuthBtn.addEventListener("click", () => void this.beginOAuthWorkspaceCreation());
+        this.workspaceCreateForm.addEventListener("submit", (event) => void this.handleWorkspaceCreateSubmit(event));
         this.clearSavedBtn.addEventListener("click", () => this.handleClearSaved());
         this.workspaceSettingsBtn.addEventListener("click", () => {
             if (this.workspaceDialog.open) this.closeWorkspaceSettings();
@@ -1952,9 +2442,23 @@ class App {
         this.routeController.start((route) => void this.handleRouteNavigation(route));
 
         this.setProgress(0, 1, "");
+        this.refreshOAuthControls();
         setVisible(this.sidebarEl, false);
         setVisible(this.topbarEl, false);
         setVisible(this.loadingSection, false);
+
+        if (this.oauthCallbackRequested) {
+            this.showLoadingScreen("Completing provider authorization…");
+            try {
+                const result = await this.oauthCallbackPromise;
+                if (!result) throw new Error("The provider authorization callback is incomplete.");
+                await this.handleOAuthCallbackResult(result);
+            } catch (error) {
+                this.showLoginScreen();
+                this.setError(this.loginErrorEl, safeText(error));
+            }
+            return;
+        }
 
         if (this.capabilityImportStartupError) {
             this.showLoginScreen();
@@ -1984,7 +2488,7 @@ class App {
             this.setAuthStatus(this.token ? "Saved connection available" : "Not logged in");
             this.showLoginScreen();
         } else if (this.token) {
-            this.showLoadingScreen("Connecting to GitHub…");
+            this.showLoadingScreen(`Connecting to ${this.providerDisplayName(initialProvider)}…`);
             this.connectWithToken(this.token).catch((err) => {
                 this.showLoginScreen();
                 this.setError(this.loginErrorEl, safeText(err));
@@ -2158,7 +2662,7 @@ class App {
     }
 
     /**
-     * Validates login input and starts the GitHub connection flow.
+     * Validates login input and starts the selected hosted-provider connection flow.
      * Keeps the main UI flow and data loading coordinated.
      * @param {Event} ev
      * @returns {Promise<void>}
@@ -2182,23 +2686,21 @@ class App {
             return;
         }
 
-        let repository;
+        const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
+        const workspacePath = String(this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath || "zeitplural.json");
+        let locator;
         try {
-            repository = parseGitHubRepository(this.repositoryInput.value);
+            locator = buildHostedWorkspaceLocator(
+                this.providerInput.value,
+                this.repositoryInput.value,
+                ref,
+                workspacePath,
+                expectedWorkspaceId,
+            );
         } catch (error) {
             this.setError(this.loginErrorEl, safeText(error));
             return;
         }
-
-        const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
-        const workspacePath = String(this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath || "zeitplural.json");
-        const locator = {
-            provider: /** @type {const} */ ("github"),
-            repositoryUrl: formatGitHubRepositoryUrl(repository.owner, repository.repo),
-            ref,
-            workspacePath,
-            expectedWorkspaceId,
-        };
         const connection = this.workspaceRegistry.upsert(locator, { expectedWorkspaceId });
         this.workspaceRegistry.setActive(connection.id);
         this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
@@ -2245,8 +2747,11 @@ class App {
         this.setAutomaticAppZoom(false);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
-        this.repositoryInput.value = formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
+        this.providerInput.value = this.config.provider || "github";
+        this.repositoryInput.value =
+            this.config.repositoryUrl || formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
         this.refInput.value = this.config.ref;
+        this.updateProviderForm(this.providerInput, this.repositoryInput);
         this.tokenInput.value = "";
         this.rememberInput.checked = false;
         this.setAuthStatus("Cleared");
@@ -2316,6 +2821,13 @@ class App {
         this.reloadDataBtn.disabled = isBusy;
         this.projectsBtn.disabled = isBusy;
         this.workspaceSettingsBtn.disabled = isBusy;
+        this.providerInput.disabled = isBusy;
+        this.repositoryInput.disabled = isBusy;
+        this.refInput.disabled = isBusy;
+        this.tokenInput.disabled = isBusy;
+        this.rememberInput.disabled = isBusy;
+        this.loginOAuthBtn.disabled = isBusy || this.loginOAuthBtn.disabled;
+        this.createWorkspaceBtn.disabled = isBusy;
         this.workspaceDialogCloseBtn.disabled = isBusy;
         this.workspaceProviderInput.disabled = isBusy;
         this.workspaceRepositoryInput.disabled = isBusy;
@@ -2323,6 +2835,17 @@ class App {
         this.workspacePathInput.disabled = isBusy;
         this.workspaceTokenInput.disabled = isBusy;
         this.workspaceRememberInput.disabled = isBusy;
+        this.workspaceOAuthBtn.disabled = isBusy || this.workspaceOAuthBtn.disabled;
+        this.workspaceCreateBtn.disabled = isBusy;
+        this.workspaceCreateCloseBtn.disabled = isBusy;
+        this.workspaceCreateCancelBtn.disabled = isBusy;
+        this.workspaceCreateProviderInput.disabled = isBusy;
+        this.workspaceCreateRepositoryInput.disabled = isBusy;
+        this.workspaceCreateNameInput.disabled = isBusy;
+        this.workspaceCreateTimezoneInput.disabled = isBusy;
+        this.workspaceCreateTokenInput.disabled = isBusy;
+        this.workspaceCreateRememberInput.disabled = isBusy;
+        this.workspaceCreateOAuthBtn.disabled = isBusy || this.workspaceCreateOAuthBtn.disabled;
         this.workspaceShareBtn.disabled = isBusy || !this.workspace;
         this.workspaceShareCloseBtn.disabled = isBusy;
         this.workspaceCopyLocatorBtn.disabled = isBusy;
@@ -2357,6 +2880,7 @@ class App {
         this.weekReqComment.disabled = isBusy;
         this.weekView.setBusy(isBusy);
         this.todoView.setBusy(isBusy);
+        if (!isBusy) this.refreshOAuthControls();
     }
 
     /**
@@ -2471,7 +2995,18 @@ class App {
         if (this.isLocalMode) {
             this.repositorySummary = `${workspaceName}Local data • ${totals.join(" • ")}`;
         } else {
-            this.repositorySummary = `${workspaceName}${this.config.owner}/${this.config.repo}@${this.config.ref} • ${totals.join(" • ")}`;
+            const repository =
+                this.activeWorkspaceConnection?.repositoryUrl ||
+                this.config.repositoryUrl ||
+                formatGitHubRepositoryUrl(this.config.owner, this.config.repo);
+            let repositoryLabel = repository;
+            try {
+                const url = new URL(repository);
+                repositoryLabel = `${url.host}${url.pathname}`;
+            } catch {
+                // The locator was already validated; preserve its text if URL formatting is unavailable.
+            }
+            this.repositorySummary = `${workspaceName}${repositoryLabel}@${this.config.ref} • ${totals.join(" • ")}`;
         }
         this.refreshDataBadge();
     }
@@ -2757,16 +3292,19 @@ class App {
     }
 
     /**
-     * Connects to GitHub using the provided token and loads data.
+     * Connects to the selected Git provider using the provided credential and loads data through the common workspace pipeline.
      * Keeps the main UI flow and data loading coordinated.
      * @param {string} token
      * @param {{repoInfo: any, userInfo: any} | null} [connectionInfo] Optional successful preflight result used to avoid duplicate provider checks while switching.
      * @returns {Promise<void>}
      */
     async connectWithToken(token, connectionInfo = null) {
-        this.token = token;
-        this.state.setToken(token);
-        this.dataSource = new GitHubDataSource(this.config, token);
+        const usableToken = this.activeWorkspaceConnection
+            ? (await this.loadUsableWorkspaceCredential(this.activeWorkspaceConnection)) || token
+            : token;
+        this.token = usableToken;
+        this.state.setToken(usableToken);
+        this.dataSource = createHostedDataSource(this.config, usableToken);
         this.workspace = null;
         this.weekView.setDataSource(this.dataSource);
         this.weekView.setDraftNamespace(this.buildDraftNamespace());
@@ -2774,11 +3312,14 @@ class App {
         this.todoView.setDraftNamespace(this.buildDraftNamespace());
         this.projectDialog.setDataSource(this.dataSource);
         this.setAuthStatus("Connecting…");
-        this.showLoadingScreen("Connecting to GitHub…");
+        const providerLabel = this.activeWorkspaceConnection?.provider || this.config.provider || "Git provider";
+        this.showLoadingScreen(`Connecting to ${providerLabel}…`);
         this.setBusy(true);
         try {
             const { repoInfo, userInfo } = connectionInfo || (await this.dataSource.checkConnection());
-            const repoLabel = repoInfo?.full_name ? repoInfo.full_name : `${this.config.owner}/${this.config.repo}`;
+            const repoLabel = repoInfo?.full_name
+                ? repoInfo.full_name
+                : this.activeWorkspaceConnection?.repositoryUrl || this.config.repositoryUrl || "workspace repository";
             this.state.ghUser = userInfo;
             this.setAuthStatus(userInfo?.login ? `Logged in as ${userInfo.login}` : `Connected to ${repoLabel}`);
             setVisible(this.logoutBtn, true);
@@ -2837,8 +3378,10 @@ class App {
             this.activeWorkspaceConnection = activeConnection;
             this.config = configForRouteWorkspace(this.config, activeConnection.toLocator());
             this.state.setConfig(this.config);
+            this.providerInput.value = activeConnection.provider;
             this.repositoryInput.value = activeConnection.repositoryUrl;
             this.refInput.value = activeConnection.ref;
+            this.updateProviderForm(this.providerInput, this.repositoryInput);
             if (!clearCredential) {
                 this.token = this.configService.loadWorkspaceCredential(activeConnection.id);
                 this.state.setToken(this.token);
@@ -2855,4 +3398,4 @@ class App {
 }
 
 const app = new App();
-app.start();
+void app.start();

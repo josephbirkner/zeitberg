@@ -35,7 +35,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual Git commits. |
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, and direct browser-to-provider persistence. |
-| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [additional providers](https://github.com/josephbirkner/zeitplural/issues/18), [German localization](https://github.com/josephbirkner/zeitplural/issues/23), and [installable offline support](https://github.com/josephbirkner/zeitplural/issues/21). |
+| **Next** | [Finances](https://github.com/josephbirkner/zeitplural/issues/24), [German localization](https://github.com/josephbirkner/zeitplural/issues/23), [installable offline support](https://github.com/josephbirkner/zeitplural/issues/21), and [bidirectional issue projects](https://github.com/josephbirkner/zeitplural/issues/26). |
 
 The project is intentionally one application: time, tasks, and future components share a project inventory and workspace identity while retaining separate documents and views.
 
@@ -50,15 +50,18 @@ No direct equivalent surfaced in our review. The closest projects each overlap w
 
 ## Workspace setup
 
-GitHub is available now. GitLab, Codeberg/Forgejo, and compatible private Git servers are planned; the provider-neutral workspace model is already separated from the GitHub implementation.
+GitHub, GitLab.com, Codeberg, and compatible CORS-enabled GitLab/Forgejo servers use the same workspace and save pipeline. GitHub retains its PAT flow. GitLab and Codeberg accept provider tokens now; their Authorization Code + PKCE buttons become active when the deployment's public OAuth client ids are configured.
 
 1. Create a **private** repository for your data.
 2. Copy the contents of [`workspace-template`](./workspace-template) into it.
 3. In `zeitplural.json`, replace `workspace_id`, set the name and IANA timezone, then commit and push.
-4. Create a fine-grained GitHub personal access token for that repository:
-   - `Contents: Read-only` is enough to browse.
-   - `Contents: Read & write` is required to save.
-5. Visit [zeitplural.io](https://zeitplural.io), enter the repository URL, branch, and token, then open the workspace.
+4. Create an access token for that repository:
+   - GitHub: a fine-grained PAT with `Contents: Read-only` to browse or `Contents: Read & write` to save.
+   - GitLab: a PAT with API access, or the static PKCE flow when enabled on the deployment.
+   - Codeberg/Forgejo: a repository-scoped token with repository read/write access. Forgejo OAuth grants are currently broader than scoped PATs, which the onboarding dialog states before authorization.
+5. Visit [zeitplural.io](https://zeitplural.io), select the provider, enter the repository URL, branch, and token, then open the workspace.
+
+Alternatively, choose **Create workspace** on the landing page. GitLab.com and Codeberg can create a private repository, initialize the checked-in [`workspace-template`](./workspace-template), validate its generated `zeitplural.json`, and open it without any zeitplural-operated backend. If a Forgejo-family server blocks browser cross-origin requests, connection preflight reports that limitation instead of treating it as malformed data.
 
 A shell-based start looks like this after cloning this application repository:
 
@@ -73,7 +76,7 @@ git commit -m "Initialize zeitplural workspace"
 gh repo create YOUR_ACCOUNT/zeitplural-data --private --source=. --push
 ```
 
-The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to `api.github.com`; the static host never receives the credential.
+The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to the selected provider API; the static host never receives the credential. OAuth grants retain their refresh token in the same per-workspace credential record and refresh shortly before expiry.
 
 After opening a workspace, use the first sidebar action beneath the owl to manage connections. The browser keeps an ordered registry of repository URL, branch, bootstrap path, verified workspace ID, and display name. Each workspace token is stored separately, and switching repositories preserves unsaved drafts in a workspace-specific IndexedDB journal. Disconnecting one workspace does not log out or clear credentials for the others.
 
@@ -185,15 +188,25 @@ npm run import:todoist -- --workspace ../zeitplural-data
 
 Use `--replace-todoist` to refresh an earlier import, `--active-only` to omit completed history, or `--completed-since YYYY-MM-DD` to choose an archive boundary.
 
-## Hosting and provider roadmap
+## Hosting and provider authentication
 
 The public deployment serves this repository from [zeitplural.io](https://zeitplural.io). You can also fork and host the same static files yourself, including from a private Pages deployment where your hosting plan supports one.
 
-Planned connectors retain the same architecture:
+Provider connectors retain the same architecture:
 
-- GitLab OAuth with PKCE and private-project initialization;
-- Codeberg/Forgejo OAuth or a scoped PAT, depending on provider capabilities;
-- compatible private Git servers after explicit host and CORS validation.
+- GitHub uses a fine-grained PAT and GitHub's REST/GraphQL APIs.
+- GitLab uses its REST API, one atomic multi-action commit per save, and [Authorization Code + PKCE](https://docs.gitlab.com/api/oauth2/) when configured.
+- Codeberg/Forgejo uses its REST contents API and either a [scoped PAT](https://forgejo.org/docs/latest/user/token-scope/) or [public-client PKCE](https://forgejo.org/docs/latest/user/oauth2-provider/). Because Forgejo OAuth scopes are not fine-grained today, a repository-scoped PAT remains the least-privilege option.
+- custom HTTPS hosts are explicitly trusted, probed for GitLab/Forgejo compatibility and usable only when their CORS policy permits direct browser requests.
+
+To enable OAuth on a static deployment, register two public applications with these exact callback URLs:
+
+```text
+GitLab:   https://zeitplural.io/?oauth_provider=gitlab
+Codeberg: https://zeitplural.io/?oauth_provider=codeberg
+```
+
+Enable Authorization Code with PKCE and do not place a client secret in this repository. Put the resulting public client ids into the `zeitplural-oauth-gitlab-client-id` and `zeitplural-oauth-codeberg-client-id` meta elements in [`index.html`](./index.html). Self-hosted deployments use their own origin in both callback URLs. The application validates short-lived session state, requires S256 PKCE, scrubs callback codes before token exchange, refreshes expiring grants, and loads no third-party runtime scripts.
 
 There is deliberately no GitHub App or OAuth broker today: GitHub's confidential OAuth and GitHub App flows require a server-held secret or private key, while the current fine-grained PAT flow remains fully static.
 
