@@ -4,7 +4,7 @@ const CAPABILITY_FRAGMENT_PREFIX = "#zb-cap=";
 const CAPABILITY_VERSION = 1;
 const MAX_CAPABILITY_PAYLOAD_LENGTH = 24_000;
 const ROUTE_COMPONENTS = new Set(["time", "todos", "expenses"]);
-const ROUTE_PANELS = new Set(["main", "search", "workspaces"]);
+const ROUTE_PANELS = new Set(["main", "search", "workspaces", "settings"]);
 const PROVIDERS = new Set(["github", "gitlab", "codeberg", "forgejo", "custom", "local"]);
 
 /**
@@ -12,7 +12,7 @@ const PROVIDERS = new Set(["github", "gitlab", "codeberg", "forgejo", "custom", 
  */
 
 /**
- * @typedef {"main" | "search" | "workspaces"} RoutePanel
+ * @typedef {"main" | "search" | "workspaces" | "settings"} RoutePanel
  */
 
 /**
@@ -191,7 +191,7 @@ export function workspaceRouteLocatorKey(locator) {
 
 /**
  * Returns the component panel represented by a path suffix.
- * Search belongs only to Time, while Workspace settings intentionally remain nested beneath whichever component was active.
+ * Search belongs only to Time, while global Workspace and Interface settings remain nested beneath whichever component was active.
  * @param {RouteComponent} component Parsed component.
  * @param {unknown} value Candidate panel segment.
  * @returns {RoutePanel}
@@ -270,7 +270,7 @@ function stringParameter(params, key, maxLength = 512) {
 function parseViewState(component, panel, params) {
     /** @type {Object.<string, string | number | boolean | null>} */
     const state = {};
-    const returnPanel = panel === "workspaces" ? stringParameter(params, "under", 32) : null;
+    const returnPanel = panel === "workspaces" || panel === "settings" ? stringParameter(params, "under", 32) : null;
     if (component === "time" && returnPanel === "search") state.returnPanel = "search";
     if (component === "time") {
         const weekStart = stringParameter(params, "week", 10);
@@ -450,7 +450,7 @@ export function formatAppRoute(route, basePath = "/") {
     }
 
     const state = route?.state || {};
-    if (panel === "workspaces" && component === "time" && state.returnPanel === "search") {
+    if ((panel === "workspaces" || panel === "settings") && component === "time" && state.returnPanel === "search") {
         params.set("under", "search");
     }
     if (component === "time") {

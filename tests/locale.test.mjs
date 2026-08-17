@@ -50,9 +50,10 @@ test("all statically referenced view messages and plural families exist", async 
     }
 });
 
-test("persisted locale wins and browser language is consulted only on a first visit", () => {
+test("explicit locale wins and automatic mode follows the browser language", () => {
     assert.equal(resolveLocale("de-DE", ["en-US"]), "de");
     assert.equal(resolveLocale("en", ["de-DE"]), "en");
+    assert.equal(resolveLocale("auto", ["de-DE", "en-US"]), "de");
     assert.equal(resolveLocale("fr", ["de-DE"]), "en");
     assert.equal(resolveLocale("", ["fr-FR", "de-DE"]), "de");
     assert.equal(resolveLocale(null, ["fr-FR"]), "en");

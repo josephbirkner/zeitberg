@@ -444,22 +444,27 @@ export class ConfigService {
     }
 
     /**
-     * Loads the explicitly persisted application language independently from workspace and credential state.
-     * An empty result means LocaleService may consult the browser language for this first choice.
-     * @returns {"en" | "de" | ""}
+     * Loads the application language preference independently from workspace and credential state.
+     * Automatic mode follows the browser language and is represented by an absent storage record so first visits need no migration.
+     * @returns {"auto" | "en" | "de"}
      */
     loadLocale() {
         const locale = String(localStorage.getItem(this.storageKeys.locale) || "").trim().toLowerCase();
-        return locale === "en" || locale === "de" ? locale : "";
+        return locale === "en" || locale === "de" ? locale : "auto";
     }
 
     /**
-     * Persists one supported interface language without adding locale-specific values to workspace data.
-     * @param {unknown} locale Requested language code.
+     * Persists one explicit interface language or restores automatic browser-language selection.
+     * The preference never enters workspace data; automatic mode removes the storage record and can therefore follow later browser changes.
+     * @param {unknown} locale Requested language preference.
      * @returns {void}
      */
     saveLocale(locale) {
         const normalized = String(locale || "").trim().toLowerCase();
+        if (normalized === "auto") {
+            localStorage.removeItem(this.storageKeys.locale);
+            return;
+        }
         if (normalized !== "en" && normalized !== "de") throw new Error("Unsupported interface language.");
         localStorage.setItem(this.storageKeys.locale, normalized);
     }

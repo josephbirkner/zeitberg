@@ -81,7 +81,8 @@ body:not(.app-mode) main {
 }
 
 .landing-nav nav a,
-.landing-theme-toggle {
+.landing-theme-toggle,
+.landing-language-select {
   color: var(--landing-slate);
   font-family: var(--mono);
   font-size: 0.68rem;
@@ -89,6 +90,18 @@ body:not(.app-mode) main {
   text-decoration: none;
   text-transform: uppercase;
   letter-spacing: 0.075em;
+}
+
+.landing-language-select {
+  width: 90px;
+  min-height: 32px;
+  padding: 0 22px 0 8px;
+  border: 1px solid var(--landing-line);
+  border-radius: 5px;
+  background-color: var(--landing-soft);
+  color: var(--landing-slate);
+  cursor: pointer;
+  letter-spacing: 0.035em;
 }
 
 .landing-theme-toggle {
@@ -112,6 +125,8 @@ body:not(.app-mode) main {
 .landing-nav nav a:focus-visible,
 .landing-theme-toggle:hover,
 .landing-theme-toggle:focus-visible,
+.landing-language-select:hover,
+.landing-language-select:focus-visible,
 .landing-text-link:hover,
 .landing-text-link:focus-visible,
 .landing-footer a:hover,
@@ -655,6 +670,10 @@ body:not(.app-mode) main {
     display: inline;
   }
 
+  .landing-nav nav {
+    gap: 8px;
+  }
+
   .landing-theme-toggle span {
     display: none;
   }
@@ -663,6 +682,12 @@ body:not(.app-mode) main {
     width: 32px;
     padding: 0;
     justify-content: center;
+  }
+
+  .landing-language-select {
+    width: 86px;
+    padding-right: 18px;
+    padding-left: 6px;
   }
 
   .landing-hero {

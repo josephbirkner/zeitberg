@@ -55,6 +55,9 @@
       </nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-tools">
+        <button id="interfaceSettingsBtn" class="sidebar-button sidebar-language-button" type="button" data-i18n-title="nav.interfaceSettings" title="Interface settings" data-i18n-aria-label="nav.interfaceSettings" aria-label="Interface settings">
+          <span id="appLanguageLabel" aria-hidden="true">EN</span>
+        </button>
         <div class="sidebar-zoom" role="group" data-i18n-aria-label="nav.applicationZoom" aria-label="Application zoom">
           <button id="appZoomOutBtn" class="sidebar-button" type="button" data-i18n-title="nav.zoomOut" title="Zoom app out" data-i18n-aria-label="nav.zoomOut" aria-label="Zoom app out">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_out"></use></svg>
@@ -195,6 +198,11 @@
             <a href="#workspace" data-i18n="landing.setupLink">Setup</a>
             <a href="#similar" data-i18n="landing.similarLink">Similar projects</a>
             <a href="https://github.com/josephbirkner/zeitberg" data-i18n="landing.sourceLink">Source ↗</a>
+            <select id="landingLanguage" class="landing-language-select" data-i18n-aria-label="settings.language" aria-label="Language">
+              <option value="auto" data-i18n="settings.languageAutomaticShort">Auto</option>
+              <option value="en" data-i18n="settings.languageEnglish">English</option>
+              <option value="de" data-i18n="settings.languageGerman">Deutsch</option>
+            </select>
             <button id="landingThemeToggleBtn" class="landing-theme-toggle" type="button" title="Use light theme" aria-label="Use light theme">
               <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#contrast"></use></svg>
               <span>Light</span>
@@ -452,6 +460,29 @@
     <pre id="dataError" class="error error-toast" hidden></pre>
     <div id="repoLabel" class="data-badge" aria-live="polite"></div>
 
+    <dialog id="interfaceDialog" class="dialog interface-dialog">
+      <div class="dialog-card interface-dialog-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="settings.title">Interface</div>
+            <div class="dialog-meta muted" data-i18n="settings.meta">Preferences are stored in this browser independently of your workspaces.</div>
+          </div>
+          <button id="interfaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+          </button>
+        </div>
+
+        <label class="interface-language-setting">
+          <span data-i18n="settings.language">Language</span>
+          <select id="interfaceLanguage">
+            <option value="auto" data-i18n="settings.languageAutomatic">Automatic (browser)</option>
+            <option value="en" data-i18n="settings.languageEnglish">English</option>
+            <option value="de" data-i18n="settings.languageGerman">Deutsch</option>
+          </select>
+        </label>
+      </div>
+    </dialog>
+
     <dialog id="workspaceDialog" class="dialog workspace-dialog">
       <div class="dialog-card workspace-dialog-card">
         <div class="dialog-head">
@@ -463,14 +494,6 @@
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
           </button>
         </div>
-
-        <label class="workspace-language-setting">
-          <span data-i18n="workspace.language">Interface language</span>
-          <select id="workspaceLanguage">
-            <option value="en" data-i18n="workspace.languageEnglish">English</option>
-            <option value="de" data-i18n="workspace.languageGerman">Deutsch</option>
-          </select>
-        </label>
 
         <div id="workspaceList" class="workspace-list" role="list"></div>
 

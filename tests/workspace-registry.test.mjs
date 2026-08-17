@@ -115,13 +115,15 @@ test("ConfigService persists interface language independently from workspace log
     installBrowserStorage(testContext);
     const service = new ConfigService();
 
-    assert.equal(service.loadLocale(), "");
+    assert.equal(service.loadLocale(), "auto");
     service.saveLocale("de");
     assert.equal(service.loadLocale(), "de");
     assert.throws(() => service.saveLocale("fr"), /Unsupported interface language/);
 
     service.clearSaved();
     assert.equal(service.loadLocale(), "de");
+    service.saveLocale("auto");
+    assert.equal(service.loadLocale(), "auto");
 });
 
 test("ConfigService preserves refreshable OAuth grants without exposing them through the registry", (testContext) => {

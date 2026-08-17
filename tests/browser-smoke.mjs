@@ -176,6 +176,21 @@ try {
     await waitForServer(baseUrl, server);
     browser = await chromium.launch({ headless: true });
 
+    const germanContext = await browser.newContext({ locale: "de-DE" });
+    const germanLanding = await germanContext.newPage();
+    await germanLanding.goto(`${baseUrl}/index.html`, { waitUntil: "domcontentloaded" });
+    await germanLanding.locator("#loginSection:not([hidden])").waitFor();
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "de");
+    assert.match(await germanLanding.locator("#landingTitle").textContent(), /Zeiterfassung/);
+    assert.equal(await germanLanding.locator("#landingLanguage").inputValue(), "auto");
+    await germanLanding.locator("#landingLanguage").selectOption("en");
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "en");
+    await germanLanding.reload({ waitUntil: "domcontentloaded" });
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "en");
+    await germanLanding.locator("#landingLanguage").selectOption("auto");
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "de");
+    await germanContext.close();
+
     const desktop = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await desktop.coverage.startJSCoverage({ resetOnNavigation: false });
     const browserErrors = [];
@@ -191,6 +206,16 @@ try {
     assert.notEqual(await desktop.locator("#appZoomLabel").textContent(), "100%");
     await desktop.locator("#appZoomResetBtn").click();
     assert.equal(await desktop.locator("#appZoomLabel").textContent(), "100%");
+
+    await desktop.locator("#interfaceSettingsBtn").click();
+    assert.equal(await desktop.locator("#interfaceDialog").evaluate((dialog) => dialog.open), true);
+    assert.match(desktop.url(), /panel=settings/);
+    await desktop.locator("#interfaceLanguage").selectOption("de");
+    assert.equal(await desktop.locator("html").getAttribute("lang"), "de");
+    assert.equal(await desktop.locator("#appLanguageLabel").textContent(), "DE");
+    await desktop.locator("#interfaceLanguage").selectOption("en");
+    await desktop.locator("#interfaceDialogCloseBtn").click();
+    await desktop.waitForURL((url) => !url.searchParams.has("panel"));
 
     await desktop.locator("#workspaceSettingsBtn").click();
     assert.equal(await desktop.locator("#workspaceDialog").evaluate((dialog) => dialog.open), true);
@@ -245,6 +270,12 @@ try {
     await narrow.locator("#todoCancelBtn").click();
 
     await openComponent(narrow, baseUrl, "time");
+    await narrow.locator("#interfaceSettingsBtn").click();
+    const interfaceDialog = await dialogSize(narrow.locator("#interfaceDialog .dialog-card"));
+    assert.equal(interfaceDialog.width, interfaceDialog.viewportWidth);
+    assert.equal(interfaceDialog.height, interfaceDialog.viewportHeight);
+    await narrow.locator("#interfaceDialogCloseBtn").click();
+    await narrow.waitForURL((url) => !url.searchParams.has("panel"));
     await narrow.locator("#workspaceSettingsBtn").click();
     const workspaceDialog = await dialogSize(narrow.locator("#workspaceDialog .dialog-card"));
     assert.equal(workspaceDialog.width, workspaceDialog.viewportWidth);

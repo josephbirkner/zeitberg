@@ -13,6 +13,7 @@ export const EN_MESSAGES = Object.freeze({
     "nav.views": "Views",
     "nav.workspaces": "Workspaces",
     "nav.manageWorkspaces": "Manage workspaces",
+    "nav.interfaceSettings": "Interface settings",
     "nav.weekTitle": "Week (Ctrl+W)",
     "nav.week": "Week view",
     "nav.todosTitle": "Tasks (Ctrl+T)",
@@ -35,6 +36,14 @@ export const EN_MESSAGES = Object.freeze({
     "nav.manageProjects": "Manage projects",
     "nav.reload": "Reload data",
     "nav.logout": "Logout",
+
+    "settings.title": "Interface",
+    "settings.meta": "Preferences are stored in this browser independently of your workspaces.",
+    "settings.language": "Language",
+    "settings.languageAutomatic": "Automatic (browser)",
+    "settings.languageAutomaticShort": "Auto",
+    "settings.languageEnglish": "English",
+    "settings.languageGerman": "Deutsch",
 
     "provider.selfHosted": "Self-hosted Git",
     "provider.local": "Local server",
@@ -201,9 +210,6 @@ export const EN_MESSAGES = Object.freeze({
 
     "workspace.title": "Workspaces",
     "workspace.meta": "Connections are stored in this browser. Credentials remain separate from workspace metadata.",
-    "workspace.language": "Interface language",
-    "workspace.languageEnglish": "English",
-    "workspace.languageGerman": "Deutsch",
     "workspace.add": "Add workspace",
     "workspace.addMeta": "Connect another repository without disconnecting the current one.",
     "workspace.repositoryUrl": "Repository URL",
@@ -593,6 +599,7 @@ export const DE_MESSAGES = Object.freeze({
     "nav.views": "Ansichten",
     "nav.workspaces": "Arbeitsbereiche",
     "nav.manageWorkspaces": "Arbeitsbereiche verwalten",
+    "nav.interfaceSettings": "Oberflächeneinstellungen",
     "nav.weekTitle": "Woche (Strg+W)",
     "nav.week": "Wochenansicht",
     "nav.todosTitle": "Aufgaben (Strg+T)",
@@ -615,6 +622,14 @@ export const DE_MESSAGES = Object.freeze({
     "nav.manageProjects": "Projekte verwalten",
     "nav.reload": "Daten neu laden",
     "nav.logout": "Abmelden",
+
+    "settings.title": "Oberfläche",
+    "settings.meta": "Einstellungen werden unabhängig von deinen Arbeitsbereichen in diesem Browser gespeichert.",
+    "settings.language": "Sprache",
+    "settings.languageAutomatic": "Automatisch (Browser)",
+    "settings.languageAutomaticShort": "Auto",
+    "settings.languageEnglish": "English",
+    "settings.languageGerman": "Deutsch",
 
     "provider.selfHosted": "Selbst gehostetes Git",
     "provider.local": "Lokaler Server",
@@ -781,9 +796,6 @@ export const DE_MESSAGES = Object.freeze({
 
     "workspace.title": "Arbeitsbereiche",
     "workspace.meta": "Verbindungen werden in diesem Browser gespeichert. Zugangsdaten bleiben von den Arbeitsbereichsmetadaten getrennt.",
-    "workspace.language": "Oberflächensprache",
-    "workspace.languageEnglish": "English",
-    "workspace.languageGerman": "Deutsch",
     "workspace.add": "Arbeitsbereich hinzufügen",
     "workspace.addMeta": "Verbinde ein weiteres Repository, ohne das aktuelle zu trennen.",
     "workspace.repositoryUrl": "Repository-URL",
@@ -1220,15 +1232,15 @@ const EXACT_ERROR_KEYS = new Map([
 ]);
 
 /**
- * Chooses one supported language from a persisted value or, only when absent, the browser preference list.
+ * Chooses one supported language from an explicit preference or the browser preference list in automatic mode.
  * Regional subtags such as de-DE reduce to their base language; every unsupported language falls back to English.
- * @param {unknown} persistedLocale Previously saved application preference.
- * @param {readonly string[]} [browserLanguages] Ordered navigator language values used for a first visit.
+ * @param {unknown} persistedLocale Saved `auto`, English, or German application preference.
+ * @param {readonly string[]} [browserLanguages] Ordered navigator language values used in automatic mode.
  * @returns {SupportedLocale}
  */
 export function resolveLocale(persistedLocale, browserLanguages = []) {
     const persistedValue = String(persistedLocale || "").trim().toLowerCase();
-    if (persistedValue) {
+    if (persistedValue && persistedValue !== "auto") {
         const persisted = persistedValue.split("-")[0];
         return SUPPORTED_LOCALES.includes(persisted) ? /** @type {SupportedLocale} */ (persisted) : "en";
     }

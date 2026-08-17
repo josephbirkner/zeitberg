@@ -102,6 +102,27 @@ test("Workspace settings preserve the Time panel they cover", () => {
     assert.deepEqual(parseAppRoute(`https://zeitberg.io${encoded}`), route);
 });
 
+test("Interface settings preserve the Time panel they cover", () => {
+    const route = {
+        version: 1,
+        component: "time",
+        panel: "settings",
+        workspace: githubWorkspace,
+        state: {
+            returnPanel: "search",
+            weekStart: "2026-08-10",
+            query: "settings-covered search",
+            sort: "desc",
+        },
+    };
+
+    const encoded = formatAppRoute(route);
+
+    assert.match(encoded, /panel=settings/);
+    assert.match(encoded, /under=search/);
+    assert.deepEqual(parseAppRoute(`https://zeitberg.io${encoded}`), route);
+});
+
 test("capability links round-trip one exact workspace and keep credentials out of the public route", () => {
     const route = {
         version: 1,

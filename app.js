@@ -1100,15 +1100,15 @@ class App {
         this.routeRestoreInProgress = false;
         this.activeGlobalPanel = null;
         this.workspaceDialogOpenedByPush = false;
+        this.interfaceDialogOpenedByPush = false;
         this.configService = new ConfigService();
-        const persistedLocale = this.configService.loadLocale();
-        const browserLanguages = Array.isArray(navigator.languages)
+        this.localePreference = this.configService.loadLocale();
+        this.browserLanguages = Array.isArray(navigator.languages)
             ? navigator.languages
             : navigator.language
               ? [navigator.language]
               : [];
-        this.locale = new LocaleService(resolveLocale(persistedLocale, browserLanguages));
-        if (!persistedLocale) this.configService.saveLocale(this.locale.locale);
+        this.locale = new LocaleService(resolveLocale(this.localePreference, this.browserLanguages));
         this.locale.applyDocument(document);
         this.isLocalMode = this.initialRoute.workspace?.provider === "local" || getSourceMode() === "local";
         const persistedConfig = this.configService.loadConfig();
@@ -1189,6 +1189,8 @@ class App {
         this.topbarEl = getRequiredElement("topbar", HTMLElement);
         this.appHomeLink = getRequiredElement("appHomeLink", HTMLAnchorElement);
         this.workspaceSettingsBtn = getRequiredElement("workspaceSettingsBtn", HTMLButtonElement);
+        this.interfaceSettingsBtn = getRequiredElement("interfaceSettingsBtn", HTMLButtonElement);
+        this.appLanguageLabelEl = getRequiredElement("appLanguageLabel", HTMLElement);
         this.menuWeekBtn = getRequiredElement("menuWeekBtn", HTMLButtonElement);
         this.menuTodoBtn = getRequiredElement("menuTodoBtn", HTMLButtonElement);
         this.menuExpenseBtn = getRequiredElement("menuExpenseBtn", HTMLButtonElement);
@@ -1199,6 +1201,7 @@ class App {
         this.appZoomInBtn = getRequiredElement("appZoomInBtn", HTMLButtonElement);
         this.appThemeToggleBtn = getRequiredElement("appThemeToggleBtn", HTMLButtonElement);
         this.landingThemeToggleBtn = getRequiredElement("landingThemeToggleBtn", HTMLButtonElement);
+        this.landingLanguageSelect = getRequiredElement("landingLanguage", HTMLSelectElement);
         this.weekControlsEl = getRequiredElement("weekControls", HTMLElement);
         this.projectsBtn = getRequiredElement("projectsBtn", HTMLButtonElement);
 
@@ -1348,9 +1351,11 @@ class App {
         this.tokenInput = getRequiredElement("tokenInput", HTMLInputElement);
         this.rememberInput = getRequiredElement("rememberInput", HTMLInputElement);
 
+        this.interfaceDialog = getRequiredElement("interfaceDialog", HTMLDialogElement);
+        this.interfaceDialogCloseBtn = getRequiredElement("interfaceDialogCloseBtn", HTMLButtonElement);
+        this.interfaceLanguageSelect = getRequiredElement("interfaceLanguage", HTMLSelectElement);
         this.workspaceDialog = getRequiredElement("workspaceDialog", HTMLDialogElement);
         this.workspaceDialogCloseBtn = getRequiredElement("workspaceDialogCloseBtn", HTMLButtonElement);
-        this.workspaceLanguageSelect = getRequiredElement("workspaceLanguage", HTMLSelectElement);
         this.workspaceListEl = getRequiredElement("workspaceList", HTMLElement);
         this.workspaceAddForm = getRequiredElement("workspaceAddForm", HTMLFormElement);
         this.workspaceProviderInput = getRequiredElement("workspaceProvider", HTMLSelectElement);
@@ -1620,21 +1625,26 @@ class App {
         this.theme = this.config.theme === "light" ? "light" : "dark";
         this.setTheme(this.theme, false);
         this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
-        this.applyLocale(this.locale.locale, false);
+        this.applyLocale(this.localePreference, false);
     }
 
     /**
      * Applies one interface language across declarative markup, dynamic views, formatters, and accessibility labels.
      * The preference is browser-local and never written into a workspace repository; changing it preserves all selected records and route state.
-     * @param {unknown} locale Requested supported language.
+     * Automatic mode resolves the effective language from the browser every time the application starts, while explicit choices override it.
+     * @param {unknown} locale Requested language preference (`auto`, `en`, or `de`).
      * @param {boolean} [shouldPersist] Whether ConfigService should retain the selection for later visits.
      * @returns {void}
      */
     applyLocale(locale, shouldPersist = true) {
-        this.locale.setLocale(locale);
-        if (shouldPersist) this.configService.saveLocale(this.locale.locale);
+        const requested = String(locale || "").trim().toLowerCase();
+        this.localePreference = requested === "en" || requested === "de" ? requested : "auto";
+        this.locale.setLocale(resolveLocale(this.localePreference, this.browserLanguages));
+        if (shouldPersist) this.configService.saveLocale(this.localePreference);
         this.locale.applyDocument(document);
-        this.workspaceLanguageSelect.value = this.locale.locale;
+        this.landingLanguageSelect.value = this.localePreference;
+        this.interfaceLanguageSelect.value = this.localePreference;
+        this.appLanguageLabelEl.textContent = this.locale.locale.toUpperCase();
         this.setTheme(this.theme, false);
         this.setAppZoom(this.uiZoom, false, this.uiZoomMode);
         this.updateProviderForm(this.providerInput, this.repositoryInput);
@@ -2273,6 +2283,45 @@ class App {
     }
 
     /**
+     * Opens device-local Interface settings over the active component and records the modal in browser history.
+     * Language changes take effect immediately and never modify workspace data.
+     * @param {"push" | "none"} [historyMode] Whether opening should create a browser-history entry.
+     * @returns {void}
+     */
+    openInterfaceSettings(historyMode = "push") {
+        if (this.appSection.hidden || !this.workspace) return;
+        this.activeGlobalPanel = "settings";
+        this.interfaceDialogOpenedByPush = historyMode === "push";
+        this.interfaceSettingsBtn.setAttribute("aria-current", "page");
+        if (!this.interfaceDialog.open) this.interfaceDialog.showModal();
+        if (historyMode === "push") this.writeCurrentRoute("push");
+    }
+
+    /**
+     * Closes Interface settings and restores the component route beneath it.
+     * A close after an in-app open uses browser Back; direct settings URLs are normalized in place.
+     * @param {"back" | "replace" | "none"} [historyMode] Route behavior used while closing.
+     * @returns {void}
+     */
+    closeInterfaceSettings(historyMode = "back") {
+        const wasOpen = this.interfaceDialog.open;
+        if (wasOpen) this.interfaceDialog.close();
+        if (this.activeGlobalPanel === "settings") this.activeGlobalPanel = null;
+        this.interfaceSettingsBtn.removeAttribute("aria-current");
+        if (!wasOpen || historyMode === "none" || this.routeRestoreInProgress) {
+            if (historyMode === "none") this.interfaceDialogOpenedByPush = false;
+            return;
+        }
+        if (historyMode === "back" && this.interfaceDialogOpenedByPush) {
+            this.interfaceDialogOpenedByPush = false;
+            window.history.back();
+            return;
+        }
+        this.interfaceDialogOpenedByPush = false;
+        this.writeCurrentRoute("replace");
+    }
+
+    /**
      * Opens Workspace settings as a modal global panel and optionally records that navigation in browser history.
      * The underlying component remains mounted, allowing Back or dialog close to return to its exact view state.
      * @param {"push" | "none"} [historyMode] Whether opening should create a browser-history entry.
@@ -2298,7 +2347,7 @@ class App {
     closeWorkspaceSettings(historyMode = "back") {
         const wasOpen = this.workspaceDialog.open;
         if (wasOpen) this.workspaceDialog.close();
-        this.activeGlobalPanel = null;
+        if (this.activeGlobalPanel === "workspaces") this.activeGlobalPanel = null;
         this.workspaceSettingsBtn.removeAttribute("aria-current");
         if (!wasOpen || historyMode === "none" || this.routeRestoreInProgress) {
             if (historyMode === "none") this.workspaceDialogOpenedByPush = false;
@@ -2814,7 +2863,10 @@ class App {
      * @returns {import("./routing.js").AppRoute}
      */
     buildCurrentRoute() {
-        const globalPanel = this.activeGlobalPanel === "workspaces" ? "workspaces" : null;
+        const globalPanel =
+            this.activeGlobalPanel === "workspaces" || this.activeGlobalPanel === "settings"
+                ? this.activeGlobalPanel
+                : null;
         if (this.state.activeTab === "todos") {
             return {
                 version: 1,
@@ -2880,7 +2932,8 @@ class App {
         if (route.component === "expenses") return "expenses";
         if (
             route.component === "time" &&
-            (route.panel === "search" || (route.panel === "workspaces" && route.state.returnPanel === "search"))
+            (route.panel === "search" ||
+                ((route.panel === "workspaces" || route.panel === "settings") && route.state.returnPanel === "search"))
         ) {
             return "search";
         }
@@ -2932,8 +2985,16 @@ class App {
         } else if (normalized.component === "expenses") {
             this.expenseView.restoreRouteState(normalized.state);
         }
-        if (normalized.panel === "workspaces") this.openWorkspaceSettings("none");
-        else this.closeWorkspaceSettings("none");
+        if (normalized.panel === "workspaces") {
+            this.closeInterfaceSettings("none");
+            this.openWorkspaceSettings("none");
+        } else if (normalized.panel === "settings") {
+            this.closeWorkspaceSettings("none");
+            this.openInterfaceSettings("none");
+        } else {
+            this.closeWorkspaceSettings("none");
+            this.closeInterfaceSettings("none");
+        }
 
         window.requestAnimationFrame(() => {
             this.routeRestoreInProgress = false;
@@ -3154,17 +3215,29 @@ class App {
         this.workspaceCreateOAuthBtn.addEventListener("click", () => void this.beginOAuthWorkspaceCreation());
         this.workspaceCreateForm.addEventListener("submit", (event) => void this.handleWorkspaceCreateSubmit(event));
         this.clearSavedBtn.addEventListener("click", () => this.handleClearSaved());
+        this.landingLanguageSelect.addEventListener("change", () =>
+            this.applyLocale(this.landingLanguageSelect.value),
+        );
         this.workspaceSettingsBtn.addEventListener("click", () => {
             if (this.workspaceDialog.open) this.closeWorkspaceSettings();
             else this.openWorkspaceSettings();
         });
         this.workspaceDialogCloseBtn.addEventListener("click", () => this.closeWorkspaceSettings());
-        this.workspaceLanguageSelect.addEventListener("change", () =>
-            this.applyLocale(this.workspaceLanguageSelect.value),
-        );
         this.workspaceDialog.addEventListener("cancel", (ev) => {
             ev.preventDefault();
             this.closeWorkspaceSettings();
+        });
+        this.interfaceSettingsBtn.addEventListener("click", () => {
+            if (this.interfaceDialog.open) this.closeInterfaceSettings();
+            else this.openInterfaceSettings();
+        });
+        this.interfaceDialogCloseBtn.addEventListener("click", () => this.closeInterfaceSettings());
+        this.interfaceLanguageSelect.addEventListener("change", () =>
+            this.applyLocale(this.interfaceLanguageSelect.value),
+        );
+        this.interfaceDialog.addEventListener("cancel", (ev) => {
+            ev.preventDefault();
+            this.closeInterfaceSettings();
         });
         this.workspaceAddForm.addEventListener("submit", (ev) => void this.handleWorkspaceAdd(ev));
         this.workspaceListEl.addEventListener("click", (ev) => void this.handleWorkspaceListClick(ev));
@@ -4368,6 +4441,7 @@ class App {
         this.refreshDataBadge();
         this.projectDialog.close();
         this.closeWorkspaceSettings("none");
+        this.closeInterfaceSettings("none");
         setVisible(this.weekControlsEl, false);
         setVisible(this.todoTopbarControlsEl, false);
         setVisible(this.expenseTopbarControlsEl, false);
