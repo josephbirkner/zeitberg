@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zeitplural.io/schema/entries-v2.schema.json",
-  "title": "Zeitplural Weekly Entries (v2)",
+  "$id": "https://zeitberg.io/schema/entries-v2.schema.json",
+  "title": "Zeitberg Weekly Entries (v2)",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "timezone", "year", "week", "generated_at", "entries"],

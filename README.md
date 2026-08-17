@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="./assets/zeitplural-mark.svg" width="92" height="92" alt="zeitplural owl mark" />
+  <img src="./assets/zeitberg-mark.svg" width="92" height="92" alt="zeitberg owl mark" />
 </p>
 
-<h1 align="center">zeitplural</h1>
+<h1 align="center">zeitberg</h1>
 
 <p align="center">
   <strong>Time · Tasks · Expenses → Git</strong><br />
@@ -10,14 +10,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml/badge.svg?branch=main" /></a>
-  <a href="https://github.com/josephbirkner/zeitplural/actions/workflows/test.yml"><img alt="Logic coverage: at least 90%" src="https://img.shields.io/badge/logic%20coverage-%E2%89%A590%25-2b9c68" /></a>
-  <a href="https://github.com/josephbirkner/zeitplural/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/josephbirkner/zeitplural?display_name=tag&amp;sort=semver" /></a>
+  <a href="https://github.com/josephbirkner/zeitberg/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/josephbirkner/zeitberg/actions/workflows/test.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/josephbirkner/zeitberg/actions/workflows/test.yml"><img alt="Logic coverage: at least 90%" src="https://img.shields.io/badge/logic%20coverage-%E2%89%A590%25-2b9c68" /></a>
+  <a href="https://github.com/josephbirkner/zeitberg/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/josephbirkner/zeitberg?display_name=tag&amp;sort=semver" /></a>
 </p>
 
 ---
 
-zeitplural manages time, TODOs, and shared expenses. The public application is plain HTML, CSS, and JavaScript. It has no zeitplural-operated application server or database.
+zeitberg manages time, TODOs, and shared expenses. The public application is plain HTML, CSS, and JavaScript. It has no zeitberg-operated application server or database.
 
 You choose a Git repository as the workspace. The browser reads and writes versioned documents directly through the provider API. The repository remains independently inspectable, cloneable, and portable.
 
@@ -26,7 +26,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./assets/architecture.svg" />
-    <img src="./assets/architecture-light.svg" alt="The static zeitplural application runs in the browser and connects directly through a Git provider API to a private workspace repository." />
+    <img src="./assets/architecture-light.svg" alt="The static zeitberg application runs in the browser and connects directly through a Git provider API to a private workspace repository." />
   </picture>
 </p>
 
@@ -44,7 +44,7 @@ The project is intentionally one application: time, tasks, and expenses share a 
 
 ## Similar projects
 
-No direct equivalent surfaced in our review. The closest projects each overlap with one part of zeitplural:
+No direct equivalent surfaced in our review. The closest projects each overlap with one part of zeitberg:
 
 - [GitJournal](https://github.com/GitJournal/GitJournal) stores Markdown notes in a Git repository of the user's choice.
 - [TaskRepo](https://github.com/HenriquesLab/TaskRepo) stores tasks as Markdown files in Git repositories.
@@ -57,26 +57,26 @@ GitHub, GitLab.com, Codeberg, and compatible CORS-enabled GitLab/Forgejo servers
 
 1. Create a **private** repository for your data.
 2. Copy the contents of [`workspace-template`](./workspace-template) into it.
-3. In `zeitplural.json`, replace `workspace_id`, set the name and IANA timezone, then commit and push.
+3. In `zeitberg.json`, replace `workspace_id`, set the name and IANA timezone, then commit and push.
 4. Create an access token for that repository:
    - GitHub: a fine-grained PAT with `Contents: Read-only` to browse or `Contents: Read & write` to save.
    - GitLab: a PAT with API access, or the static PKCE flow when enabled on the deployment.
    - Codeberg/Forgejo: a repository-scoped token with repository read/write access. Forgejo OAuth grants are currently broader than scoped PATs, which the onboarding dialog states before authorization.
-5. Visit [zeitplural.io](https://zeitplural.io), select the provider, enter the repository URL, branch, and token, then open the workspace.
+5. Visit [zeitberg.io](https://zeitberg.io), select the provider, enter the repository URL, branch, and token, then open the workspace.
 
-Alternatively, choose **Create workspace** on the landing page. GitLab.com and Codeberg can create a private repository, initialize the checked-in [`workspace-template`](./workspace-template), validate its generated `zeitplural.json`, and open it without any zeitplural-operated backend. If a Forgejo-family server blocks browser cross-origin requests, connection preflight reports that limitation instead of treating it as malformed data.
+Alternatively, choose **Create workspace** on the landing page. GitLab.com and Codeberg can create a private repository, initialize the checked-in [`workspace-template`](./workspace-template), validate its generated `zeitberg.json`, and open it without any zeitberg-operated backend. If a Forgejo-family server blocks browser cross-origin requests, connection preflight reports that limitation instead of treating it as malformed data.
 
 A shell-based start looks like this after cloning this application repository:
 
 ```bash
-mkdir zeitplural-data
-cp -R workspace-template/. zeitplural-data/
-cd zeitplural-data
+mkdir zeitberg-data
+cp -R workspace-template/. zeitberg-data/
+cd zeitberg-data
 git init
-# Edit zeitplural.json before the first commit.
+# Edit zeitberg.json before the first commit.
 git add .
-git commit -m "Initialize zeitplural workspace"
-gh repo create YOUR_ACCOUNT/zeitplural-data --private --source=. --push
+git commit -m "Initialize zeitberg workspace"
+gh repo create YOUR_ACCOUNT/zeitberg-data --private --source=. --push
 ```
 
 The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to the selected provider API; the static host never receives the credential. OAuth grants retain their refresh token in the same per-workspace credential record and refresh shortly before expiry.
@@ -86,9 +86,9 @@ After opening a workspace, use the first sidebar action beneath the owl to manag
 The same screen can share the active workspace in two forms:
 
 - A **locator link** contains only the provider, repository URL, branch, workspace file and ID, selected component, and current view state. Its recipient supplies a credential independently.
-- A **capability link** additionally carries a dedicated repository token in its URL fragment. The fragment is removed from the address bar before zeitplural performs authenticated network activity, and importing it requires explicit consent. Because anyone holding the link receives the token's access, create a least-privilege, expiring token for only that repository and send the link as securely as the credential itself. Imported capability credentials remain in session storage unless the recipient explicitly chooses to remember them.
+- A **capability link** additionally carries a dedicated repository token in its URL fragment. The fragment is removed from the address bar before zeitberg performs authenticated network activity, and importing it requires explicit consent. Because anyone holding the link receives the token's access, create a least-privilege, expiring token for only that repository and send the link as securely as the credential itself. Imported capability credentials remain in session storage unless the recipient explicitly chooses to remember them.
 
-Ordinary routes, locator links, workspace records, cache keys, and repository documents never contain credentials. A custom provider host also requires a separate trust confirmation before zeitplural sends it an imported capability credential.
+Ordinary routes, locator links, workspace records, cache keys, and repository documents never contain credentials. A custom provider host also requires a separate trust confirmation before zeitberg sends it an imported capability credential.
 
 The interface language is selected in Workspace settings. English and German share one first-party message catalog; the browser language supplies only the initial default, after which the explicit device preference wins. Dates, weekdays, numbers, durations, and currencies use `Intl` in the selected language while workspace calendar math continues to use the workspace's IANA timezone. Language changes do not alter route paths or write translated interface text into workspace documents.
 
@@ -96,7 +96,7 @@ If a project is bound to another GitHub repository for issue synchronization, th
 
 ## How the workspace works
 
-`zeitplural.json` is the versioned bootstrap document. It declares:
+`zeitberg.json` is the versioned bootstrap document. It declares:
 
 - a stable workspace ID, name, and timezone;
 - shared resources such as `data/projects.json`;
@@ -106,7 +106,7 @@ If a project is bound to another GitHub repository for issue synchronization, th
 The default template has this shape:
 
 ```text
-zeitplural.json
+zeitberg.json
 data/
 ├── entries/                     # weekly files created as needed
 ├── index/entries-manifest.json
@@ -145,7 +145,7 @@ A workspace project can opt into GitHub issue persistence with an external refer
 }
 ```
 
-Sections may identify their repository-scoped issue label through a `github-label` external reference. At initialization and explicit refresh, zeitplural loads open and closed issues, filters out pull requests, maps recognized section labels, and conditionally revalidates an IndexedDB cache. GitHub remains authoritative for issue title, description, labels, and state; schema-v4 `todos.json` stores only small scheduling overlays for those tasks.
+Sections may identify their repository-scoped issue label through a `github-label` external reference. At initialization and explicit refresh, zeitberg loads open and closed issues, filters out pull requests, maps recognized section labels, and conditionally revalidates an IndexedDB cache. GitHub remains authoritative for issue title, description, labels, and state; schema-v4 `todos.json` stores only small scheduling overlays for those tasks.
 
 Edits remain local until an explicit task Save. That operation creates, updates, closes, or reopens issues first and then commits the compact TODO document, with optimistic conflict checks preventing a newer upstream edit from being overwritten. Project settings provide repository inspection and explicit connect/detach migration choices, so existing local tasks are never bulk-published silently. Local-server mode continues to write workspace files without making remote issue changes.
 
@@ -155,15 +155,15 @@ Keep the public application and private workspace as sibling checkouts:
 
 ```bash
 cd /path/to/checkouts
-gh repo clone josephbirkner/zeitplural
-gh repo clone YOUR_ACCOUNT/zeitplural-data
-cd zeitplural
+gh repo clone josephbirkner/zeitberg
+gh repo clone YOUR_ACCOUNT/zeitberg-data
+cd zeitberg
 npm ci
 npm test
-python3 server.py --workspace ../zeitplural-data
+python3 server.py --workspace ../zeitberg-data
 ```
 
-Open <http://127.0.0.1:8000/time?source=local>. When the sibling is named `zeitplural-data`, `--workspace` may be omitted.
+Open <http://127.0.0.1:8000/time?source=local>. When the sibling is named `zeitberg-data`, `--workspace` may be omitted.
 
 Local mode serves application files from this checkout and maps workspace reads plus `POST /save` to the separate data checkout. It writes JSON without committing; review, commit, and push data changes from that repository independently.
 
@@ -193,8 +193,8 @@ Repeat `--workspace` to test the multi-workspace switcher against several local 
 
 ```bash
 python3 server.py \
-    --workspace ../zeitplural-data \
-    --workspace ../zeitplural-shared-expenses
+    --workspace ../zeitberg-data \
+    --workspace ../zeitberg-shared-expenses
 ```
 
 The server reads each repository's `workspace_id`, exposes only those explicitly selected roots, and keeps absolute filesystem paths out of browser routes. Local saves include the selected workspace ID so writes cannot cross into another exposed checkout.
@@ -208,20 +208,20 @@ Useful checks:
 ```bash
 npm test
 npm run typecheck
-npm run check:data -- --workspace ../zeitplural-data
+npm run check:data -- --workspace ../zeitberg-data
 ```
 
 The one-way Todoist importer reads its token from `~/.todoist` and never copies it into a repository:
 
 ```bash
-npm run import:todoist -- --workspace ../zeitplural-data
+npm run import:todoist -- --workspace ../zeitberg-data
 ```
 
 Use `--replace-todoist` to refresh an earlier import, `--active-only` to omit completed history, or `--completed-since YYYY-MM-DD` to choose an archive boundary.
 
 ## Hosting and provider authentication
 
-The public deployment serves this repository from [zeitplural.io](https://zeitplural.io). You can also fork and host the same static files yourself, including from a private Pages deployment where your hosting plan supports one.
+The public deployment serves this repository from [zeitberg.io](https://zeitberg.io). You can also fork and host the same static files yourself, including from a private Pages deployment where your hosting plan supports one.
 
 Provider connectors retain the same architecture:
 
@@ -233,22 +233,22 @@ Provider connectors retain the same architecture:
 To enable OAuth on a static deployment, register two public applications with these exact callback URLs:
 
 ```text
-GitLab:   https://zeitplural.io/?oauth_provider=gitlab
-Codeberg: https://zeitplural.io/?oauth_provider=codeberg
+GitLab:   https://zeitberg.io/?oauth_provider=gitlab
+Codeberg: https://zeitberg.io/?oauth_provider=codeberg
 ```
 
-Enable Authorization Code with PKCE and do not place a client secret in this repository. Put the resulting public client ids into the `zeitplural-oauth-gitlab-client-id` and `zeitplural-oauth-codeberg-client-id` meta elements in [`index.html`](./index.html). Self-hosted deployments use their own origin in both callback URLs. The application validates short-lived session state, requires S256 PKCE, scrubs callback codes before token exchange, refreshes expiring grants, and loads no third-party runtime scripts.
+Enable Authorization Code with PKCE and do not place a client secret in this repository. Put the resulting public client ids into the `zeitberg-oauth-gitlab-client-id` and `zeitberg-oauth-codeberg-client-id` meta elements in [`index.html`](./index.html). Self-hosted deployments use their own origin in both callback URLs. The application validates short-lived session state, requires S256 PKCE, scrubs callback codes before token exchange, refreshes expiring grants, and loads no third-party runtime scripts.
 
 There is deliberately no GitHub App or OAuth broker today: GitHub's confidential OAuth and GitHub App flows require a server-held secret or private key, while the current fine-grained PAT flow remains fully static.
 
 ## License
 
-Zeitplural is available under the [Apache License 2.0](./LICENSE).
+Zeitberg is available under the [Apache License 2.0](./LICENSE).
 
 ## Credits and disclosure
 
 The code for this project was written using large language models with extensive human supervision.
 
-The zeitplural owl mark adapts the **owl** glyph from [Google Material Symbols](https://github.com/google/material-design-icons), used under the [Apache License 2.0](./icons/LICENSE). Its iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitplural-mark.svg`](./assets/zeitplural-mark.svg) by `npm run build:icons`. The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
+The zeitberg owl mark adapts the **owl** glyph from [Google Material Symbols](https://github.com/google/material-design-icons), used under the [Apache License 2.0](./icons/LICENSE). Its iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitberg-mark.svg`](./assets/zeitberg-mark.svg) by `npm run build:icons`. The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
 
 No generative or diffusion-based image model was used for the logo or architecture graphic.

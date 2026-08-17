@@ -9,7 +9,7 @@ import { Manifest, Workspace } from "../model.js";
  */
 function makeWorkspaceRaw() {
     return {
-        $schema: "https://zeitplural.io/schema/workspace-v1.schema.json",
+        $schema: "https://zeitberg.io/schema/workspace-v1.schema.json",
         components: {
             expenses: {
                 paths: {

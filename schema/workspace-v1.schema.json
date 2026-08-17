@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zeitplural.io/schema/workspace-v1.schema.json",
-  "title": "Zeitplural Workspace (v1)",
+  "$id": "https://zeitberg.io/schema/workspace-v1.schema.json",
+  "title": "Zeitberg Workspace (v1)",
   "type": "object",
   "additionalProperties": false,
   "required": ["components", "name", "resources", "schema_version", "timezone", "workspace_id"],

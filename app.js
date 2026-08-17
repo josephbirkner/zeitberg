@@ -113,7 +113,7 @@ function buildHostedWorkspaceLocator(provider, repositoryValue, ref, workspacePa
         provider: selectedProvider,
         repositoryUrl,
         ref: String(ref || "").trim(),
-        workspacePath: String(workspacePath || "zeitplural.json").trim(),
+        workspacePath: String(workspacePath || "zeitberg.json").trim(),
         expectedWorkspaceId: String(expectedWorkspaceId || "").trim(),
     });
     if (!locator || locator.provider === "local") throw new Error("Select a supported hosted Git provider.");
@@ -1811,11 +1811,11 @@ class App {
     updateProviderForm(providerInput, repositoryInput) {
         const provider = providerInput.value;
         const placeholders = {
-            github: "https://github.com/you/zeitplural-data",
-            gitlab: "https://gitlab.com/you/zeitplural-data",
-            codeberg: "https://codeberg.org/you/zeitplural-data",
-            forgejo: "https://git.example.org/you/zeitplural-data",
-            custom: "https://git.example.org/you/zeitplural-data",
+            github: "https://github.com/you/zeitberg-data",
+            gitlab: "https://gitlab.com/you/zeitberg-data",
+            codeberg: "https://codeberg.org/you/zeitberg-data",
+            forgejo: "https://git.example.org/you/zeitberg-data",
+            custom: "https://git.example.org/you/zeitberg-data",
         };
         repositoryInput.placeholder = placeholders[provider] || placeholders.custom;
         if (providerInput === this.providerInput) {
@@ -1950,7 +1950,7 @@ class App {
                     mode: "create",
                     repositoryUrl: "",
                     ref: "main",
-                    workspacePath: "zeitplural.json",
+                    workspacePath: "zeitberg.json",
                     expectedWorkspaceId: "",
                     remember: this.workspaceCreateRememberInput.checked,
                     repositoryName: this.workspaceCreateRepositoryInput.value,
@@ -1974,7 +1974,7 @@ class App {
     async loadWorkspaceTemplateFiles(workspaceName, timezone) {
         const paths = [
             "README.md",
-            "zeitplural.json",
+            "zeitberg.json",
             "data/projects.json",
             "data/todos.json",
             "data/expenses.json",
@@ -1989,7 +1989,7 @@ class App {
                 return { path, content: await response.text() };
             }),
         );
-        const workspaceFile = files.find((file) => file.path === "zeitplural.json");
+        const workspaceFile = files.find((file) => file.path === "zeitberg.json");
         const manifestFile = files.find((file) => file.path === "data/index/entries-manifest.json");
         if (!workspaceFile || !manifestFile) throw new Error("The workspace template is incomplete.");
         const workspaceRaw = JSON.parse(workspaceFile.content);
@@ -2028,9 +2028,9 @@ class App {
     ) {
         const placeholderUrl =
             provider === "gitlab"
-                ? "https://gitlab.com/zeitplural-onboarding/placeholder"
-                : "https://codeberg.org/zeitplural-onboarding/placeholder";
-        const placeholderLocator = buildHostedWorkspaceLocator(provider, placeholderUrl, "main", "zeitplural.json");
+                ? "https://gitlab.com/zeitberg-onboarding/placeholder"
+                : "https://codeberg.org/zeitberg-onboarding/placeholder";
+        const placeholderLocator = buildHostedWorkspaceLocator(provider, placeholderUrl, "main", "zeitberg.json");
         const creationConfig = configForRouteWorkspace(this.config, placeholderLocator);
         const creationSource = createHostedDataSource(creationConfig, accessToken);
         const { files, workspace } = await this.loadWorkspaceTemplateFiles(workspaceName, timezone);
@@ -2042,11 +2042,11 @@ class App {
                 provider,
                 repositoryUrl,
                 "main",
-                "zeitplural.json",
+                "zeitberg.json",
                 workspace.workspace_id,
             );
             const initializedSource = createHostedDataSource(configForRouteWorkspace(this.config, locator), accessToken);
-            await initializedSource.saveFiles(files, "Initialize zeitplural workspace");
+            await initializedSource.saveFiles(files, "Initialize zeitberg workspace");
 
             const connection = this.workspaceRegistry.upsert(locator, {
                 displayName: workspace.name,
@@ -2124,7 +2124,7 @@ class App {
         if (intent.mode === "create") {
             await this.createAndOpenWorkspace(
                 credential.provider,
-                intent.repositoryName || "zeitplural-data",
+                intent.repositoryName || "zeitberg-data",
                 intent.workspaceName || "My workspace",
                 intent.timezone || "Europe/Berlin",
                 credential.accessToken,
@@ -2774,7 +2774,7 @@ class App {
 
     /**
      * Returns the public locator for the active local folder or hosted Git repository.
-     * The expected workspace id is included only after zeitplural.json has loaded; credentials are held separately and can never enter this object.
+     * The expected workspace id is included only after zeitberg.json has loaded; credentials are held separately and can never enter this object.
      * @returns {import("./routing.js").WorkspaceRouteLocator}
      */
     getCurrentWorkspaceRouteLocator() {
@@ -2783,7 +2783,7 @@ class App {
                 provider: "local",
                 repositoryUrl: "",
                 ref: "",
-                workspacePath: this.config.workspacePath || "zeitplural.json",
+                workspacePath: this.config.workspacePath || "zeitberg.json",
                 expectedWorkspaceId:
                     this.workspace?.workspace_id ||
                     this.activeWorkspaceConnection?.expectedWorkspaceId ||
@@ -2803,7 +2803,7 @@ class App {
             repositoryUrl:
                 this.config.repositoryUrl || formatGitHubRepositoryUrl(this.config.owner, this.config.repo),
             ref: this.config.ref,
-            workspacePath: this.config.workspacePath || "zeitplural.json",
+            workspacePath: this.config.workspacePath || "zeitberg.json",
             expectedWorkspaceId: this.workspace?.workspace_id || "",
         };
     }
@@ -3478,7 +3478,7 @@ class App {
         }
 
         const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
-        const workspacePath = String(this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath || "zeitplural.json");
+        const workspacePath = String(this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath || "zeitberg.json");
         let locator;
         try {
             locator = buildHostedWorkspaceLocator(
@@ -3893,7 +3893,7 @@ class App {
     }
 
     /**
-     * Loads and installs the root zeitplural workspace configuration before component documents are requested.
+     * Loads and installs the root zeitberg workspace configuration before component documents are requested.
      * The workspace supplies all repository paths and the shared timezone, allowing the same application build to operate against local, GitHub, and future provider-backed repositories.
      * @returns {Promise<void>}
      */

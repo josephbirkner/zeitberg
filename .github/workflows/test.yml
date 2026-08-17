@@ -28,7 +28,7 @@ jobs:
       - name: Verify generated install icons
         run: |
           npm run build:icons
-          git diff --exit-code -- apple-touch-icon.png assets/apple-touch-icon.png assets/zeitplural-icon-192.png assets/zeitplural-icon-512.png assets/zeitplural-maskable-512.png
+          git diff --exit-code -- apple-touch-icon.png assets/apple-touch-icon.png assets/zeitberg-icon-192.png assets/zeitberg-icon-512.png assets/zeitberg-maskable-512.png
       - name: Run browser tests and enforce coverage
         run: npm run coverage
       - name: Type-check JavaScript

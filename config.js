@@ -33,36 +33,16 @@ const OAUTH_CREDENTIAL_PREFIX = "oauth-v1:";
 
 export const DEFAULT_CONFIG = {
     owner: "josephbirkner",
-    repo: "zeitplural-data",
+    repo: "zeitberg-data",
     provider: "github",
-    repositoryUrl: "https://github.com/josephbirkner/zeitplural-data",
+    repositoryUrl: "https://github.com/josephbirkner/zeitberg-data",
     ref: "main",
-    workspacePath: "zeitplural.json",
+    workspacePath: "zeitberg.json",
     timezone: "Europe/Berlin",
     uiZoom: 1,
     uiZoomMode: "auto",
     theme: "dark",
 };
-
-/**
- * Migrates the original hosted workspace defaults after the product and repository rename.
- * The migration is deliberately limited to Joseph's first-party data repository so independently named workspaces may continue using any bootstrap filename they chose.
- * @param {AppConfig} config Fully merged application configuration.
- * @returns {AppConfig}
- */
-export function migrateRenamedWorkspaceConfig(config) {
-    const migrated = { ...config };
-    const isFirstPartyWorkspace =
-        (!migrated.provider || migrated.provider === "github") &&
-        migrated.owner === "josephbirkner" &&
-        ["planplural-data", "zeitplural-data"].includes(migrated.repo);
-    if (!isFirstPartyWorkspace) return migrated;
-    if (migrated.repo === "planplural-data") migrated.repo = "zeitplural-data";
-    if (migrated.workspacePath === "planplural.json") migrated.workspacePath = "zeitplural.json";
-    migrated.provider = "github";
-    migrated.repositoryUrl = formatGitHubRepositoryUrl(migrated.owner, migrated.repo);
-    return migrated;
-}
 
 /**
  * Infers one built-in provider from a full HTTPS repository URL.
@@ -112,7 +92,7 @@ export function parseGitHubRepository(value) {
     }
 
     const parts = path.replace(/^\/+|\/+$/g, "").split("/");
-    if (parts.length !== 2) throw new Error("Use a repository URL such as https://github.com/you/zeitplural-data.");
+    if (parts.length !== 2) throw new Error("Use a repository URL such as https://github.com/you/zeitberg-data.");
     const owner = parts[0];
     const repo = parts[1].replace(/\.git$/i, "");
     const segmentPattern = /^[A-Za-z0-9_.-]+$/;
@@ -160,10 +140,10 @@ const STORAGE_KEYS = {
     config: "tt_viewer:config:v1",
     token: "tt_viewer:token:v1",
     tokenRemembered: "tt_viewer:token_remembered:v1",
-    workspaceRegistry: "zeitplural:workspace-registry:v1",
-    rememberedWorkspaceCredentials: "zeitplural:workspace-credentials:local:v1",
-    sessionWorkspaceCredentials: "zeitplural:workspace-credentials:session:v1",
-    locale: "zeitplural:locale:v1",
+    workspaceRegistry: "zeitberg:workspace-registry:v1",
+    rememberedWorkspaceCredentials: "zeitberg:workspace-credentials:local:v1",
+    sessionWorkspaceCredentials: "zeitberg:workspace-credentials:session:v1",
+    locale: "zeitberg:locale:v1",
 };
 
 /**
@@ -199,7 +179,7 @@ export class WorkspaceConnection {
     }
 
     /**
-     * Derives a concise fallback label before zeitplural.json supplies the workspace's own name.
+     * Derives a concise fallback label before zeitberg.json supplies the workspace's own name.
      * @param {import("./routing.js").WorkspaceRouteLocator} locator Validated locator.
      * @returns {string}
      */
@@ -243,7 +223,7 @@ export class WorkspaceConnection {
                 provider: /** @type {import("./routing.js").WorkspaceRouteLocator["provider"]} */ (value.provider),
                 repositoryUrl: String(value.repository_url || ""),
                 ref: String(value.ref || ""),
-                workspacePath: String(value.workspace_path || "zeitplural.json"),
+                workspacePath: String(value.workspace_path || "zeitberg.json"),
                 expectedWorkspaceId: String(value.expected_workspace_id || ""),
             },
             { displayName: String(value.display_name || "") },
@@ -538,7 +518,7 @@ export class ConfigService {
             sessionStorage.getItem(this.storageKeys.token) !== null;
         if (!hasLegacyState) return new WorkspaceRegistry();
 
-        const config = migrateRenamedWorkspaceConfig({ ...DEFAULT_CONFIG, ...fallbackConfig });
+        const config = { ...DEFAULT_CONFIG, ...fallbackConfig };
         const registry = new WorkspaceRegistry();
         const connection = registry.upsert({
             provider: "github",
@@ -713,12 +693,7 @@ export class ConfigService {
             if (!raw) {
                 return { ...DEFAULT_CONFIG };
             }
-            const parsed = JSON.parse(raw);
-            const config = migrateRenamedWorkspaceConfig({ ...DEFAULT_CONFIG, ...parsed });
-            if (config.repo !== parsed.repo || config.workspacePath !== parsed.workspacePath) {
-                localStorage.setItem(this.storageKeys.config, JSON.stringify(config));
-            }
-            return config;
+            return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
         } catch {
             return { ...DEFAULT_CONFIG };
         }

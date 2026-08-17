@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zeitplural.io/schema/expenses-v1.schema.json",
-  "title": "Zeitplural Expense Ledger (v1)",
+  "$id": "https://zeitberg.io/schema/expenses-v1.schema.json",
+  "title": "Zeitberg Expense Ledger (v1)",
   "type": "object",
   "additionalProperties": false,
   "required": ["categories", "expenses", "generated_at", "participants", "schema_version", "transfers"],

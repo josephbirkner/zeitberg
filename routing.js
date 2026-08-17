@@ -1,6 +1,6 @@
 const ROUTE_VERSION = 1;
-const STATIC_ROUTE_STORAGE_KEY = "zeitplural:static-route:v1";
-const CAPABILITY_FRAGMENT_PREFIX = "#zp-cap=";
+const STATIC_ROUTE_STORAGE_KEY = "zeitberg:static-route:v1";
+const CAPABILITY_FRAGMENT_PREFIX = "#zb-cap=";
 const CAPABILITY_VERSION = 1;
 const MAX_CAPABILITY_PAYLOAD_LENGTH = 24_000;
 const ROUTE_COMPONENTS = new Set(["time", "todos", "expenses"]);
@@ -57,7 +57,7 @@ function boundedText(value, maxLength = 512) {
 
 /**
  * Normalizes an application deployment prefix into an absolute path ending in a slash.
- * The same codec therefore works at zeitplural.io, a GitHub project page, and a nested local static host.
+ * The same codec therefore works at zeitberg.io, a GitHub project page, and a nested local static host.
  * @param {unknown} value Candidate deployment base path.
  * @returns {string}
  */
@@ -75,7 +75,7 @@ export function normalizeRouteBasePath(value) {
  * @returns {string}
  */
 function normalizeWorkspacePath(value) {
-    const path = boundedText(value || "zeitplural.json", 512);
+    const path = boundedText(value || "zeitberg.json", 512);
     if (!path || path.startsWith("/") || path.endsWith("/") || path.includes("\\") || path.includes("?") || path.includes("#")) {
         throw new Error("The workspace bootstrap path must be repository-relative.");
     }
@@ -98,7 +98,7 @@ export function normalizeWorkspaceRouteLocator(value) {
     const provider = boundedText(candidate.provider, 32).toLowerCase();
     if (!PROVIDERS.has(provider)) return null;
 
-    const workspacePath = normalizeWorkspacePath(candidate.workspacePath || "zeitplural.json");
+    const workspacePath = normalizeWorkspacePath(candidate.workspacePath || "zeitberg.json");
     const expectedWorkspaceId = boundedText(candidate.expectedWorkspaceId, 128);
     if (expectedWorkspaceId && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(expectedWorkspaceId)) {
         throw new Error("The expected workspace identifier is invalid.");
@@ -333,7 +333,7 @@ export function parseAppRoute(value, basePath = "/") {
     const normalizedBase = normalizeRouteBasePath(basePath);
     let url;
     try {
-        url = value instanceof URL ? new URL(value.toString()) : new URL(String(value), "https://zeitplural.invalid");
+        url = value instanceof URL ? new URL(value.toString()) : new URL(String(value), "https://zeitberg.invalid");
     } catch {
         return { version: ROUTE_VERSION, component: null, panel: "main", workspace: null, state: {} };
     }
@@ -368,7 +368,7 @@ export function parseAppRoute(value, basePath = "/") {
         if (url.searchParams.get("source") === "local") {
             workspace = normalizeWorkspaceRouteLocator({
                 provider: "local",
-                workspacePath: url.searchParams.get("config") || "zeitplural.json",
+                workspacePath: url.searchParams.get("config") || "zeitberg.json",
                 expectedWorkspaceId: url.searchParams.get("workspace") || "",
             });
         } else if (url.searchParams.has("provider") || url.searchParams.has("repo")) {
@@ -439,13 +439,13 @@ export function formatAppRoute(route, basePath = "/") {
     }
     if (workspace?.provider === "local") {
         params.set("source", "local");
-        if (workspace.workspacePath !== "zeitplural.json") params.set("config", workspace.workspacePath);
+        if (workspace.workspacePath !== "zeitberg.json") params.set("config", workspace.workspacePath);
         if (workspace.expectedWorkspaceId) params.set("workspace", workspace.expectedWorkspaceId);
     } else if (workspace) {
         params.set("provider", workspace.provider);
         params.set("repo", workspace.repositoryUrl);
         params.set("ref", workspace.ref);
-        if (workspace.workspacePath !== "zeitplural.json") params.set("config", workspace.workspacePath);
+        if (workspace.workspacePath !== "zeitberg.json") params.set("config", workspace.workspacePath);
         if (workspace.expectedWorkspaceId) params.set("workspace", workspace.expectedWorkspaceId);
     }
 
@@ -750,4 +750,9 @@ export class RouteController {
     }
 }
 
-export { CAPABILITY_FRAGMENT_PREFIX, CAPABILITY_VERSION, ROUTE_VERSION, STATIC_ROUTE_STORAGE_KEY };
+export {
+    CAPABILITY_FRAGMENT_PREFIX,
+    CAPABILITY_VERSION,
+    ROUTE_VERSION,
+    STATIC_ROUTE_STORAGE_KEY,
+};

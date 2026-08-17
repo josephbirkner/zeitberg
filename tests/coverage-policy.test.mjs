@@ -44,5 +44,5 @@ test("README exposes workflow, threshold, and latest-release badges", async () =
     assert.match(readme, /actions\/workflows\/test\.yml\/badge\.svg\?branch=main/);
     assert.match(readme, /logic%20coverage-%E2%89%A590%25-2b9c68/);
     assert.match(readme, /releases\/latest/);
-    assert.match(readme, /img\.shields\.io\/github\/v\/release\/josephbirkner\/zeitplural/);
+    assert.match(readme, /img\.shields\.io\/github\/v\/release\/josephbirkner\/zeitberg/);
 });

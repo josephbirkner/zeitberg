@@ -60,7 +60,7 @@ function parseArgs(argv) {
         includeCompleted: true,
         completedSince: DEFAULT_COMPLETED_SINCE,
         workspaceRoot: null,
-        workspaceConfigPath: "zeitplural.json",
+        workspaceConfigPath: "zeitberg.json",
     };
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];

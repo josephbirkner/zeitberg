@@ -28,8 +28,8 @@ test("web app metadata provides regular, maskable, and iOS install icons", async
     ]);
     const manifest = JSON.parse(manifestText);
 
-    assert.equal(manifest.name, "zeitplural");
-    assert.equal(manifest.short_name, "zeitplural");
+    assert.equal(manifest.name, "zeitberg");
+    assert.equal(manifest.short_name, "zeitberg");
     assert.equal(manifest.start_url, "./time");
     assert.equal(manifest.scope, "./");
     assert.equal(manifest.display, "standalone");
@@ -38,9 +38,9 @@ test("web app metadata provides regular, maskable, and iOS install icons", async
     assert.deepEqual(
         manifest.icons.map(({ src, sizes, type, purpose }) => ({ src, sizes, type, purpose })),
         [
-            { src: "./assets/zeitplural-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-            { src: "./assets/zeitplural-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-            { src: "./assets/zeitplural-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+            { src: "./assets/zeitberg-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+            { src: "./assets/zeitberg-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+            { src: "./assets/zeitberg-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
     );
     assert.deepEqual(rootAppleIcon, assetAppleIcon);
@@ -52,18 +52,18 @@ test("web app metadata provides regular, maskable, and iOS install icons", async
         assert.deepEqual(readPngDimensions(iconBytes), { width, height });
     }
 
-    assert.match(html, /rel="icon"[^>]+zeitplural-mark\.svg/);
+    assert.match(html, /rel="icon"[^>]+zeitberg-mark\.svg/);
     assert.match(html, /rel="apple-touch-icon" sizes="180x180" href="\.\/apple-touch-icon\.png"/);
     assert.match(html, /rel="manifest" href="\.\/site\.webmanifest"/);
     assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/);
-    assert.match(html, /name="apple-mobile-web-app-title" content="zeitplural"/);
+    assert.match(html, /name="apple-mobile-web-app-title" content="zeitberg"/);
 });
 
 test("relative install metadata resolves from root and project-page component routes", () => {
     const deployments = [
-        "https://zeitplural.io/time",
-        "https://example.github.io/zeitplural/todos",
-        "https://example.test/nested/zeitplural/expenses",
+        "https://zeitberg.io/time",
+        "https://example.github.io/zeitberg/todos",
+        "https://example.test/nested/zeitberg/expenses",
     ];
 
     for (const componentRoute of deployments) {
@@ -71,6 +71,6 @@ test("relative install metadata resolves from root and project-page component ro
         const expectedBase = componentRoute.replace(/\/(?:time|todos|expenses)$/, "/");
         assert.equal(manifestUrl.href, `${expectedBase}site.webmanifest`);
         assert.equal(new URL("./time", manifestUrl).href, `${expectedBase}time`);
-        assert.equal(new URL("./assets/zeitplural-maskable-512.png", manifestUrl).href, `${expectedBase}assets/zeitplural-maskable-512.png`);
+        assert.equal(new URL("./assets/zeitberg-maskable-512.png", manifestUrl).href, `${expectedBase}assets/zeitberg-maskable-512.png`);
     }
 });

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 620" role="img" aria-labelledby="title description">
-  <title id="title">zeitplural static workspace architecture</title>
-  <desc id="description">The public static application runs in the browser and reads and writes a private workspace through the chosen Git provider API. There is no zeitplural backend.</desc>
+  <title id="title">zeitberg static workspace architecture</title>
+  <desc id="description">The public static application runs in the browser and reads and writes a private workspace through the chosen Git provider API. There is no zeitberg backend.</desc>
   <defs>
     <pattern id="dots" width="32" height="32" patternUnits="userSpaceOnUse">
       <circle cx="2" cy="2" r="1.4" fill="#d5d9dd" />
@@ -43,7 +43,7 @@
     <rect x="18" y="18" width="72" height="24" rx="4" fill="none" stroke="#ee6a3b" />
     <text x="28" y="35" class="tag" fill="#ee6a3b">LOCAL</text>
     <text x="140" y="78" text-anchor="middle" class="box-title">Your browser</text>
-    <text x="140" y="107" text-anchor="middle" class="box-copy">zeitplural runtime</text>
+    <text x="140" y="107" text-anchor="middle" class="box-copy">zeitberg runtime</text>
     <text x="140" y="139" text-anchor="middle" class="note">Credential stays here</text>
   </g>
 
@@ -72,7 +72,7 @@
 
   <line x1="70" y1="493" x2="1375" y2="493" stroke="#d5d9dd" />
   <circle cx="86" cy="548" r="6" fill="#ee6a3b" />
-  <text x="104" y="553" class="note">No zeitplural backend</text>
+  <text x="104" y="553" class="note">No zeitberg backend</text>
   <circle cx="330" cy="548" r="6" fill="#315e9d" />
   <text x="348" y="553" class="note">Direct provider requests</text>
   <rect x="586" y="542" width="13" height="13" rx="2" fill="#fff" stroke="#3e4657" />

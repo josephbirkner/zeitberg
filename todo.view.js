@@ -123,17 +123,17 @@ function dueDateKey(due) {
 }
 
 /**
- * Builds a stable, readable GitHub issue body from a zeitplural TODO.
+ * Builds a stable, readable GitHub issue body from a zeitberg TODO.
  * A hidden local-id marker supports future reconciliation without exposing workspace credentials or repository details.
  * @param {import("./model.js").Todo} todo Linked TODO model.
  * @returns {string}
  */
 export function buildTodoIssueBody(todo) {
     const description = String(todo?.description || "").trim();
-    const completed = todo?.completed_at ? `\n\n_Originally completed in zeitplural on ${todo.completed_at}._` : "";
+    const completed = todo?.completed_at ? `\n\n_Originally completed in zeitberg on ${todo.completed_at}._` : "";
     const safeId = String(todo?.id || "").replace(/--/g, "—");
     const content = description || "_No additional description._";
-    return `${content}${completed}\n\n---\n<sub>Linked to zeitplural task <code>${safeId}</code>.</sub>\n<!-- zeitplural-todo-id: ${safeId} -->`;
+    return `${content}${completed}\n\n---\n<sub>Linked to zeitberg task <code>${safeId}</code>.</sub>\n<!-- zeitberg-todo-id: ${safeId} -->`;
 }
 
 /**
@@ -184,8 +184,8 @@ export function githubTodoId(repository, issueNumber) {
  * @param {unknown} body Raw GitHub issue body.
  * @returns {string | null}
  */
-export function zeitpluralTodoIdFromGitHubIssueBody(body) {
-    const match = /<!-- zeitplural-todo-id: ([^\r\n]*?) -->\s*$/.exec(String(body ?? ""));
+export function zeitbergTodoIdFromGitHubIssueBody(body) {
+    const match = /<!-- zeitberg-todo-id: ([^\r\n]*?) -->\s*$/.exec(String(body ?? ""));
     return match?.[1]?.trim() || null;
 }
 
@@ -196,10 +196,10 @@ export function zeitpluralTodoIdFromGitHubIssueBody(body) {
  */
 export function descriptionFromGitHubIssueBody(body) {
     let description = String(body ?? "").replace(
-        /\n\n---\n<sub>Linked to zeitplural task <code>[\s\S]*?<\/code>\.<\/sub>\n<!-- zeitplural-todo-id: [\s\S]*?-->\s*$/,
+        /\n\n---\n<sub>Linked to zeitberg task <code>[\s\S]*?<\/code>\.<\/sub>\n<!-- zeitberg-todo-id: [\s\S]*?-->\s*$/,
         "",
     );
-    description = description.replace(/\n\n_Originally completed in zeitplural on [^\n]+\._\s*$/, "");
+    description = description.replace(/\n\n_Originally completed in zeitberg on [^\n]+\._\s*$/, "");
     if (description.trim() === "_No additional description._") return "";
     return description.trim();
 }
@@ -225,7 +225,7 @@ export function normalizeGitHubIssueBase(issue) {
 }
 
 /**
- * Reports whether the current upstream issue already equals a desired Zeitplural write.
+ * Reports whether the current upstream issue already equals a desired Zeitberg write.
  * Label order is ignored because GitHub does not expose it as meaningful state.
  * @param {Object} issue Raw GitHub issue response.
  * @param {{title: string, body: string, labels: string[], state: "open" | "closed"}} desired Desired issue state.
@@ -655,7 +655,7 @@ export class TodoView {
                     todos.push(raw);
                     const base = normalizeGitHubIssueBase(issue);
                     bases.set(raw.id, base);
-                    const marker = zeitpluralTodoIdFromGitHubIssueBody(issue?.body);
+                    const marker = zeitbergTodoIdFromGitHubIssueBody(issue?.body);
                     const pending = marker ? this.store.getTodoById(marker) : null;
                     if (
                         pending &&

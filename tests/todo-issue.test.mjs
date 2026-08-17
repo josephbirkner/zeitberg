@@ -13,7 +13,7 @@ import {
     normalizeGitHubIssueBase,
     todoRawFromGitHubIssue,
     TodoView,
-    zeitpluralTodoIdFromGitHubIssueBody,
+    zeitbergTodoIdFromGitHubIssueBody,
 } from "../todo.view.js";
 import { TimeContext } from "../utils.js";
 
@@ -52,7 +52,7 @@ function makeTodo(overrides = {}) {
  * @param {string} [sectionLabel]
  * @returns {EntryStore}
  */
-function makeProjectStore(repository = "owner/zeitplural", sectionLabel = "type/feature") {
+function makeProjectStore(repository = "owner/zeitberg", sectionLabel = "type/feature") {
     const projectStore = new EntryStore(new TimeContext("Europe/Berlin"));
     projectStore.setProjectList(ProjectList.fromRaw({
         generated_at: "",
@@ -87,7 +87,7 @@ test("issue serialization keeps readable task details and a stable reconciliatio
     const write = buildTodoIssueWrite(todo, "type/feature");
 
     assert.match(body, /^Persist the active component/);
-    assert.match(body, /zeitplural-todo-id: local:test-route/);
+    assert.match(body, /zeitberg-todo-id: local:test-route/);
     assert.deepEqual(write, {
         title: "Restore application route",
         body,
@@ -96,12 +96,12 @@ test("issue serialization keeps readable task details and a stable reconciliatio
     });
 });
 
-test("completed zeitplural tasks map to closed issues and retain their historical timestamp", () => {
+test("completed zeitberg tasks map to closed issues and retain their historical timestamp", () => {
     const todo = makeTodo({ completed_at: "2026-08-15T10:00:00Z" });
     const write = buildTodoIssueWrite(todo, "type/feature");
 
     assert.equal(write.state, "closed");
-    assert.match(write.body, /Originally completed in zeitplural on 2026-08-15T10:00:00Z/);
+    assert.match(write.body, /Originally completed in zeitberg on 2026-08-15T10:00:00Z/);
 });
 
 test("provider-specific legacy tasks remain private instead of becoming public issues", () => {
@@ -125,8 +125,8 @@ test("GitHub issues map section and ordinary labels without retaining generated 
         closed_at: "2026-08-16T10:55:00Z",
     };
 
-    const raw = todoRawFromGitHubIssue(issue, project, "owner/zeitplural");
-    assert.equal(raw.id, "github:owner/zeitplural#41");
+    const raw = todoRawFromGitHubIssue(issue, project, "owner/zeitberg");
+    assert.equal(raw.id, "github:owner/zeitberg#41");
     assert.equal(raw.content, "External issue title");
     assert.equal(raw.description, sourceTodo.description);
     assert.equal(raw.project_key, "app");
@@ -136,11 +136,11 @@ test("GitHub issues map section and ordinary labels without retaining generated 
     assert.deepEqual(raw.source, {
         provider: "github",
         id: "41",
-        project_id: "owner/zeitplural",
+        project_id: "owner/zeitberg",
         section_id: "type/feature",
     });
     assert.equal(descriptionFromGitHubIssueBody("Ordinary body\n<!-- unrelated -->"), "Ordinary body\n<!-- unrelated -->");
-    assert.equal(zeitpluralTodoIdFromGitHubIssueBody(issue.body), sourceTodo.id);
+    assert.equal(zeitbergTodoIdFromGitHubIssueBody(issue.body), sourceTodo.id);
 });
 
 test("GitHub issue equality ignores label order but retains conflict timestamps", () => {
@@ -171,7 +171,7 @@ test("loaded GitHub tasks serialize only compact local overlays", () => {
         content: "Stale mirrored title",
         due: { date: "2026-08-20", is_recurring: false, lang: "en", string: "2026-08-20", timezone: null },
         priority: 3,
-        source: { provider: "github", id: "41", project_id: "owner/zeitplural", section_id: "type/feature" },
+        source: { provider: "github", id: "41", project_id: "owner/zeitberg", section_id: "type/feature" },
     }).toRaw();
     const local = makeTodo({ id: "local:kept", content: "Local workspace task", source: null }).toRaw();
     todoStore.setTodoList(TodoList.fromRaw({ generated_at: "", schema_version: 3, todos: [legacy, local] }));
@@ -186,9 +186,9 @@ test("loaded GitHub tasks serialize only compact local overlays", () => {
         updated_at: "2026-08-16T12:00:00Z",
         closed_at: null,
     };
-    const remoteRaw = todoRawFromGitHubIssue(issue, projectStore.getProjects()[0], "owner/zeitplural");
+    const remoteRaw = todoRawFromGitHubIssue(issue, projectStore.getProjects()[0], "owner/zeitberg");
     todoStore.replaceGitHubTodos(
-        "owner/zeitplural",
+        "owner/zeitberg",
         [remoteRaw],
         new Map([[remoteRaw.id, normalizeGitHubIssueBase(issue)]]),
     );
@@ -208,7 +208,7 @@ test("loaded GitHub tasks serialize only compact local overlays", () => {
             parent_id: null,
             priority: 3,
             recurrence: null,
-            repository: "owner/zeitplural",
+            repository: "owner/zeitberg",
         },
     ]);
 });
@@ -217,31 +217,31 @@ test("project binding migration is opt-in and detaching never alters upstream st
     const projectStore = makeProjectStore();
     const todoStore = new TodoStore(projectStore);
     const linked = makeTodo({
-        id: "github:owner/zeitplural#7",
-        source: { provider: "github", id: "7", project_id: "owner/zeitplural", section_id: "type/feature" },
+        id: "github:owner/zeitberg#7",
+        source: { provider: "github", id: "7", project_id: "owner/zeitberg", section_id: "type/feature" },
     }).toRaw();
     const eligible = makeTodo({ id: "local:eligible", source: null }).toRaw();
     const retained = makeTodo({ id: "local:retained", content: "Keep this one local", source: null }).toRaw();
     todoStore.setTodoList(TodoList.fromRaw({ generated_at: "", schema_version: 4, github_overlays: [], todos: [linked, eligible, retained] }));
-    todoStore.loadedGitHubRepositories.add("owner/zeitplural");
+    todoStore.loadedGitHubRepositories.add("owner/zeitberg");
     todoStore.rebuildRemoteTodoIds();
 
     assert.equal(
-        todoStore.markProjectTodosForGitHub("app", "owner/zeitplural", (todo) => todo.id === "local:eligible"),
+        todoStore.markProjectTodosForGitHub("app", "owner/zeitberg", (todo) => todo.id === "local:eligible"),
         1,
     );
     assert.equal(todoStore.getTodoById("local:eligible")?.source?.provider, "github-pending");
     assert.equal(todoStore.getTodoById("local:retained")?.source, null);
 
     projectStore.setProjectList(makeProjectStore("").getProjectList());
-    assert.equal(todoStore.materializeGitHubProjectTodos("app", "owner/zeitplural"), 2);
-    assert.equal(todoStore.getTodoById("github:owner/zeitplural#7")?.source, null);
+    assert.equal(todoStore.materializeGitHubProjectTodos("app", "owner/zeitberg"), 2);
+    assert.equal(todoStore.getTodoById("github:owner/zeitberg#7")?.source, null);
     assert.equal(todoStore.getTodoById("local:eligible")?.source, null);
-    assert.equal(todoStore.loadedGitHubRepositories.has("owner/zeitplural"), false);
+    assert.equal(todoStore.loadedGitHubRepositories.has("owner/zeitberg"), false);
 });
 
 test("a staged section-label migration survives reload as a compact override", () => {
-    const oldProjectStore = makeProjectStore("owner/zeitplural", "type/feature");
+    const oldProjectStore = makeProjectStore("owner/zeitberg", "type/feature");
     const todoStore = new TodoStore(oldProjectStore);
     todoStore.setTodoList(TodoList.createEmpty());
     const issue = {
@@ -254,14 +254,14 @@ test("a staged section-label migration survives reload as a compact override", (
         updated_at: "2026-08-16T09:00:00Z",
         closed_at: null,
     };
-    const oldRaw = todoRawFromGitHubIssue(issue, oldProjectStore.getProjects()[0], "owner/zeitplural");
+    const oldRaw = todoRawFromGitHubIssue(issue, oldProjectStore.getProjects()[0], "owner/zeitberg");
     todoStore.replaceGitHubTodos(
-        "owner/zeitplural",
+        "owner/zeitberg",
         [oldRaw],
         new Map([[oldRaw.id, normalizeGitHubIssueBase(issue)]]),
     );
 
-    const newProjectStore = makeProjectStore("owner/zeitplural", "kind/feature");
+    const newProjectStore = makeProjectStore("owner/zeitberg", "kind/feature");
     oldProjectStore.setProjectList(newProjectStore.getProjectList());
     assert.equal(todoStore.refreshGitHubTaskOverlays(), true);
     const persisted = JSON.parse(todoStore.serialize("2026-08-16T09:05:00Z"));
@@ -270,10 +270,10 @@ test("a staged section-label migration survives reload as a compact override", (
 
     const reloadedStore = new TodoStore(newProjectStore);
     reloadedStore.setTodoList(TodoList.fromRaw(persisted));
-    const newRaw = todoRawFromGitHubIssue(issue, newProjectStore.getProjects()[0], "owner/zeitplural");
+    const newRaw = todoRawFromGitHubIssue(issue, newProjectStore.getProjects()[0], "owner/zeitberg");
     assert.equal(newRaw.section_key, null, "the old upstream label is no longer recognized by the new config");
     reloadedStore.replaceGitHubTodos(
-        "owner/zeitplural",
+        "owner/zeitberg",
         [newRaw],
         new Map([[newRaw.id, normalizeGitHubIssueBase(issue)]]),
     );
@@ -314,8 +314,8 @@ test("a cached issue collection remains available during a transient GitHub read
     view.onToast = (message) => warnings.push(message);
 
     await view.loadGitHubIssues();
-    assert.equal(todoStore.getTodoById("github:owner/zeitplural#5")?.content, "Cached issue");
-    assert.deepEqual(warnings, ["toast.githubIssuesCached:owner/zeitplural"]);
+    assert.equal(todoStore.getTodoById("github:owner/zeitberg#5")?.content, "Cached issue");
+    assert.deepEqual(warnings, ["toast.githubIssuesCached:owner/zeitberg"]);
 });
 
 test("an authorization failure never exposes a previously cached private issue collection", async () => {
@@ -354,7 +354,7 @@ test("startup reconciles an already-created issue marker instead of publishing a
         source: {
             provider: "github-pending",
             id: "local:interrupted-create",
-            project_id: "owner/zeitplural",
+            project_id: "owner/zeitberg",
             section_id: "type/feature",
         },
     });
@@ -390,9 +390,9 @@ test("startup reconciles an already-created issue marker instead of publishing a
 
     await view.loadGitHubIssues();
     assert.equal(todoStore.getTodoById(pending.id), null);
-    assert.equal(todoStore.getTodoById("github:owner/zeitplural#27")?.content, pending.content);
+    assert.equal(todoStore.getTodoById("github:owner/zeitberg#27")?.content, pending.content);
     assert.equal(todoStore.getTodos().length, 1);
-    assert.equal(view.selectedTodoId, "github:owner/zeitplural#27");
+    assert.equal(view.selectedTodoId, "github:owner/zeitberg#27");
 });
 
 test("upstream edits made after a local draft began become explicit conflicts", async () => {
@@ -411,11 +411,11 @@ test("upstream edits made after a local draft began become explicit conflicts", 
     const originalRaw = todoRawFromGitHubIssue(
         originalIssue,
         projectStore.getProjects()[0],
-        "owner/zeitplural",
+        "owner/zeitberg",
     );
     todoStore.setTodoList(TodoList.createEmpty());
     todoStore.replaceGitHubTodos(
-        "owner/zeitplural",
+        "owner/zeitberg",
         [originalRaw],
         new Map([[originalRaw.id, normalizeGitHubIssueBase(originalIssue)]]),
     );
@@ -471,7 +471,7 @@ test("issue synchronization journals an assigned issue number and retries withou
                 archived: false,
                 billable: false,
                 color: "#ee6a3b",
-                external_refs: [{ provider: "github", id: "owner/zeitplural" }],
+                external_refs: [{ provider: "github", id: "owner/zeitberg" }],
                 key: "app",
                 name: "App",
                 sections: [
@@ -492,7 +492,7 @@ test("issue synchronization journals an assigned issue number and retries withou
         source: {
             provider: "github-pending",
             id: "local:test-route",
-            project_id: "owner/zeitplural",
+            project_id: "owner/zeitberg",
             section_id: "type/feature",
         },
     }).toRaw();
@@ -548,11 +548,11 @@ test("issue synchronization journals an assigned issue number and retries withou
     assert.equal(creates.length, 1);
     assert.equal(updates.length, 0);
     assert.equal(draftWrites, 1);
-    const promoted = todoStore.getTodoById("github:owner/zeitplural#23");
+    const promoted = todoStore.getTodoById("github:owner/zeitberg#23");
     assert.deepEqual(promoted?.source, {
         provider: "github",
         id: "23",
-        project_id: "owner/zeitplural",
+        project_id: "owner/zeitberg",
         section_id: "type/feature",
     });
 

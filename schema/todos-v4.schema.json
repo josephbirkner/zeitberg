@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zeitplural.io/schema/todos-v4.schema.json",
-  "title": "Zeitplural TODOs (v4)",
+  "$id": "https://zeitberg.io/schema/todos-v4.schema.json",
+  "title": "Zeitberg TODOs (v4)",
   "type": "object",
   "additionalProperties": false,
   "required": ["generated_at", "github_overlays", "schema_version", "todos"],

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const sourcePath = fileURLToPath(new URL("../assets/zeitplural-mark.svg", import.meta.url));
+const sourcePath = fileURLToPath(new URL("../assets/zeitberg-mark.svg", import.meta.url));
 const assetsDirectory = fileURLToPath(new URL("../assets/", import.meta.url));
 const background = { r: 39, g: 42, b: 59, alpha: 1 };
 
@@ -64,9 +64,9 @@ async function main() {
     await mkdir(assetsDirectory, { recursive: true });
     const sourceSvg = await readFile(sourcePath);
     await renderIcon(sourceSvg, 180, "apple-touch-icon.png", true);
-    await renderIcon(sourceSvg, 192, "zeitplural-icon-192.png", false);
-    await renderIcon(sourceSvg, 512, "zeitplural-icon-512.png", false);
-    await renderMaskableIcon(sourceSvg, 512, "zeitplural-maskable-512.png");
+    await renderIcon(sourceSvg, 192, "zeitberg-icon-192.png", false);
+    await renderIcon(sourceSvg, 512, "zeitberg-icon-512.png", false);
+    await renderMaskableIcon(sourceSvg, 512, "zeitberg-maskable-512.png");
     await copyFile(`${assetsDirectory}apple-touch-icon.png`, `${repositoryRoot}apple-touch-icon.png`);
 }
 

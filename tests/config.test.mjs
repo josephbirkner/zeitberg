@@ -6,7 +6,6 @@ import {
     formatGitHubRepositoryUrl,
     getEffectiveUiViewportWidth,
     getRecommendedUiZoom,
-    migrateRenamedWorkspaceConfig,
     parseGitHubRepository,
 } from "../config.js";
 
@@ -40,25 +39,4 @@ test("GitHub repository locators reject alternate hosts and credential-confusing
     assert.throws(() => parseGitHubRepository("https://gitlab.com/example/workspace"), /github\.com/);
     assert.throws(() => parseGitHubRepository("https://github.com/example/workspace/issues"), /repository URL/);
     assert.throws(() => parseGitHubRepository("https://github.com/example/workspace?token=secret"), /query or fragment/);
-});
-
-test("the original workspace defaults migrate to the renamed data repository", () => {
-    const legacy = {
-        ...DEFAULT_CONFIG,
-        repo: "planplural-data",
-        workspacePath: "planplural.json",
-    };
-    assert.deepEqual(migrateRenamedWorkspaceConfig(legacy), {
-        ...DEFAULT_CONFIG,
-        repo: "zeitplural-data",
-        workspacePath: "zeitplural.json",
-    });
-
-    const independentlyNamed = {
-        ...DEFAULT_CONFIG,
-        owner: "someone-else",
-        repo: "private-workspace",
-        workspacePath: "planplural.json",
-    };
-    assert.deepEqual(migrateRenamedWorkspaceConfig(independentlyNamed), independentlyNamed);
 });

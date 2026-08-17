@@ -20,7 +20,7 @@ const githubWorkspace = {
     provider: "github",
     repositoryUrl: "https://github.com/example/private-data",
     ref: "release/data",
-    workspacePath: "config/zeitplural.json",
+    workspacePath: "config/zeitberg.json",
     expectedWorkspaceId: "workspace-123",
 };
 
@@ -45,11 +45,11 @@ test("component routes round-trip workspace and Time view state", () => {
         },
     };
 
-    const encoded = formatAppRoute(route, "/zeitplural/");
-    assert.match(encoded, /^\/zeitplural\/time\?/);
+    const encoded = formatAppRoute(route, "/zeitberg/");
+    assert.match(encoded, /^\/zeitberg\/time\?/);
     assert.match(encoded, /panel=search/);
     assert.equal(encoded.includes("token"), false);
-    assert.deepEqual(parseAppRoute(`https://example.test${encoded}`, "/zeitplural/"), route);
+    assert.deepEqual(parseAppRoute(`https://example.test${encoded}`, "/zeitberg/"), route);
 });
 
 test("TODO routes preserve explicit false filters and selection", () => {
@@ -69,7 +69,7 @@ test("TODO routes preserve explicit false filters and selection", () => {
         },
         "/",
     );
-    const parsed = parseAppRoute(`https://zeitplural.io${encoded}`);
+    const parsed = parseAppRoute(`https://zeitberg.io${encoded}`);
 
     assert.equal(parsed.component, "todos");
     assert.deepEqual(parsed.state, {
@@ -99,7 +99,7 @@ test("Workspace settings preserve the Time panel they cover", () => {
 
     assert.match(encoded, /panel=workspaces/);
     assert.match(encoded, /under=search/);
-    assert.deepEqual(parseAppRoute(`https://zeitplural.io${encoded}`), route);
+    assert.deepEqual(parseAppRoute(`https://zeitberg.io${encoded}`), route);
 });
 
 test("capability links round-trip one exact workspace and keep credentials out of the public route", () => {
@@ -111,7 +111,7 @@ test("capability links round-trip one exact workspace and keep credentials out o
         state: { currentOnly: true, openOnly: false, query: "shared task" },
     };
     const token = "github_pat_dedicated-example-token";
-    const link = formatCapabilityLink(route, token, "https://zeitplural.io", "/");
+    const link = formatCapabilityLink(route, token, "https://zeitberg.io", "/");
     const url = new URL(link);
     const parsed = parseCapabilityLink(url);
 
@@ -127,12 +127,12 @@ test("capability links round-trip one exact workspace and keep credentials out o
 
 test("capability links reject host confusion and scrub malformed bearer fragments", () => {
     const route = { version: 1, component: "time", panel: "main", workspace: githubWorkspace, state: {} };
-    const link = formatCapabilityLink(route, "dedicated-secret", "https://zeitplural.io");
+    const link = formatCapabilityLink(route, "dedicated-secret", "https://zeitberg.io");
     const confused = new URL(link);
     confused.searchParams.set("repo", "https://github.com/attacker/other-repository");
     assert.throws(() => parseCapabilityLink(confused), /does not match/);
 
-    const location = new URL(`https://zeitplural.io/time?v=1${CAPABILITY_FRAGMENT_PREFIX}not-valid-base64`);
+    const location = new URL(`https://zeitberg.io/time?v=1${CAPABILITY_FRAGMENT_PREFIX}not-valid-base64`);
     const replacements = [];
     const browser = {
         history: {
@@ -150,7 +150,7 @@ test("capability links reject host confusion and scrub malformed bearer fragment
 
 test("valid capability consumption scrubs history before returning the session credential", () => {
     const route = { version: 1, component: "time", panel: "main", workspace: githubWorkspace, state: {} };
-    const location = new URL(formatCapabilityLink(route, "session-only-token", "https://zeitplural.io"));
+    const location = new URL(formatCapabilityLink(route, "session-only-token", "https://zeitberg.io"));
     let scrubbed = false;
     const browser = {
         history: {
@@ -180,13 +180,13 @@ test("custom-host capability links require an additional host confirmation", () 
                 provider: "custom",
                 repositoryUrl: "https://git.example.test/family/shared-expenses",
                 ref: "main",
-                workspacePath: "zeitplural.json",
+                workspacePath: "zeitberg.json",
                 expectedWorkspaceId: "family-expenses",
             },
             state: {},
         },
         "custom-host-token",
-        "https://zeitplural.io",
+        "https://zeitberg.io",
     );
 
     assert.equal(parseCapabilityLink(link).requiresHostConfirmation, true);
@@ -201,7 +201,7 @@ test("local routes retain source mode without inventing repository coordinates",
             provider: "local",
             repositoryUrl: "",
             ref: "",
-            workspacePath: "nested/zeitplural.json",
+            workspacePath: "nested/zeitberg.json",
             expectedWorkspaceId: "local-workspace",
         },
         state: {},
@@ -213,14 +213,14 @@ test("local routes retain source mode without inventing repository coordinates",
         provider: "local",
         repositoryUrl: "",
         ref: "",
-        workspacePath: "nested/zeitplural.json",
+        workspacePath: "nested/zeitberg.json",
         expectedWorkspaceId: "local-workspace",
     });
-    assert.equal(workspaceRouteLocatorKey(parsed.workspace), "local:local-workspace:nested/zeitplural.json");
+    assert.equal(workspaceRouteLocatorKey(parsed.workspace), "local:local-workspace:nested/zeitberg.json");
 });
 
 test("malformed and unavailable route shapes fall back safely", () => {
-    assert.deepEqual(parseAppRoute("https://zeitplural.io/not-a-component?token=secret"), {
+    assert.deepEqual(parseAppRoute("https://zeitberg.io/not-a-component?token=secret"), {
         version: 1,
         component: null,
         panel: "main",
@@ -229,11 +229,11 @@ test("malformed and unavailable route shapes fall back safely", () => {
     });
 
     const malformed = parseAppRoute(
-        "https://zeitplural.io/time?provider=github&repo=https%3A%2F%2Fevil.example%2Fx%3Ftoken%3Dsecret&day=999&zoom=nope",
+        "https://zeitberg.io/time?provider=github&repo=https%3A%2F%2Fevil.example%2Fx%3Ftoken%3Dsecret&day=999&zoom=nope",
     );
     assert.equal(malformed.workspace, null);
     assert.deepEqual(malformed.state, { dayWindowStart: 6 });
-    assert.equal(parseAppRoute("https://zeitplural.io/time?v=99").component, null);
+    assert.equal(parseAppRoute("https://zeitberg.io/time?v=99").component, null);
 });
 
 test("workspace locators reject credential-confusing repository URLs", () => {
@@ -250,12 +250,12 @@ test("workspace locators reject credential-confusing repository URLs", () => {
         /github\.com/,
     );
     assert.throws(
-        () => normalizeWorkspaceRouteLocator({ ...githubWorkspace, workspacePath: "../zeitplural.json" }),
+        () => normalizeWorkspaceRouteLocator({ ...githubWorkspace, workspacePath: "../zeitberg.json" }),
         /unsafe segment/,
     );
     assert.equal(
         workspaceRouteLocatorKey(githubWorkspace),
-        "github:https://github.com/example/private-data:release/data:config/zeitplural.json",
+        "github:https://github.com/example/private-data:release/data:config/zeitberg.json",
     );
 });
 
@@ -265,14 +265,14 @@ test("workspace locators normalize GitLab groups and bound Forgejo repository pa
             provider: "gitlab",
             repositoryUrl: "https://gitlab.com/group/subgroup/workspace.git/",
             ref: "main",
-            workspacePath: "zeitplural.json",
+            workspacePath: "zeitberg.json",
             expectedWorkspaceId: "",
         }),
         {
             provider: "gitlab",
             repositoryUrl: "https://gitlab.com/group/subgroup/workspace",
             ref: "main",
-            workspacePath: "zeitplural.json",
+            workspacePath: "zeitberg.json",
             expectedWorkspaceId: "",
         },
     );
@@ -282,7 +282,7 @@ test("workspace locators normalize GitLab groups and bound Forgejo repository pa
                 provider: "forgejo",
                 repositoryUrl: "https://git.example.test/group/subgroup/workspace",
                 ref: "main",
-                workspacePath: "zeitplural.json",
+                workspacePath: "zeitberg.json",
                 expectedWorkspaceId: "",
             }),
         /exactly one owner/,
@@ -291,14 +291,14 @@ test("workspace locators normalize GitLab groups and bound Forgejo repository pa
 
 test("route base paths remain stable for root and project-page deployments", () => {
     assert.equal(normalizeRouteBasePath("/"), "/");
-    assert.equal(normalizeRouteBasePath("zeitplural"), "/zeitplural/");
-    assert.equal(parseAppRoute("https://example.test/time", "/zeitplural/").component, null);
+    assert.equal(normalizeRouteBasePath("zeitberg"), "/zeitberg/");
+    assert.equal(parseAppRoute("https://example.test/time", "/zeitberg/").component, null);
 });
 
 test("History controller restores a same-origin static route and handles push plus replace", () => {
     const listeners = new Map();
-    const storage = new Map([[STATIC_ROUTE_STORAGE_KEY, "/zeitplural/todos?q=one"]]);
-    const location = new URL("https://example.test/zeitplural/");
+    const storage = new Map([[STATIC_ROUTE_STORAGE_KEY, "/zeitberg/todos?q=one"]]);
+    const location = new URL("https://example.test/zeitberg/");
     const writes = [];
     const browser = {
         addEventListener(type, listener) {
@@ -329,7 +329,7 @@ test("History controller restores a same-origin static route and handles push pl
         },
         setTimeout,
     };
-    const controller = new RouteController(/** @type {any} */ (browser), "/zeitplural/");
+    const controller = new RouteController(/** @type {any} */ (browser), "/zeitberg/");
 
     assert.equal(controller.restoreStaticRoute(), true);
     assert.equal(controller.read().component, "todos");
@@ -351,7 +351,7 @@ test("static-host and local-server entrypoints preserve component-first reloads"
         readFile(new URL("../server.py", import.meta.url), "utf8"),
     ]);
 
-    assert.match(notFoundPage, /zeitplural:static-route:v1/);
+    assert.match(notFoundPage, /zeitberg:static-route:v1/);
     assert.match(notFoundPage, /location\.replace\(basePath\)/);
     assert.match(localServer, /\{"time", "todos", "expenses"\}/);
     assert.match(localServer, /_is_application_route\(parsed\.path, self\.app_entry_path\)/);

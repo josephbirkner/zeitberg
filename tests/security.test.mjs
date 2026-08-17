@@ -22,8 +22,8 @@ test("the static application enforces first-party scripts and provider-aware con
 
 test("OAuth client ids are explicit public deployment configuration", async () => {
     const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-    assert.match(html, /name="zeitplural-oauth-gitlab-client-id" content=""/);
-    assert.match(html, /name="zeitplural-oauth-codeberg-client-id" content=""/);
+    assert.match(html, /name="zeitberg-oauth-gitlab-client-id" content=""/);
+    assert.match(html, /name="zeitberg-oauth-codeberg-client-id" content=""/);
     assert.match(html, /id="loginOAuthBtn"/);
     assert.match(html, /id="workspaceCreateOAuthBtn"/);
 });

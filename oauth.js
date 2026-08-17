@@ -1,6 +1,6 @@
 import { normalizeRouteBasePath } from "./routing.js";
 
-const OAUTH_PENDING_KEY = "zeitplural:oauth-pending:v1";
+const OAUTH_PENDING_KEY = "zeitberg:oauth-pending:v1";
 const OAUTH_PENDING_VERSION = 1;
 const OAUTH_PENDING_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_REFRESH_SKEW_MS = 60 * 1000;
@@ -73,7 +73,7 @@ export function getOAuthProvider(provider) {
  * @returns {string}
  */
 export function readOAuthClientId(documentObject, provider) {
-    const name = provider === "gitlab" ? "zeitplural-oauth-gitlab-client-id" : provider === "codeberg" ? "zeitplural-oauth-codeberg-client-id" : "";
+    const name = provider === "gitlab" ? "zeitberg-oauth-gitlab-client-id" : provider === "codeberg" ? "zeitberg-oauth-codeberg-client-id" : "";
     if (!name) return "";
     const element = documentObject.querySelector(`meta[name="${name}"]`);
     return element instanceof HTMLMetaElement ? element.content.trim() : "";
@@ -132,7 +132,7 @@ function normalizeOAuthIntent(value) {
     const mode = raw.mode === "create" ? "create" : raw.mode === "connect" ? "connect" : "";
     const repositoryUrl = String(raw.repositoryUrl || "").trim().slice(0, 2048);
     const ref = String(raw.ref || "main").trim().slice(0, 256);
-    const workspacePath = String(raw.workspacePath || "zeitplural.json").trim().slice(0, 512);
+    const workspacePath = String(raw.workspacePath || "zeitberg.json").trim().slice(0, 512);
     if (!mode || !ref || !workspacePath) throw new Error("OAuth onboarding state is incomplete.");
     if (mode === "connect" && !repositoryUrl) throw new Error("OAuth onboarding state has no repository.");
     return {
@@ -174,7 +174,7 @@ export async function startOAuthAuthorization(browserWindow, provider, clientId,
     const oauthProvider = getOAuthProvider(provider);
     const publicClientId = String(clientId || "").trim();
     if (!publicClientId || publicClientId.length > 512) {
-        throw new Error(`${oauthProvider.provider} OAuth is not configured for this zeitplural deployment.`);
+        throw new Error(`${oauthProvider.provider} OAuth is not configured for this zeitberg deployment.`);
     }
     const normalizedIntent = normalizeOAuthIntent(intent);
     const state = randomValue(browserWindow.crypto, 32);
@@ -298,7 +298,7 @@ export async function consumeOAuthCallback(browserWindow, basePath = "/") {
     browserWindow.history.replaceState(null, "", expectedUrl.pathname);
 
     if (callbackUrl.origin !== expectedUrl.origin || callbackUrl.pathname !== expectedUrl.pathname || callbackUrl.hash) {
-        throw new Error("The OAuth callback did not use the registered zeitplural redirect URI.");
+        throw new Error("The OAuth callback did not use the registered zeitberg redirect URI.");
     }
     for (const key of callbackUrl.searchParams.keys()) {
         if (!OAUTH_CALLBACK_PARAMETERS.has(key)) throw new Error("The OAuth callback contains unsupported parameters.");

@@ -28,7 +28,7 @@ import { loadWorkspace, resolveWorkspaceFile } from "./workspace.mjs";
  * @returns {ValidateOptions}
  */
 function parseArgs(argv) {
-    const options = { workspaceRoot: null, workspaceConfigPath: "zeitplural.json" };
+    const options = { workspaceRoot: null, workspaceConfigPath: "zeitberg.json" };
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
         if (arg === "--workspace") {
@@ -111,7 +111,7 @@ function validateAssignments(projectList, entries, todos, expenses = []) {
 }
 
 /**
- * Performs a complete, read-only integrity pass over one zeitplural workspace.
+ * Performs a complete, read-only integrity pass over one zeitberg workspace.
  * It checks the workspace model, data inventory, schemas, project assignments, manifest metadata, blob hashes, and entry totals; undeclared files beneath data/ are rejected so obsolete import artifacts cannot silently enter the private repository.
  * @param {ValidateOptions} options Parsed command-line options.
  * @returns {Promise<void>}
@@ -167,7 +167,7 @@ async function validateWorkspace(options) {
                 throw new Error(`${chunk.path} year/week metadata does not match its manifest chunk.`);
             }
             if (String(week.timezone || "") !== workspace.timezone) {
-                throw new Error(`${chunk.path} timezone does not match zeitplural.json.`);
+                throw new Error(`${chunk.path} timezone does not match zeitberg.json.`);
             }
             const weekEntries = Array.isArray(week.entries) ? week.entries : [];
             entries.push(...weekEntries);

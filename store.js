@@ -174,7 +174,7 @@ export class TodoStore {
     }
 
     /**
-     * Extracts only Zeitplural-specific scheduling fields from one issue-backed runtime TODO.
+     * Extracts only Zeitberg-specific scheduling fields from one issue-backed runtime TODO.
      * @param {import("./model.js").Todo | import("./model.js").TodoRaw} todo GitHub-backed task.
      * @returns {import("./model.js").GitHubTodoOverlayRaw}
      */
@@ -202,7 +202,7 @@ export class TodoStore {
 
     /**
      * Reports whether an overlay differs from fields derivable directly from its GitHub issue.
-     * Omitting all-default overlays keeps todos.json proportional to actual Zeitplural-only metadata instead of to the total upstream issue count.
+     * Omitting all-default overlays keeps todos.json proportional to actual Zeitberg-only metadata instead of to the total upstream issue count.
      * @param {import("./model.js").GitHubTodoOverlayRaw} overlay Normalized overlay candidate.
      * @returns {boolean}
      */
@@ -562,7 +562,7 @@ export class TodoStore {
     /**
      * Replaces persistence provenance after an external system assigns an identity to a TODO.
      * The operation intentionally leaves the user-facing `updated_at` timestamp untouched: creating an issue link is save metadata, not a content edit.
-     * @param {string} id Stable zeitplural TODO id.
+     * @param {string} id Stable zeitberg TODO id.
      * @param {import("./model.js").TodoSourceRaw | null} source Normalized external source metadata.
      * @returns {import("./model.js").Todo}
      */

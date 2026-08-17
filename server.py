@@ -49,9 +49,9 @@ def _is_allowed_workspace_path(path_text: str, workspace_config_path: str) -> bo
 
 
 def _default_workspace_root() -> Path:
-    if (APP_ROOT / "zeitplural.json").is_file():
+    if (APP_ROOT / "zeitberg.json").is_file():
         return APP_ROOT
-    return APP_ROOT.parent / "zeitplural-data"
+    return APP_ROOT.parent / "zeitberg-data"
 
 
 def _read_workspace_descriptor(workspace_root: Path, workspace_config_path: str) -> dict[str, str]:
@@ -92,7 +92,7 @@ class Handler(SimpleHTTPRequestHandler):
     workspace_roots: dict[str, Path] = {}
     workspace_descriptors: dict[str, dict[str, str]] = {}
     default_workspace_id = ""
-    workspace_config_path = "zeitplural.json"
+    workspace_config_path = "zeitberg.json"
     app_entry_path = "/docs/"
     local_mode_enabled = True
 
@@ -236,7 +236,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Local zeitplural development server with a separately selectable data workspace.")
+    parser = argparse.ArgumentParser(description="Local zeitberg development server with a separately selectable data workspace.")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host. Default: 127.0.0.1")
     parser.add_argument("--port", type=int, default=8000, help="Bind port. Default: 8000")
     workspace_mode = parser.add_mutually_exclusive_group()
@@ -245,7 +245,7 @@ def main(argv: list[str]) -> int:
         type=Path,
         action="append",
         default=None,
-        help="Workspace repository root. Repeat to expose several local workspaces. Defaults to this mixed checkout or sibling ../zeitplural-data.",
+        help="Workspace repository root. Repeat to expose several local workspaces. Defaults to this mixed checkout or sibling ../zeitberg-data.",
     )
     workspace_mode.add_argument(
         "--no-local",
@@ -254,8 +254,8 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument(
         "--workspace-config",
-        default="zeitplural.json",
-        help="Workspace config path relative to --workspace. Default: zeitplural.json",
+        default="zeitberg.json",
+        help="Workspace config path relative to --workspace. Default: zeitberg.json",
     )
     args = parser.parse_args(argv)
 
@@ -288,10 +288,10 @@ def main(argv: list[str]) -> int:
     handler = lambda *a, **k: ConfiguredHandler(*a, directory=str(APP_ROOT), **k)  # noqa: E731 (simple factory)
     httpd = ThreadingHTTPServer((args.host, args.port), handler)
     if args.no_local:
-        print(f"Serving zeitplural provider login from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}")
+        print(f"Serving zeitberg provider login from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}")
     else:
         route_id = quote(default_workspace_id, safe="")
-        print(f"Serving zeitplural from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}time?source=local&workspace={route_id}")
+        print(f"Serving zeitberg from {APP_ROOT} on http://{args.host}:{args.port}{app_entry_path}time?source=local&workspace={route_id}")
         for workspace_id, workspace_root in workspace_roots.items():
             print(f"Workspace {workspace_id}: {workspace_root} ({workspace_config_path})")
     try:

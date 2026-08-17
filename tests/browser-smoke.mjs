@@ -186,7 +186,7 @@ try {
 
     await openComponent(desktop, baseUrl, "time");
     assert.equal(await desktop.locator("#weekViewSection").isVisible(), true);
-    assert.match(await desktop.title(), /zeitplural/);
+    assert.match(await desktop.title(), /zeitberg/);
     await desktop.locator("#appZoomInBtn").click();
     assert.notEqual(await desktop.locator("#appZoomLabel").textContent(), "100%");
     await desktop.locator("#appZoomResetBtn").click();

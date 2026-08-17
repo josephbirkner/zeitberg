@@ -143,7 +143,7 @@ import {
 
 /**
  * @typedef {Object} GitHubTodoOverlayRaw
- * @description Zeitplural-only scheduling metadata for one GitHub-owned issue task; title, body, labels, and state remain exclusively upstream.
+ * @description Zeitberg-only scheduling metadata for one GitHub-owned issue task; title, body, labels, and state remain exclusively upstream.
  * @property {string} repository
  * @property {number} issue_number
  * @property {string | null} [parent_id]
@@ -314,14 +314,14 @@ import {
 
 /**
  * @typedef {Object} WorkspaceComponentRaw
- * @description One enabled zeitplural component and the repository-relative documents it owns.
+ * @description One enabled zeitberg component and the repository-relative documents it owns.
  * @property {string} type
  * @property {Object.<string, string>} paths
  */
 
 /**
  * @typedef {Object} WorkspaceRaw
- * @description The root zeitplural.json document that describes one independently shareable data repository.
+ * @description The root zeitberg.json document that describes one independently shareable data repository.
  * @property {string} [$schema]
  * @property {number} schema_version
  * @property {string} workspace_id
@@ -355,7 +355,7 @@ export function normalizeRepositoryPath(value, label) {
 }
 
 /**
- * Represents the versioned root configuration of one zeitplural data workspace.
+ * Represents the versioned root configuration of one zeitberg data workspace.
  * The model keeps repository discovery independent from any hosting provider and centralizes every mutable document path used by the application.
  * Component keys are stable instance identifiers, while component types let future versions add finances or multiple sharing ledgers without changing the bootstrap format.
  */
@@ -381,64 +381,64 @@ export class Workspace {
     }
 
     /**
-     * Parses and validates a zeitplural.json payload.
+     * Parses and validates a zeitberg.json payload.
      * Besides schema-version checks, this validates timezone support, stable identifiers, component uniqueness, and every repository-relative path before network or filesystem access occurs.
      * @param {unknown} raw Untrusted JSON payload returned by a data source.
      * @returns {Workspace}
      */
     static fromRaw(raw) {
-        if (!raw || typeof raw !== "object") throw new Error("zeitplural.json must be a JSON object.");
+        if (!raw || typeof raw !== "object") throw new Error("zeitberg.json must be a JSON object.");
         const rawObj = /** @type {WorkspaceRaw} */ (raw);
-        if (Number(rawObj.schema_version) !== 1) throw new Error("zeitplural.json must use schema_version 1.");
+        if (Number(rawObj.schema_version) !== 1) throw new Error("zeitberg.json must use schema_version 1.");
 
         const workspaceId = String(rawObj.workspace_id || "").trim();
         if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(workspaceId)) {
-            throw new Error("zeitplural.json contains an invalid workspace_id.");
+            throw new Error("zeitberg.json contains an invalid workspace_id.");
         }
         const name = String(rawObj.name || "").trim();
-        if (!name) throw new Error("zeitplural.json must define a workspace name.");
+        if (!name) throw new Error("zeitberg.json must define a workspace name.");
         const timezone = String(rawObj.timezone || "").trim();
         try {
             new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
         } catch {
-            throw new Error(`zeitplural.json contains an invalid timezone: ${timezone || "(empty)"}.`);
+            throw new Error(`zeitberg.json contains an invalid timezone: ${timezone || "(empty)"}.`);
         }
 
         if (!rawObj.resources || typeof rawObj.resources !== "object" || Array.isArray(rawObj.resources)) {
-            throw new Error("zeitplural.json resources must be an object.");
+            throw new Error("zeitberg.json resources must be an object.");
         }
         /** @type {Object.<string, string>} */
         const resources = {};
         for (const [key, value] of Object.entries(rawObj.resources)) {
-            if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`zeitplural.json contains an invalid resource key: ${key}.`);
+            if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`zeitberg.json contains an invalid resource key: ${key}.`);
             resources[key] = normalizeRepositoryPath(value, `resources.${key}`);
         }
 
         if (!rawObj.components || typeof rawObj.components !== "object" || Array.isArray(rawObj.components)) {
-            throw new Error("zeitplural.json components must be an object.");
+            throw new Error("zeitberg.json components must be an object.");
         }
         /** @type {Object.<string, WorkspaceComponentRaw>} */
         const components = {};
         for (const [componentId, candidate] of Object.entries(rawObj.components)) {
             if (!/^[a-z][a-z0-9_-]*$/.test(componentId)) {
-                throw new Error(`zeitplural.json contains an invalid component id: ${componentId}.`);
+                throw new Error(`zeitberg.json contains an invalid component id: ${componentId}.`);
             }
             if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-                throw new Error(`zeitplural.json component ${componentId} must be an object.`);
+                throw new Error(`zeitberg.json component ${componentId} must be an object.`);
             }
             const rawComponent = /** @type {WorkspaceComponentRaw} */ (candidate);
             const type = String(rawComponent.type || "").trim();
             if (!/^[a-z][a-z0-9_]*$/.test(type)) {
-                throw new Error(`zeitplural.json component ${componentId} has an invalid type.`);
+                throw new Error(`zeitberg.json component ${componentId} has an invalid type.`);
             }
             if (!rawComponent.paths || typeof rawComponent.paths !== "object" || Array.isArray(rawComponent.paths)) {
-                throw new Error(`zeitplural.json component ${componentId} paths must be an object.`);
+                throw new Error(`zeitberg.json component ${componentId} paths must be an object.`);
             }
             /** @type {Object.<string, string>} */
             const paths = {};
             for (const [pathKey, value] of Object.entries(rawComponent.paths)) {
                 if (!/^[a-z][a-z0-9_]*$/.test(pathKey)) {
-                    throw new Error(`zeitplural.json component ${componentId} contains an invalid path key: ${pathKey}.`);
+                    throw new Error(`zeitberg.json component ${componentId} contains an invalid path key: ${pathKey}.`);
                 }
                 paths[pathKey] = normalizeRepositoryPath(value, `components.${componentId}.paths.${pathKey}`);
             }

@@ -38,7 +38,7 @@ test("GitLab OAuth uses S256 PKCE and restores a session-bound onboarding intent
     const startWindow = {
         crypto: globalThis.crypto,
         location: {
-            origin: "https://zeitplural.io",
+            origin: "https://zeitberg.io",
             assign(value) {
                 authorizationUrl = String(value);
             },
@@ -49,7 +49,7 @@ test("GitLab OAuth uses S256 PKCE and restores a session-bound onboarding intent
         mode: "connect",
         repositoryUrl: "https://gitlab.com/person/workspace",
         ref: "main",
-        workspacePath: "zeitplural.json",
+        workspacePath: "zeitberg.json",
         remember: false,
     };
 
@@ -61,7 +61,7 @@ test("GitLab OAuth uses S256 PKCE and restores a session-bound onboarding intent
     assert.equal(authorization.searchParams.get("code_challenge_method"), "S256");
     assert.equal(authorization.searchParams.get("scope"), "api");
     const redirectUri = new URL(String(authorization.searchParams.get("redirect_uri")));
-    assert.equal(redirectUri.toString(), "https://zeitplural.io/?oauth_provider=gitlab");
+    assert.equal(redirectUri.toString(), "https://zeitberg.io/?oauth_provider=gitlab");
 
     const pending = JSON.parse(sessionStorage.getItem(OAUTH_PENDING_KEY));
     const callbackLocation = new URL(redirectUri);
@@ -97,7 +97,7 @@ test("GitLab OAuth uses S256 PKCE and restores a session-bound onboarding intent
 
     const result = await consumeOAuthCallback(/** @type {any} */ (callbackWindow));
 
-    assert.equal(callbackLocation.toString(), "https://zeitplural.io/");
+    assert.equal(callbackLocation.toString(), "https://zeitberg.io/");
     assert.equal(sessionStorage.getItem(OAUTH_PENDING_KEY), null);
     assert.deepEqual(result?.intent, {
         ...intent,
@@ -123,18 +123,18 @@ test("OAuth callbacks scrub authorization data before rejecting a state mismatch
                 mode: "connect",
                 repositoryUrl: "https://codeberg.org/person/workspace",
                 ref: "main",
-                workspacePath: "zeitplural.json",
+                workspacePath: "zeitberg.json",
                 remember: false,
             },
             provider: "codeberg",
-            redirect_uri: "https://zeitplural.io/?oauth_provider=codeberg",
+            redirect_uri: "https://zeitberg.io/?oauth_provider=codeberg",
             state: "expected-state",
             verifier: "v".repeat(86),
             version: 1,
         }),
     );
     const location = new URL(
-        "https://zeitplural.io/?oauth_provider=codeberg&code=secret-code&state=attacker-state",
+        "https://zeitberg.io/?oauth_provider=codeberg&code=secret-code&state=attacker-state",
     );
     let fetchCalled = false;
     context.mock.method(globalThis, "fetch", async () => {
@@ -152,7 +152,7 @@ test("OAuth callbacks scrub authorization data before rejecting a state mismatch
     };
 
     await assert.rejects(() => consumeOAuthCallback(/** @type {any} */ (browser)), /state does not match/);
-    assert.equal(location.toString(), "https://zeitplural.io/");
+    assert.equal(location.toString(), "https://zeitberg.io/");
     assert.equal(sessionStorage.getItem(OAUTH_PENDING_KEY), null);
     assert.equal(fetchCalled, false);
 });
@@ -176,7 +176,7 @@ test("expiring OAuth credentials refresh without a client secret", async (contex
         expiresAt: Date.now() - 1,
         provider: "gitlab",
         clientId: "public-client-id",
-        redirectUri: "https://zeitplural.io/?oauth_provider=gitlab",
+        redirectUri: "https://zeitberg.io/?oauth_provider=gitlab",
         tokenType: "Bearer",
     });
 

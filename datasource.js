@@ -236,7 +236,7 @@ function buildGraphqlChunkBatches(chunks) {
 
 /**
  * @typedef {Object} GitHubIssueWrite
- * @description User-facing issue fields synchronized from an issue-backed zeitplural TODO.
+ * @description User-facing issue fields synchronized from an issue-backed zeitberg TODO.
  * @property {string} [title]
  * @property {string} [body]
  * @property {string[]} [labels]
@@ -296,11 +296,11 @@ export class DataSource {
 
     /**
      * Returns the validated repository path used to bootstrap workspace discovery.
-     * The path belongs to connection configuration rather than zeitplural.json because it must be known before that document can be loaded.
+     * The path belongs to connection configuration rather than zeitberg.json because it must be known before that document can be loaded.
      * @returns {string}
      */
     getWorkspaceConfigPath() {
-        return normalizeRepositoryPath(this.config.workspacePath || "zeitplural.json", "workspacePath");
+        return normalizeRepositoryPath(this.config.workspacePath || "zeitberg.json", "workspacePath");
     }
 
     /**
@@ -481,7 +481,7 @@ export class DataSource {
      * @param {string} [description] Optional repository description.
      * @returns {Promise<{repositoryUrl: string, repoInfo: any}>}
      */
-    async createPrivateRepository(name, description = "Private zeitplural workspace") {
+    async createPrivateRepository(name, description = "Private zeitberg workspace") {
         void name;
         void description;
         throw new Error("Repository creation is not available for this provider.");
@@ -862,13 +862,13 @@ export class GitHubDataSource extends DataSource {
     }
 
     /**
-     * Loads zeitplural.json from the configured repository and ref.
+     * Loads zeitberg.json from the configured repository and ref.
      * This is the only read that occurs before workspace-owned paths become available.
      * @returns {Promise<Object>}
      */
     async fetchWorkspace() {
         const raw = await this.fetchRaw(this.buildContentsUrl(this.getWorkspaceConfigPath()));
-        return parseJsonDocument(raw, "zeitplural.json");
+        return parseJsonDocument(raw, "zeitberg.json");
     }
 
     /**
@@ -1133,7 +1133,7 @@ export class GitHubDataSource extends DataSource {
         const newTreeSha = treeRes?.sha;
         if (!isGitSha(newTreeSha)) throw new Error("Failed to create tree.");
 
-        const messageText = String(message || "").trim() || "Update zeitplural workspace";
+        const messageText = String(message || "").trim() || "Update zeitberg workspace";
 
         const commitRes = await this.fetchJsonRequest(`${baseUrl}/git/commits`, {
             method: "POST",
@@ -1315,7 +1315,7 @@ class HostedFileDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchWorkspace() {
-        return parseJsonDocument(await this.fetchRepositoryFileText(this.getWorkspaceConfigPath()), "zeitplural.json");
+        return parseJsonDocument(await this.fetchRepositoryFileText(this.getWorkspaceConfigPath()), "zeitberg.json");
     }
 
     /**
@@ -1415,7 +1415,7 @@ class HostedFileDataSource extends DataSource {
 
 /**
  * GitLab REST data source for gitlab.com and explicitly selected self-hosted GitLab instances.
- * File reads use repository-file/blob endpoints, while each zeitplural save becomes one atomic multi-action Git commit.
+ * File reads use repository-file/blob endpoints, while each zeitberg save becomes one atomic multi-action Git commit.
  */
 export class GitLabDataSource extends HostedFileDataSource {
     /**
@@ -1494,7 +1494,7 @@ export class GitLabDataSource extends HostedFileDataSource {
             method: "POST",
             body: {
                 branch: String(this.config.ref || "main"),
-                commit_message: String(message || "").trim() || "Update zeitplural workspace",
+                commit_message: String(message || "").trim() || "Update zeitberg workspace",
                 actions,
             },
         });
@@ -1533,7 +1533,7 @@ export class GitLabDataSource extends HostedFileDataSource {
      * @param {string} [description] Optional project description.
      * @returns {Promise<{repositoryUrl: string, repoInfo: any}>}
      */
-    async createPrivateRepository(name, description = "Private zeitplural workspace") {
+    async createPrivateRepository(name, description = "Private zeitberg workspace") {
         const path = String(name || "").trim();
         if (!/^[A-Za-z0-9_.-]+$/.test(path)) throw new Error("Use letters, numbers, dots, dashes, or underscores for the repository name.");
         const project = await this.requestJson("/projects", {
@@ -1652,7 +1652,7 @@ export class ForgejoDataSource extends HostedFileDataSource {
                 body: {
                     branch: String(this.config.ref || "main"),
                     content: encodeUtf8Base64(file.content),
-                    message: String(message || "").trim() || "Update zeitplural workspace",
+                    message: String(message || "").trim() || "Update zeitberg workspace",
                     ...(existing?.sha ? { sha: existing.sha } : {}),
                 },
             });
@@ -1687,7 +1687,7 @@ export class ForgejoDataSource extends HostedFileDataSource {
      * @param {string} [description] Optional repository description.
      * @returns {Promise<{repositoryUrl: string, repoInfo: any}>}
      */
-    async createPrivateRepository(name, description = "Private zeitplural workspace") {
+    async createPrivateRepository(name, description = "Private zeitberg workspace") {
         const repo = String(name || "").trim();
         if (!/^[A-Za-z0-9_.-]+$/.test(repo)) throw new Error("Use letters, numbers, dots, dashes, or underscores for the repository name.");
         const repository = await this.requestJson("/user/repos", {
@@ -1766,7 +1766,7 @@ export class CustomGitDataSource extends DataSource {
                 this.delegate = new ForgejoDataSource({ ...this.config, provider: "forgejo" }, this.token);
             } else if (gitlabProbe.transportFailed || forgejoProbe.transportFailed) {
                 throw new Error(
-                    `The browser could not inspect ${this.coordinates.origin}. The server may not permit cross-origin API requests from zeitplural.`,
+                    `The browser could not inspect ${this.coordinates.origin}. The server may not permit cross-origin API requests from zeitberg.`,
                 );
             } else {
                 throw new Error("This host does not expose a compatible GitLab or Forgejo API.");
@@ -1857,13 +1857,13 @@ export class LocalDataSource extends DataSource {
      * Creates a local source whose workspace files are served through the dedicated /workspace endpoint.
      * @param {RepoConfig} [config] Bootstrap path configuration shared with hosted modes.
      */
-    constructor(config = { owner: "", repo: "", ref: "", workspacePath: "zeitplural.json" }) {
+    constructor(config = { owner: "", repo: "", ref: "", workspacePath: "zeitberg.json" }) {
         super({ owner: "", repo: "", ref: "", ...config });
     }
 
     /**
      * Adds the active local workspace selector to a same-origin server endpoint.
-     * The selector is the public workspace_id from zeitplural.json rather than a filesystem path, so local routes never disclose checkout locations.
+     * The selector is the public workspace_id from zeitberg.json rather than a filesystem path, so local routes never disclose checkout locations.
      * @param {string} path Absolute local-server endpoint path.
      * @returns {URL}
      */
@@ -1890,7 +1890,7 @@ export class LocalDataSource extends DataSource {
                 .map((item) => ({
                     workspace_id: String(item?.workspace_id || "").trim(),
                     name: String(item?.name || "").trim(),
-                    workspace_path: String(item?.workspace_path || "zeitplural.json").trim(),
+                    workspace_path: String(item?.workspace_path || "zeitberg.json").trim(),
                 }))
                 .filter((item) => item.workspace_id),
         };
@@ -1922,9 +1922,9 @@ export class LocalDataSource extends DataSource {
     async fetchWorkspace() {
         const resp = await fetch(this.buildLocalServerUrl("/workspace-config"), { cache: "no-store" });
         if (!resp.ok) {
-            throw new Error(`Local zeitplural.json not found (${resp.status}). Start server.py with --workspace PATH.`);
+            throw new Error(`Local zeitberg.json not found (${resp.status}). Start server.py with --workspace PATH.`);
         }
-        return parseJsonDocument(await resp.text(), "zeitplural.json");
+        return parseJsonDocument(await resp.text(), "zeitberg.json");
     }
 
     /**

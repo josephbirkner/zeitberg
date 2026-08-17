@@ -43,7 +43,7 @@ const DRAFT_JOURNAL = {
 };
 
 const REMOTE_CACHE = {
-    dbName: "zeitplural:remote_cache:v1",
+    dbName: "zeitberg:remote_cache:v1",
     dbVersion: 1,
     namespaceIndex: "namespace",
     storeName: "records",

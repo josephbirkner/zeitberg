@@ -47,7 +47,7 @@ function githubLocator(repository, ref = "main") {
         provider: "github",
         repositoryUrl: `https://github.com/example/${repository}`,
         ref,
-        workspacePath: "zeitplural.json",
+        workspacePath: "zeitberg.json",
         expectedWorkspaceId: "",
     };
 }
@@ -103,8 +103,8 @@ test("ConfigService isolates session and remembered credentials by workspace", (
     assert.equal(service.loadWorkspaceCredential(shared.id), "remembered-secret");
     assert.equal(service.isWorkspaceCredentialRemembered(personal.id), false);
     assert.equal(service.isWorkspaceCredentialRemembered(shared.id), true);
-    assert.equal(local.getItem("zeitplural:workspace-registry:v1"), null);
-    assert.match(session.getItem("zeitplural:workspace-credentials:session:v1") || "", /session-secret/);
+    assert.equal(local.getItem("zeitberg:workspace-registry:v1"), null);
+    assert.match(session.getItem("zeitberg:workspace-credentials:session:v1") || "", /session-secret/);
 
     service.clearWorkspaceCredential(personal.id);
     assert.equal(service.loadWorkspaceCredential(personal.id), "");
@@ -131,7 +131,7 @@ test("ConfigService preserves refreshable OAuth grants without exposing them thr
         provider: "gitlab",
         repositoryUrl: "https://gitlab.com/example/workspace",
         ref: "main",
-        workspacePath: "zeitplural.json",
+        workspacePath: "zeitberg.json",
         expectedWorkspaceId: "",
     });
     const credential = {
@@ -141,7 +141,7 @@ test("ConfigService preserves refreshable OAuth grants without exposing them thr
         expiresAt: 123456789,
         provider: "gitlab",
         clientId: "public-client-id",
-        redirectUri: "https://zeitplural.io/?oauth_provider=gitlab",
+        redirectUri: "https://zeitberg.io/?oauth_provider=gitlab",
         tokenType: "Bearer",
     };
 
@@ -150,7 +150,7 @@ test("ConfigService preserves refreshable OAuth grants without exposing them thr
     assert.equal(service.loadWorkspaceCredential(connection.id), "oauth-access");
     assert.deepEqual(service.loadWorkspaceCredentialRecord(connection.id), credential);
     assert.equal(service.isWorkspaceCredentialRemembered(connection.id), true);
-    assert.match(local.getItem("zeitplural:workspace-credentials:local:v1") || "", /oauth-v1/);
+    assert.match(local.getItem("zeitberg:workspace-credentials:local:v1") || "", /oauth-v1/);
     assert.equal(JSON.stringify(connection.toObject()).includes("oauth-access"), false);
 });
 
@@ -170,5 +170,5 @@ test("legacy single-workspace storage migrates once into the registry", (testCon
     assert.equal(connection?.repositoryUrl, "https://github.com/example/legacy-data");
     assert.equal(connection?.ref, "archive");
     assert.equal(service.loadWorkspaceCredential(connection?.id || ""), "legacy-secret");
-    assert.equal(JSON.parse(local.getItem("zeitplural:workspace-registry:v1")).schema_version, 1);
+    assert.equal(JSON.parse(local.getItem("zeitberg:workspace-registry:v1")).schema_version, 1);
 });

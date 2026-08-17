@@ -10,18 +10,18 @@
     <meta name="theme-color" content="#17191f" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="zeitplural" />
+    <meta name="apple-mobile-web-app-title" content="zeitberg" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="zeitplural-oauth-gitlab-client-id" content="" />
-    <meta name="zeitplural-oauth-codeberg-client-id" content="" />
+    <meta name="zeitberg-oauth-gitlab-client-id" content="" />
+    <meta name="zeitberg-oauth-codeberg-client-id" content="" />
     <meta
       name="description"
       data-i18n-content="meta.description"
       content="A static browser application for time, tasks, and expenses. Your data lives in a Git repository you control."
     />
-    <title data-i18n="document.title">zeitplural — time, tasks, expenses → Git</title>
+    <title data-i18n="document.title">zeitberg — time, tasks, expenses → Git</title>
     <script src="./theme-init.js"></script>
-    <link rel="icon" href="./assets/zeitplural-mark.svg" type="image/svg+xml" />
+    <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
     <link rel="stylesheet" href="./styles/common.css" />
@@ -32,8 +32,8 @@
   </head>
   <body>
     <aside id="appSidebar" class="app-sidebar" data-i18n-aria-label="nav.application" aria-label="Application navigation" hidden>
-      <a id="appHomeLink" class="sidebar-brand" href="./" data-i18n-title="nav.home" title="zeitplural home" data-i18n-aria-label="nav.home" aria-label="zeitplural home">
-        <img src="./assets/zeitplural-mark.svg" alt="" />
+      <a id="appHomeLink" class="sidebar-brand" href="./" data-i18n-title="nav.home" title="zeitberg home" data-i18n-aria-label="nav.home" aria-label="zeitberg home">
+        <img src="./assets/zeitberg-mark.svg" alt="" />
       </a>
       <nav class="sidebar-nav" data-i18n-aria-label="nav.views" aria-label="Views">
         <button id="workspaceSettingsBtn" class="sidebar-button" type="button" data-i18n-title="nav.workspaces" title="Workspaces" data-i18n-aria-label="nav.manageWorkspaces" aria-label="Manage workspaces">
@@ -186,15 +186,15 @@
     <main>
       <section id="loginSection" class="landing" hidden>
         <header class="landing-nav">
-          <a class="landing-brand" href="./" data-i18n-aria-label="nav.home" aria-label="zeitplural home">
-            <img src="./assets/zeitplural-mark.svg" alt="" />
-            <span>zeitplural</span>
+          <a class="landing-brand" href="./" data-i18n-aria-label="nav.home" aria-label="zeitberg home">
+            <img src="./assets/zeitberg-mark.svg" alt="" />
+            <span>zeitberg</span>
           </a>
           <nav data-i18n-aria-label="landing.navigation" aria-label="Landing page">
             <a href="#architecture" data-i18n="landing.architectureLink">Architecture</a>
             <a href="#workspace" data-i18n="landing.setupLink">Setup</a>
             <a href="#similar" data-i18n="landing.similarLink">Similar projects</a>
-            <a href="https://github.com/josephbirkner/zeitplural" data-i18n="landing.sourceLink">Source ↗</a>
+            <a href="https://github.com/josephbirkner/zeitberg" data-i18n="landing.sourceLink">Source ↗</a>
             <button id="landingThemeToggleBtn" class="landing-theme-toggle" type="button" title="Use light theme" aria-label="Use light theme">
               <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#contrast"></use></svg>
               <span>Light</span>
@@ -211,8 +211,8 @@
                 <strong data-i18n="landing.toGit">&gt; Git</strong>
               </h1>
               <p class="landing-lede" data-i18n="landing.lede">
-                zeitplural is a static application. It reads and writes versioned workspace files directly in a Git repository
-                you choose; zeitplural.io has no data backend.
+                zeitberg is a static application. It reads and writes versioned workspace files directly in a Git repository
+                you choose; zeitberg.io has no data backend.
               </p>
               <ul class="landing-badges" data-i18n-aria-label="landing.properties" aria-label="Project properties">
                 <li><span aria-hidden="true"></span><span data-i18n="landing.staticHtml">Static HTML5</span></li>
@@ -243,7 +243,7 @@
                     name="repository"
                     type="url"
                     inputmode="url"
-                    placeholder="https://github.com/you/zeitplural-data"
+                    placeholder="https://github.com/you/zeitberg-data"
                     spellcheck="false"
                     required
                   />
@@ -281,13 +281,13 @@
               class="landing-architecture-dark"
               src="./assets/architecture.svg"
               data-i18n-alt="landing.architectureAlt"
-              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+              alt="Static host loads zeitberg in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
             />
             <img
               class="landing-architecture-light"
               src="./assets/architecture-light.svg"
               data-i18n-alt="landing.architectureAlt"
-              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+              alt="Static host loads zeitberg in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
             />
             <figcaption data-i18n="landing.architectureCaption">Credentials remain in browser storage. Requests go directly to the selected Git provider.</figcaption>
           </figure>
@@ -307,7 +307,7 @@
                   <li data-i18n="landing.copyTemplate">Copy the workspace-template files into it.</li>
                   <li data-i18n="landing.enterConnection">Enter its URL, branch, and PAT above.</li>
                 </ol>
-                <a class="landing-text-link" href="https://github.com/josephbirkner/zeitplural#workspace-setup" data-i18n="landing.detailedSetup">Detailed setup ↗</a>
+                <a class="landing-text-link" href="https://github.com/josephbirkner/zeitberg#workspace-setup" data-i18n="landing.detailedSetup">Detailed setup ↗</a>
               </article>
               <article>
                 <span class="landing-card-tag" data-i18n="landing.otherProvidersAvailable">GITLAB · CODEBERG · AVAILABLE</span>
@@ -326,7 +326,7 @@
             <div class="landing-section-heading">
               <p class="landing-eyebrow" data-i18n="landing.similarEyebrow">02 · SIMILAR PROJECTS</p>
               <h2 id="similarTitle" data-i18n="landing.similarTitle">Related work.</h2>
-              <p data-i18n="landing.similarIntro">No direct equivalent surfaced in this review. These projects overlap with zeitplural in scope or storage model.</p>
+              <p data-i18n="landing.similarIntro">No direct equivalent surfaced in this review. These projects overlap with zeitberg in scope or storage model.</p>
             </div>
             <div class="landing-related-list">
               <a href="https://github.com/GitJournal/GitJournal">
@@ -346,8 +346,8 @@
 
           <footer class="landing-footer">
             <div>
-              <img src="./assets/zeitplural-mark.svg" alt="" />
-              <strong>zeitplural</strong>
+              <img src="./assets/zeitberg-mark.svg" alt="" />
+              <strong>zeitberg</strong>
               <span data-i18n="landing.footerTag">static application · Git workspace</span>
             </div>
             <p data-i18n="landing.aiDisclosure">The code for this project was written using large language models with extensive human supervision.</p>
@@ -488,7 +488,7 @@
             </label>
             <label class="col-span-2">
               <span data-i18n="workspace.repositoryUrl">Repository URL</span>
-              <input id="workspaceRepository" type="url" inputmode="url" placeholder="https://github.com/you/zeitplural-data" spellcheck="false" required />
+              <input id="workspaceRepository" type="url" inputmode="url" placeholder="https://github.com/you/zeitberg-data" spellcheck="false" required />
             </label>
             <label>
               <span data-i18n="landing.branch">Branch / ref</span>
@@ -496,7 +496,7 @@
             </label>
             <label>
               <span data-i18n="workspace.configPath">Workspace config path</span>
-              <input id="workspacePath" type="text" value="zeitplural.json" spellcheck="false" required />
+              <input id="workspacePath" type="text" value="zeitberg.json" spellcheck="false" required />
             </label>
             <label class="col-span-2">
               <span data-i18n="landing.accessToken">Provider access token</span>
@@ -524,7 +524,7 @@
         <div class="dialog-head">
           <div>
             <div class="dialog-title" data-i18n="workspace.createTitle">Create private workspace</div>
-            <div class="dialog-meta muted" data-i18n="workspace.createMeta">Create and initialize a repository without a zeitplural backend.</div>
+            <div class="dialog-meta muted" data-i18n="workspace.createMeta">Create and initialize a repository without a zeitberg backend.</div>
           </div>
           <button id="workspaceCreateCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
@@ -540,7 +540,7 @@
           </label>
           <label>
             <span data-i18n="workspace.repositoryName">Repository name</span>
-            <input id="workspaceCreateRepository" type="text" value="zeitplural-data" spellcheck="false" required />
+            <input id="workspaceCreateRepository" type="text" value="zeitberg-data" spellcheck="false" required />
           </label>
           <label>
             <span data-i18n="workspace.workspaceName">Workspace name</span>
@@ -594,7 +594,7 @@
           <div>
             <strong data-i18n="workspace.capabilityTitle">Capability link</strong>
             <p class="workspace-capability-warning" data-i18n="workspace.capabilityWarning">Anyone holding this link receives the token's repository access. Treat it as a bearer credential.</p>
-            <p class="muted" data-i18n="workspace.capabilityHelp">Use a dedicated, expiring, least-privilege token for exactly this repository. zeitplural cannot mint or restrict a token for you.</p>
+            <p class="muted" data-i18n="workspace.capabilityHelp">Use a dedicated, expiring, least-privilege token for exactly this repository. zeitberg cannot mint or restrict a token for you.</p>
           </div>
           <label>
             <span data-i18n="workspace.shareableToken">Dedicated shareable token</span>
