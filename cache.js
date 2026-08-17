@@ -29,13 +29,13 @@
  */
 
 const CHUNK_CACHE = {
-    dbName: "tt_viewer:chunk_cache:v2",
+    dbName: "zeitberg:chunk-cache:v2",
     dbVersion: 1,
     storeName: "chunks",
 };
 
 const DRAFT_JOURNAL = {
-    dbName: "tt_viewer:draft_journal:v2",
+    dbName: "zeitberg:draft-journal:v2",
     dbVersion: 2,
     documentStoreName: "document_drafts",
     namespaceIndex: "namespace",

@@ -154,14 +154,14 @@ test("ConfigService preserves refreshable OAuth grants without exposing them thr
     assert.equal(JSON.stringify(connection.toObject()).includes("oauth-access"), false);
 });
 
-test("legacy single-workspace storage migrates once into the registry", (testContext) => {
+test("single-workspace storage upgrades once into the registry", (testContext) => {
     const { local } = installBrowserStorage(testContext);
     local.setItem(
-        "tt_viewer:config:v1",
+        "zeitberg:config:v1",
         JSON.stringify({ ...DEFAULT_CONFIG, owner: "example", repo: "legacy-data", ref: "archive" }),
     );
-    local.setItem("tt_viewer:token:v1", "legacy-secret");
-    local.setItem("tt_viewer:token_remembered:v1", "1");
+    local.setItem("zeitberg:token:v1", "single-workspace-secret");
+    local.setItem("zeitberg:token-remembered:v1", "1");
 
     const service = new ConfigService();
     const registry = service.loadWorkspaceRegistry(service.loadConfig());
@@ -169,6 +169,6 @@ test("legacy single-workspace storage migrates once into the registry", (testCon
 
     assert.equal(connection?.repositoryUrl, "https://github.com/example/legacy-data");
     assert.equal(connection?.ref, "archive");
-    assert.equal(service.loadWorkspaceCredential(connection?.id || ""), "legacy-secret");
+    assert.equal(service.loadWorkspaceCredential(connection?.id || ""), "single-workspace-secret");
     assert.equal(JSON.parse(local.getItem("zeitberg:workspace-registry:v1")).schema_version, 1);
 });

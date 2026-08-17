@@ -6,8 +6,8 @@ import "fake-indexeddb/auto";
 import { ChunkCache, DraftJournal, RemoteCache } from "../cache.js";
 
 const DATABASES = [
-    "tt_viewer:chunk_cache:v2",
-    "tt_viewer:draft_journal:v2",
+    "zeitberg:chunk-cache:v2",
+    "zeitberg:draft-journal:v2",
     "zeitberg:remote_cache:v1",
 ];
 

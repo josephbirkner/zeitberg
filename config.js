@@ -137,9 +137,9 @@ export function getEffectiveUiViewportWidth(viewportWidth, uiZoom) {
 }
 
 const STORAGE_KEYS = {
-    config: "tt_viewer:config:v1",
-    token: "tt_viewer:token:v1",
-    tokenRemembered: "tt_viewer:token_remembered:v1",
+    config: "zeitberg:config:v1",
+    token: "zeitberg:token:v1",
+    tokenRemembered: "zeitberg:token-remembered:v1",
     workspaceRegistry: "zeitberg:workspace-registry:v1",
     rememberedWorkspaceCredentials: "zeitberg:workspace-credentials:local:v1",
     sessionWorkspaceCredentials: "zeitberg:workspace-credentials:session:v1",
@@ -499,9 +499,9 @@ export class ConfigService {
     }
 
     /**
-     * Loads the browser's ordered workspace registry and performs the one-time single-connection migration.
-     * Legacy repository config becomes a registry row only when legacy config or token state actually exists, so a first-time visitor is not connected to the developer's default workspace.
-     * @param {AppConfig} [fallbackConfig] Already loaded legacy-compatible configuration.
+     * Loads the browser's ordered workspace registry and upgrades a single-workspace configuration into one registry row when necessary.
+     * Repository config becomes a row only when config or token state actually exists, so a first-time visitor is not connected to the developer's default workspace.
+     * @param {AppConfig} [fallbackConfig] Already loaded single-workspace configuration.
      * @returns {WorkspaceRegistry}
      */
     loadWorkspaceRegistry(fallbackConfig = DEFAULT_CONFIG) {
@@ -512,11 +512,11 @@ export class ConfigService {
             return new WorkspaceRegistry();
         }
 
-        const hasLegacyState =
+        const hasSingleWorkspaceState =
             localStorage.getItem(this.storageKeys.config) !== null ||
             localStorage.getItem(this.storageKeys.token) !== null ||
             sessionStorage.getItem(this.storageKeys.token) !== null;
-        if (!hasLegacyState) return new WorkspaceRegistry();
+        if (!hasSingleWorkspaceState) return new WorkspaceRegistry();
 
         const config = { ...DEFAULT_CONFIG, ...fallbackConfig };
         const registry = new WorkspaceRegistry();
@@ -530,8 +530,10 @@ export class ConfigService {
         registry.setActive(connection.id);
         this.saveWorkspaceRegistry(registry);
 
-        const legacyToken = this.loadToken();
-        if (legacyToken) this.saveWorkspaceCredential(connection.id, legacyToken, this.isTokenRemembered());
+        const singleWorkspaceToken = this.loadToken();
+        if (singleWorkspaceToken) {
+            this.saveWorkspaceCredential(connection.id, singleWorkspaceToken, this.isTokenRemembered());
+        }
         return registry;
     }
 
@@ -750,7 +752,7 @@ export class ConfigService {
     }
 
     /**
-     * Clears repository connections, credentials, and legacy UI config from storage.
+     * Clears repository connections, credentials, and UI config from storage.
      * The dedicated interface language is a device preference rather than workspace/authentication state, so logout deliberately preserves it.
      * @returns {void}
      */
