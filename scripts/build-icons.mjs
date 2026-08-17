@@ -9,7 +9,7 @@ const assetsDirectory = fileURLToPath(new URL("../assets/", import.meta.url));
 const background = { r: 39, g: 42, b: 59, alpha: 1 };
 
 /**
- * Renders one deterministic PNG from the Material Symbols-derived owl SVG.
+ * Renders one deterministic PNG from the hand-authored zeitberg mark SVG.
  * Opaque outputs fill the SVG's rounded transparent corners with the brand background, as required for the iOS Web Clip fallback.
  * @param {Buffer} sourceSvg Original vector asset bytes.
  * @param {number} size Square output dimensions in physical pixels.
@@ -29,7 +29,7 @@ async function renderIcon(sourceSvg, size, filename, opaque) {
 }
 
 /**
- * Renders an opaque install icon whose owl remains inside the maskable safe area.
+ * Renders an opaque install icon whose mark remains inside the maskable safe area.
  * A platform may crop a maskable icon to a circle, squircle, or another system shape, so the source mark is centered at 80% size over a full-bleed brand background.
  * @param {Buffer} sourceSvg Original vector asset bytes.
  * @param {number} size Square output dimensions in physical pixels.

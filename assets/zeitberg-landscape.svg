@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" role="img" aria-labelledby="title description">
+  <title id="title">The zeitberg landscape</title>
+  <desc id="description">A detailed clock sun sets behind layered mountain peaks while a coin moon rises nearby.</desc>
+  <defs>
+    <pattern id="dots" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.35" fill="#3b3f49" />
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="560" rx="30" fill="#272a3b" />
+  <rect x="24" y="24" width="1152" height="512" rx="18" fill="url(#dots)" opacity="0.7" />
+
+  <circle cx="420" cy="258" r="174" fill="#33241f" stroke="#ee6a3b" stroke-width="9" />
+  <g fill="none" stroke="#f18a64" stroke-linecap="round">
+    <path d="M420 101 V126 M420 390 V415 M263 258 H288 M552 258 H577" stroke-width="7" />
+    <path d="M341.5 122 L354 143.7 M486 372.3 L498.5 394 M284 179.5 L305.7 192 M534.3 324 L556 336.5" stroke-width="5" />
+    <path d="M284 336.5 L305.7 324 M534.3 192 L556 179.5 M341.5 394 L354 372.3 M486 143.7 L498.5 122" stroke-width="5" />
+  </g>
+  <g fill="#fffdf8">
+    <g transform="rotate(-52 420 258)">
+      <path d="M415 260 V177 H425 V260 Z" />
+      <path d="M420 149 C434 165 433 180 420 191 C407 180 406 165 420 149 Z" />
+    </g>
+    <g transform="rotate(34 420 258)">
+      <path d="M415 260 V139 H425 V260 Z" />
+      <path d="M420 108 C435 126 434 142 420 153 C406 142 405 126 420 108 Z" />
+    </g>
+    <circle cx="420" cy="258" r="16" />
+  </g>
+  <circle cx="420" cy="258" r="6" fill="#ee6a3b" />
+
+  <g>
+    <circle cx="934" cy="166" r="88" fill="#24272f" stroke="#82a9db" stroke-width="9" />
+    <circle cx="934" cy="166" r="69" fill="none" stroke="#c8dcf4" stroke-width="4" />
+    <path d="M915 145 L934 128 V207 M910 207 H960" fill="none" stroke="#fffdf8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <path d="M36 501 L252 308 L394 437 L613 230 L884 501 H1164 V536 H36 Z" fill="#24272f" />
+  <path d="M36 501 L252 308 L394 437 L613 230 L884 501" fill="none" stroke="#6f99cf" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+
+  <path d="M22 534 L283 354 L426 466 L641 292 L826 450 L986 330 L1178 504 V538 H22 Z" fill="#272a3b" />
+  <path d="M22 534 L283 354 L426 466 L641 292 L826 450 L986 330 L1178 504" fill="none" stroke="#fffdf8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

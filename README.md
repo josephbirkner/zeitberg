@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/zeitberg-mark.svg" width="92" height="92" alt="zeitberg owl mark" />
+  <img src="./assets/zeitberg-mark.svg" width="92" height="92" alt="zeitberg mountain, clock, and coin mark" />
 </p>
 
 <h1 align="center">zeitberg</h1>
@@ -81,7 +81,7 @@ gh repo create YOUR_ACCOUNT/zeitberg-data --private --source=. --push
 
 The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to the selected provider API; the static host never receives the credential. OAuth grants retain their refresh token in the same per-workspace credential record and refresh shortly before expiry.
 
-After opening a workspace, use the first sidebar action beneath the owl to manage connections. The browser keeps an ordered registry of repository URL, branch, bootstrap path, verified workspace ID, and display name. Each workspace token is stored separately, and switching repositories preserves unsaved drafts in a workspace-specific IndexedDB journal. Disconnecting one workspace does not log out or clear credentials for the others.
+After opening a workspace, use the first sidebar action beneath the zeitberg mark to manage connections. The browser keeps an ordered registry of repository URL, branch, bootstrap path, verified workspace ID, and display name. Each workspace token is stored separately, and switching repositories preserves unsaved drafts in a workspace-specific IndexedDB journal. Disconnecting one workspace does not log out or clear credentials for the others.
 
 The same screen can share the active workspace in two forms:
 
@@ -249,6 +249,6 @@ Zeitberg is available under the [Apache License 2.0](./LICENSE).
 
 The code for this project was written using large language models with extensive human supervision.
 
-The zeitberg owl mark adapts the **owl** glyph from [Google Material Symbols](https://github.com/google/material-design-icons), used under the [Apache License 2.0](./icons/LICENSE). Its iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitberg-mark.svg`](./assets/zeitberg-mark.svg) by `npm run build:icons`. The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
+The zeitberg mark and landing landscape are original hand-authored SVGs. The mark's iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitberg-mark.svg`](./assets/zeitberg-mark.svg) by `npm run build:icons`. Interface icons use [Google Material Symbols](https://github.com/google/material-design-icons) under the [Apache License 2.0](./icons/LICENSE). The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
 
-No generative or diffusion-based image model was used for the logo or architecture graphic.
+No generative or diffusion-based image model was used for the mark, landing landscape, or architecture graphic.

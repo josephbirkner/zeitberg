@@ -131,11 +131,16 @@ body:not(.app-mode) main {
   background-size: 29px 29px;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(390px, 0.78fr);
-  align-items: center;
-  gap: clamp(44px, 7vw, 88px);
+  grid-template-areas:
+    "copy connect"
+    "landscape connect";
+  align-items: start;
+  column-gap: clamp(44px, 7vw, 88px);
+  row-gap: 30px;
 }
 
 .landing-hero-copy {
+  grid-area: copy;
   max-width: 770px;
 }
 
@@ -206,16 +211,33 @@ body:not(.app-mode) main {
   gap: 7px;
 }
 
-.landing-badges li span {
+.landing-badges li > span:first-child {
   width: 6px;
   height: 6px;
-  margin: 0;
+  flex: 0 0 6px;
   border-radius: 50%;
   background: var(--landing-blue);
 }
 
 .landing-connect-card {
+  grid-area: connect;
+  align-self: center;
   scroll-margin-top: 20px;
+}
+
+.landing-landscape {
+  grid-area: landscape;
+  max-width: 770px;
+  margin: 0;
+  border-radius: 15px;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+
+.landing-landscape img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .landing-button {
@@ -586,6 +608,10 @@ body:not(.app-mode) main {
 @media (max-width: 940px) {
   .landing-hero {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "copy"
+      "connect"
+      "landscape";
     gap: 44px;
   }
 
@@ -595,6 +621,10 @@ body:not(.app-mode) main {
 
   .landing-login {
     max-width: 660px;
+  }
+
+  .landing-landscape {
+    max-width: 820px;
   }
 
   .landing-similar {

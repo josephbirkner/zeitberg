@@ -140,7 +140,8 @@ export const EN_MESSAGES = Object.freeze({
     "landing.financeLocalFirst": "Finance · local-first",
     "landing.footerTag": "static application · Git workspace",
     "landing.aiDisclosure": "The code for this project was written using large language models with extensive human supervision.",
-    "landing.owlAttribution": "Owl mark adapted from Google Material Symbols’ “owl”, licensed under Apache 2.0.",
+    "landing.landscapeAlt": "A clock sun setting behind layered mountain peaks beside a coin moon.",
+    "landing.markAttribution": "The zeitberg mark and landscape are original hand-authored SVGs. No image model was used.",
 
     "loading.title": "Loading workspace",
     "loading.retry": "Retry",
@@ -719,7 +720,8 @@ export const DE_MESSAGES = Object.freeze({
     "landing.financeLocalFirst": "Finanzen · Local-first",
     "landing.footerTag": "statische Anwendung · Git-Arbeitsbereich",
     "landing.aiDisclosure": "Der Code dieses Projekts wurde mit großen Sprachmodellen unter umfassender menschlicher Aufsicht geschrieben.",
-    "landing.owlAttribution": "Das Eulenlogo basiert auf „owl“ aus Google Material Symbols und steht unter Apache 2.0.",
+    "landing.landscapeAlt": "Eine Uhrsonne geht hinter mehreren Bergketten unter, während daneben ein Münzmond aufgeht.",
+    "landing.markAttribution": "Die zeitberg-Bildmarke und Landschaft sind eigenständig von Hand erstellte SVGs. Es wurde kein Bildmodell verwendet.",
 
     "loading.title": "Arbeitsbereich wird geladen",
     "loading.retry": "Erneut versuchen",
