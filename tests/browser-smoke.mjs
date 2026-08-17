@@ -222,6 +222,11 @@ try {
     await desktop.locator("#weekViewSection:not([hidden])").waitFor();
     await desktop.goForward();
     await desktop.locator("#searchView:not([hidden])").waitFor();
+
+    // A hosted/provider-only start must ignore the local workspace that the preceding local session persisted.
+    await desktop.goto(`${baseUrl}/index.html`, { waitUntil: "domcontentloaded" });
+    await desktop.locator("#loginSection:not([hidden])").waitFor();
+    assert.equal(await desktop.locator("#loginSection").isVisible(), true);
     assert.deepEqual(browserErrors, []);
     const desktopCoverage = await desktop.coverage.stopJSCoverage();
 

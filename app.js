@@ -1111,10 +1111,29 @@ class App {
         if (!persistedLocale) this.configService.saveLocale(this.locale.locale);
         this.locale.applyDocument(document);
         this.isLocalMode = this.initialRoute.workspace?.provider === "local" || getSourceMode() === "local";
-        const storedConfig = this.configService.loadConfig();
-        this.workspaceRegistry = this.isLocalMode
-            ? new WorkspaceRegistry()
-            : this.configService.loadWorkspaceRegistry(storedConfig);
+        const persistedConfig = this.configService.loadConfig();
+        const storedConfig =
+            !this.isLocalMode && persistedConfig.provider === "local"
+                ? {
+                      ...persistedConfig,
+                      owner: DEFAULT_CONFIG.owner,
+                      provider: DEFAULT_CONFIG.provider,
+                      ref: DEFAULT_CONFIG.ref,
+                      repo: DEFAULT_CONFIG.repo,
+                      repositoryUrl: DEFAULT_CONFIG.repositoryUrl,
+                      workspacePath: DEFAULT_CONFIG.workspacePath,
+                  }
+                : persistedConfig;
+        if (this.isLocalMode) {
+            this.workspaceRegistry = new WorkspaceRegistry();
+        } else {
+            const persistedRegistry = this.configService.loadWorkspaceRegistry(storedConfig);
+            const persistedActive = persistedRegistry.getActive();
+            this.workspaceRegistry = new WorkspaceRegistry(
+                persistedRegistry.list().filter((connection) => connection.provider !== "local"),
+                persistedActive?.provider === "local" ? "" : persistedActive?.id || "",
+            );
+        }
         const routeConnection = this.workspaceRegistry.findByLocator(this.initialRoute.workspace);
         if (routeConnection) {
             this.workspaceRegistry.setActive(routeConnection.id);

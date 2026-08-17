@@ -167,6 +167,14 @@ Open <http://127.0.0.1:8000/time?source=local>. When the sibling is named `zeitp
 
 Local mode serves application files from this checkout and maps workspace reads plus `POST /save` to the separate data checkout. It writes JSON without committing; review, commit, and push data changes from that repository independently.
 
+To test the GitLab or Codeberg connection instead of a local workspace, run:
+
+```bash
+python3 server.py --no-local
+```
+
+Then open <http://127.0.0.1:8000/>. This serves the provider login flow, disables the local workspace endpoints, and restores component routes such as `/time` to `index.html`. A plain `python3 -m http.server` cannot perform that route fallback and will return a missing page after login or a component-route reload.
+
 ### Test coverage
 
 Run the same quality gate used by GitHub Actions:
