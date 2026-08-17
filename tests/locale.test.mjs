@@ -15,7 +15,9 @@ test("English and German dictionaries expose the same complete key set", () => {
     assert.equal(DE_MESSAGES["landing.time"], "Zeiterfassung");
     assert.equal(DE_MESSAGES["landing.tasks"], "Aufgaben");
     assert.equal(DE_MESSAGES["landing.expenses"], "Ausgaben");
-    assert.equal(DE_MESSAGES["landing.toGit"], "→ Git");
+    assert.equal(DE_MESSAGES["landing.toGit"], "> Git");
+    assert.match(EN_MESSAGES["landing.similarIntro"], /our review/);
+    assert.doesNotMatch(EN_MESSAGES["landing.similarIntro"], /this review/);
 });
 
 test("all declarative document localization bindings resolve in the fallback dictionary", async () => {

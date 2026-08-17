@@ -213,25 +213,19 @@
         <div class="landing-shell">
           <section class="landing-hero" aria-labelledby="landingTitle">
             <div class="landing-hero-copy">
-              <p class="landing-eyebrow" data-i18n="landing.eyebrow">STATIC BROWSER APP · GIT WORKSPACE</p>
               <h1 id="landingTitle">
                 <span data-i18n="landing.time">Time</span><b aria-hidden="true">|</b><span data-i18n="landing.tasks">Tasks</span><b aria-hidden="true">|</b><span data-i18n="landing.expenses">Expenses</span>
                 <strong data-i18n="landing.toGit">&gt; Git</strong>
               </h1>
               <p class="landing-lede" data-i18n="landing.lede">
-                zeitberg is a static application. It reads and writes versioned workspace files directly in a Git repository
-                you choose; zeitberg.io has no data backend.
+                zeitberg runs entirely in your browser. It reads and writes versioned files directly in a Git repository
+                you choose; zeitberg.io stores no workspace data.
               </p>
-              <ul class="landing-badges" data-i18n-aria-label="landing.properties" aria-label="Project properties">
-                <li><span aria-hidden="true"></span><span data-i18n="landing.staticHtml">Static HTML5</span></li>
-                <li><span aria-hidden="true"></span><span data-i18n="landing.directApi">Direct provider API</span></li>
-                <li><span aria-hidden="true"></span><span data-i18n="landing.versionedJson">Versioned JSON</span></li>
-              </ul>
             </div>
             <div id="connect" class="landing-connect-card">
               <form id="loginForm" class="landing-login" autocomplete="off">
                 <div class="landing-login-head">
-                  <span class="landing-card-tag" data-i18n="landing.openWorkspaceTag">OPEN WORKSPACE</span>
+                  <strong class="landing-login-title" data-i18n="landing.openWorkspace">Open workspace</strong>
                   <span id="landingProviderStatus" class="landing-live"><i aria-hidden="true"></i><span id="landingProviderStatusText">GitHub API</span></span>
                 </div>
                 <label>
@@ -309,13 +303,11 @@
 
           <section id="workspace" class="landing-reference" aria-labelledby="workspaceTitle">
             <div class="landing-section-heading">
-              <p class="landing-eyebrow" data-i18n="landing.workspaceEyebrow">01 · WORKSPACE</p>
               <h2 id="workspaceTitle" data-i18n="landing.workspaceTitle">Create a private data repository.</h2>
             </div>
             <div class="landing-reference-grid">
               <article>
-                <span class="landing-card-tag" data-i18n="landing.githubAvailable">GITHUB · AVAILABLE</span>
-                <h3 data-i18n="landing.connectDirectly">Connect directly</h3>
+                <h3>GitHub</h3>
                 <p><span data-i18n="landing.readOnlyPrefix">Read-only tokens can browse. Saving requires</span> <strong data-i18n="landing.contentsPermission">Contents: Read &amp; write</strong>.</p>
                 <ol>
                   <li data-i18n="landing.createPrivateRepository">Create a private repository.</li>
@@ -325,8 +317,7 @@
                 <a class="landing-text-link" href="https://github.com/josephbirkner/zeitberg#workspace-setup" data-i18n="landing.detailedSetup">Detailed setup ↗</a>
               </article>
               <article>
-                <span class="landing-card-tag" data-i18n="landing.otherProvidersAvailable">GITLAB · CODEBERG · AVAILABLE</span>
-                <h3 data-i18n="landing.connectOrCreate">Connect or create</h3>
+                <h3>GitLab · Codeberg</h3>
                 <ul>
                   <li data-i18n="landing.connectExisting">Connect an existing private repository with a provider token.</li>
                   <li data-i18n="landing.createOther">Create and initialize a private GitLab.com or Codeberg workspace above.</li>
@@ -339,9 +330,8 @@
 
           <section id="similar" class="landing-similar" aria-labelledby="similarTitle">
             <div class="landing-section-heading">
-              <p class="landing-eyebrow" data-i18n="landing.similarEyebrow">02 · SIMILAR PROJECTS</p>
               <h2 id="similarTitle" data-i18n="landing.similarTitle">Related work.</h2>
-              <p data-i18n="landing.similarIntro">No direct equivalent surfaced in this review. These projects overlap with zeitberg in scope or storage model.</p>
+              <p data-i18n="landing.similarIntro">We found no direct equivalent in our review. These projects overlap with zeitberg in scope or storage model.</p>
             </div>
             <div class="landing-related-list">
               <a href="https://github.com/GitJournal/GitJournal">
@@ -363,7 +353,6 @@
             <div>
               <img src="./assets/zeitberg-mark.svg" alt="" />
               <strong>zeitberg</strong>
-              <span data-i18n="landing.footerTag">static application · Git workspace</span>
             </div>
             <p data-i18n="landing.aiDisclosure">The code for this project was written using large language models with extensive human supervision.</p>
             <p data-i18n="landing.markAttribution">The zeitberg mark and landscape are original hand-authored SVGs. No image model was used.</p>

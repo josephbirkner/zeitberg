@@ -159,17 +159,6 @@ body:not(.app-mode) main {
   max-width: 770px;
 }
 
-.landing-eyebrow,
-.landing-card-tag {
-  margin: 0 0 16px;
-  color: var(--landing-slate);
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  line-height: 1.4;
-}
-
 .landing-hero h1,
 .landing-section-heading h2 {
   margin: 0;
@@ -206,32 +195,6 @@ body:not(.app-mode) main {
   color: var(--landing-slate);
   font-size: clamp(0.97rem, 1.25vw, 1.12rem);
   line-height: 1.62;
-}
-
-.landing-badges {
-  margin: 24px 0 0;
-  padding: 0;
-  color: var(--landing-slate);
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px 19px;
-  font-family: var(--mono);
-  font-size: 0.67rem;
-}
-
-.landing-badges li {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.landing-badges li > span:first-child {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: 50%;
-  background: var(--landing-blue);
 }
 
 .landing-connect-card {
@@ -322,9 +285,11 @@ body:not(.app-mode) main {
   gap: 18px;
 }
 
-.landing-login .landing-card-tag {
+.landing-login-title {
   margin: 0;
   color: var(--landing-ink);
+  font-size: 0.82rem;
+  font-weight: 750;
 }
 
 .landing-live {
@@ -458,7 +423,7 @@ body:not(.app-mode) main {
   line-height: 1;
 }
 
-.landing-section-heading > p:last-child:not(.landing-eyebrow) {
+.landing-section-heading > p:last-child {
   max-width: 620px;
   margin: 18px 0 0;
   color: var(--landing-slate);
@@ -484,11 +449,6 @@ body:not(.app-mode) main {
   padding-right: 0;
   padding-left: 32px;
   border-right: 0;
-}
-
-.landing-reference-grid .landing-card-tag {
-  display: block;
-  margin-bottom: 24px;
 }
 
 .landing-reference-grid h3 {
@@ -598,17 +558,10 @@ body:not(.app-mode) main {
 .landing-footer img {
   width: 28px;
   height: 28px;
-  grid-row: span 2;
 }
 
 .landing-footer strong {
   font-size: 0.78rem;
-}
-
-.landing-footer > div span {
-  color: var(--landing-slate);
-  font-family: var(--mono);
-  font-size: 0.55rem;
 }
 
 .landing-footer p {
