@@ -60,7 +60,7 @@ function parseArgs(argv) {
         includeCompleted: true,
         completedSince: DEFAULT_COMPLETED_SINCE,
         workspaceRoot: null,
-        workspaceConfigPath: "zeitplural.json",
+        workspaceConfigPath: "zeitberg.json",
     };
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
@@ -576,9 +576,15 @@ async function run(options) {
     const projectsPath = resolveWorkspaceFile(workspaceRoot, workspace.getResourcePath("projects"));
     const todosPath = resolveWorkspaceFile(workspaceRoot, workspace.getComponentPath("todos", "document"));
     const projectsFile = await readJsonOrDefault(projectsPath, { generated_at: "", projects: [], schema_version: 2 });
-    const existingTodosFile = await readJsonOrDefault(todosPath, { generated_at: "", schema_version: 3, todos: [] });
+    const existingTodosFile = await readJsonOrDefault(todosPath, {
+        generated_at: "",
+        github_overlays: [],
+        schema_version: 4,
+        todos: [],
+    });
     const currentProjectList = ProjectList.fromRaw(projectsFile);
-    const existingTodos = TodoList.fromRaw(existingTodosFile).snapshotRaw();
+    const existingTodoList = TodoList.fromRaw(existingTodosFile);
+    const existingTodos = existingTodoList.snapshotRaw();
     const priorImported = existingTodos.filter((todo) => todo?.source?.provider === "todoist");
     if (priorImported.length && !options.replaceTodoist) {
         throw new Error(
@@ -611,7 +617,8 @@ async function run(options) {
     });
     const nextTodosFile = {
         generated_at: generatedAt,
-        schema_version: 3,
+        github_overlays: existingTodoList.github_overlays,
+        schema_version: 4,
         todos: [...localTodos, ...importedTodos],
     };
     const normalizedTodos = TodoList.fromRaw(nextTodosFile);

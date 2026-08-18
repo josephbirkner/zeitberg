@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 960" role="img" aria-labelledby="title description">
+  <title id="title">zeitberg mark</title>
+  <desc id="description">A clock sun setting behind two mountain peaks beside a coin moon.</desc>
+  <rect width="960" height="960" rx="168" fill="#272a3b" />
+
+  <circle cx="362" cy="398" r="210" fill="#33241f" stroke="#ee6a3b" stroke-width="38" />
+  <path d="M362 398 L301 337 M362 398 L438 317" fill="none" stroke="#fffdf8" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="362" cy="398" r="20" fill="#fffdf8" />
+
+  <circle cx="718" cy="257" r="76" fill="#272a3b" stroke="#82a9db" stroke-width="32" />
+
+  <path d="M91 782 L323 518 L465 655 L624 470 L869 782 V870 H91 Z" fill="#272a3b" />
+  <path d="M91 782 L323 518 L465 655 L624 470 L869 782" fill="none" stroke="#fffdf8" stroke-width="42" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

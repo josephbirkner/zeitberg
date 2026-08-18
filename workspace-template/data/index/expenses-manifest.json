@@ -1,0 +1,14 @@
+{
+  "categories": 0,
+  "currencies": [],
+  "date_from": null,
+  "date_to": null,
+  "expenses": 0,
+  "generated_at": "",
+  "participants": 0,
+  "path": "data/expenses.json",
+  "schema_version": 1,
+  "sha": "69d9e67a08d2a23a4d049e43ac2fa9e778c014c4",
+  "size": 127,
+  "transfers": 0
+}

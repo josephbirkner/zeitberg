@@ -3,61 +3,84 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self'"
+    />
     <meta name="theme-color" content="#17191f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="zeitberg" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="zeitberg-oauth-gitlab-client-id" content="" />
+    <meta name="zeitberg-oauth-codeberg-client-id" content="" />
     <meta
       name="description"
+      data-i18n-content="meta.description"
       content="A static browser application for time, tasks, and expenses. Your data lives in a Git repository you control."
     />
-    <title>zeitplural — time, tasks, expenses → Git</title>
-    <script>
-      try {
-        const savedConfig = JSON.parse(localStorage.getItem("tt_viewer:config:v1") || "{}");
-        if (savedConfig.theme === "light") document.documentElement.dataset.theme = "light";
-      } catch {
-        // Invalid or unavailable browser storage leaves the dark default intact.
-      }
-    </script>
-    <link rel="icon" href="./assets/zeitplural-mark.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./style.css" />
+    <title data-i18n="document.title">zeitberg — time, tasks, expenses → Git</title>
+    <script src="./theme-init.js"></script>
+    <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./site.webmanifest" />
+    <link rel="stylesheet" href="./styles/common.css" />
+    <link rel="stylesheet" href="./styles/time.css" />
+    <link rel="stylesheet" href="./styles/todos.css" />
+    <link rel="stylesheet" href="./styles/expenses.css" />
+    <link rel="stylesheet" href="./styles/landing.css" />
   </head>
   <body>
-    <aside id="appSidebar" class="app-sidebar" aria-label="Application navigation" hidden>
-      <nav class="sidebar-nav" aria-label="Views">
-        <button id="menuWeekBtn" class="sidebar-button" type="button" title="Week (Ctrl+W)" aria-label="Week view">
+    <aside id="appSidebar" class="app-sidebar" data-i18n-aria-label="nav.application" aria-label="Application navigation" hidden>
+      <a id="appHomeLink" class="sidebar-brand" href="./" data-i18n-title="nav.home" title="zeitberg home" data-i18n-aria-label="nav.home" aria-label="zeitberg home">
+        <img src="./assets/zeitberg-mark.svg" alt="" />
+      </a>
+      <nav class="sidebar-nav" data-i18n-aria-label="nav.views" aria-label="Views">
+        <button id="workspaceSettingsBtn" class="sidebar-button" type="button" data-i18n-title="nav.workspaces" title="Workspaces" data-i18n-aria-label="nav.manageWorkspaces" aria-label="Manage workspaces">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#account_tree"></use></svg>
+        </button>
+        <span class="sidebar-separator" aria-hidden="true"></span>
+        <button id="menuWeekBtn" class="sidebar-button" type="button" data-i18n-title="nav.weekTitle" title="Week (Ctrl+W)" data-i18n-aria-label="nav.week" aria-label="Week view">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#calendar_view_week"></use></svg>
         </button>
-        <button id="menuTodoBtn" class="sidebar-button" type="button" title="TODOs (Ctrl+T)" aria-label="TODO view">
+        <button id="menuTodoBtn" class="sidebar-button" type="button" data-i18n-title="nav.todosTitle" title="Tasks (Ctrl+T)" data-i18n-aria-label="nav.todos" aria-label="Task view">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#checklist"></use></svg>
         </button>
-        <button id="menuSearchBtn" class="sidebar-button" type="button" title="Search (Ctrl+K)" aria-label="Time-entry search">
+        <button id="menuExpenseBtn" class="sidebar-button" type="button" data-i18n-title="nav.expensesTitle" title="Expenses (Ctrl+E)" data-i18n-aria-label="nav.expenses" aria-label="Expense view">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#payments"></use></svg>
+        </button>
+        <button id="menuSearchBtn" class="sidebar-button" type="button" data-i18n-title="nav.searchTitle" title="Search (Ctrl+K)" data-i18n-aria-label="nav.search" aria-label="Time-entry search">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#search"></use></svg>
         </button>
       </nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-tools">
-        <div class="sidebar-zoom" role="group" aria-label="Application zoom">
-          <button id="appZoomOutBtn" class="sidebar-button" type="button" title="Zoom app out" aria-label="Zoom app out">
+        <button id="interfaceSettingsBtn" class="sidebar-button sidebar-language-button" type="button" data-i18n-title="nav.interfaceSettings" title="Interface settings" data-i18n-aria-label="nav.interfaceSettings" aria-label="Interface settings">
+          <span id="appLanguageLabel" aria-hidden="true">EN</span>
+        </button>
+        <div class="sidebar-zoom" role="group" data-i18n-aria-label="nav.applicationZoom" aria-label="Application zoom">
+          <button id="appZoomOutBtn" class="sidebar-button" type="button" data-i18n-title="nav.zoomOut" title="Zoom app out" data-i18n-aria-label="nav.zoomOut" aria-label="Zoom app out">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_out"></use></svg>
           </button>
-          <button id="appZoomResetBtn" class="sidebar-button sidebar-zoom-reset" type="button" title="Reset app zoom" aria-label="Reset app zoom">
+          <button id="appZoomResetBtn" class="sidebar-button sidebar-zoom-reset" type="button" data-i18n-aria-label="nav.zoomReset" aria-label="Reset app zoom">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#restart_alt"></use></svg>
             <span id="appZoomLabel" class="sidebar-zoom-label" aria-live="polite">100%</span>
           </button>
-          <button id="appZoomInBtn" class="sidebar-button" type="button" title="Zoom app in" aria-label="Zoom app in">
+          <button id="appZoomInBtn" class="sidebar-button" type="button" data-i18n-title="nav.zoomIn" title="Zoom app in" data-i18n-aria-label="nav.zoomIn" aria-label="Zoom app in">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_in"></use></svg>
           </button>
         </div>
         <button id="appThemeToggleBtn" class="sidebar-button" type="button" title="Use light theme" aria-label="Use light theme">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#contrast"></use></svg>
         </button>
-        <button id="projectsBtn" class="sidebar-button" type="button" title="Projects" aria-label="Manage projects" hidden>
+        <button id="projectsBtn" class="sidebar-button" type="button" data-i18n-title="nav.projects" title="Projects" data-i18n-aria-label="nav.manageProjects" aria-label="Manage projects" hidden>
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#account_tree"></use></svg>
         </button>
-        <button id="reloadDataBtn" class="sidebar-button" type="button" title="Reload data" aria-label="Reload data" hidden>
+        <button id="reloadDataBtn" class="sidebar-button" type="button" data-i18n-title="nav.reload" title="Reload data" data-i18n-aria-label="nav.reload" aria-label="Reload data" hidden>
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#refresh"></use></svg>
         </button>
         <div id="authStatus" class="sidebar-status" aria-live="polite"></div>
-        <button id="logoutBtn" class="sidebar-button sidebar-danger" type="button" title="Logout" aria-label="Logout" hidden>
+        <button id="logoutBtn" class="sidebar-button sidebar-danger" type="button" data-i18n-title="nav.logout" title="Logout" data-i18n-aria-label="nav.logout" aria-label="Logout" hidden>
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#logout"></use></svg>
         </button>
       </div>
@@ -70,71 +93,83 @@
       </label>
 
       <div id="todoTopbarControls" class="todo-topbar-controls" hidden>
-        <button id="todoAddBtn" class="btn btn-secondary btn-icon" type="button" title="Add TODO (A)" aria-label="Add TODO">
+        <button id="todoAddBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.addTodoTitle" title="Add task (A)" data-i18n-aria-label="topbar.addTodo" aria-label="Add task">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
         </button>
-        <div class="todo-view-toggles" role="group" aria-label="TODO view filters">
-          <button id="todoCurrentFilterBtn" class="btn btn-secondary btn-icon" type="button" title="Show current and overdue only" aria-label="Show current and overdue only" aria-pressed="true">
+        <div class="todo-view-toggles" role="group" data-i18n-aria-label="topbar.todoFilters" aria-label="Task view filters">
+          <button id="todoCurrentFilterBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.currentOnly" title="Show current and overdue only" data-i18n-aria-label="topbar.currentOnly" aria-label="Show current and overdue only" aria-pressed="true">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#schedule"></use></svg>
           </button>
-          <button id="todoOpenFilterBtn" class="btn btn-secondary btn-icon" type="button" title="Show open only" aria-label="Show open only" aria-pressed="true">
+          <button id="todoOpenFilterBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.openOnly" title="Show open only" data-i18n-aria-label="topbar.openOnly" aria-label="Show open only" aria-pressed="true">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#check_circle"></use></svg>
           </button>
         </div>
       </div>
 
+      <div id="expenseTopbarControls" class="expense-topbar-controls" hidden>
+        <button id="expenseAddBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.addTitle" title="Add expense (A)" data-i18n-aria-label="expenses.add" aria-label="Add expense">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
+        </button>
+        <button id="expenseSettleBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.settleTitle" title="Settle balances" data-i18n-aria-label="expenses.settle" aria-label="Settle balances">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#handshake"></use></svg>
+        </button>
+        <button id="expenseInventoryBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.inventoryTitle" title="Participants and categories" data-i18n-aria-label="expenses.inventory" aria-label="Participants and categories">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#group"></use></svg>
+        </button>
+      </div>
+
       <div id="weekControls" class="week-controls" hidden>
         <div class="week-navigation">
-          <button id="prevWeekBtn" class="btn btn-secondary btn-icon" type="button" title="Previous days / week (PageUp)" aria-label="Previous days or week">
+          <button id="prevWeekBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.previousTitle" title="Previous days / week (PageUp)" data-i18n-aria-label="topbar.previous" aria-label="Previous days or week">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#arrow_back"></use></svg>
           </button>
-          <button id="nextWeekBtn" class="btn btn-secondary btn-icon" type="button" title="Next days / week (PageDown)" aria-label="Next days or week">
+          <button id="nextWeekBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.nextTitle" title="Next days / week (PageDown)" data-i18n-aria-label="topbar.next" aria-label="Next days or week">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#arrow_forward"></use></svg>
           </button>
-          <button id="latestWeekBtn" class="btn btn-secondary" type="button">Latest</button>
+          <button id="latestWeekBtn" class="btn btn-secondary" type="button" data-i18n="topbar.latest">Latest</button>
         </div>
 
-        <button id="weekReqBtn" class="week-summary" type="button" title="Edit required hours">
+        <button id="weekReqBtn" class="week-summary" type="button" data-i18n-title="topbar.requiredHours" title="Edit required hours">
           <svg class="app-icon week-summary-compact-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#timer_arrow_up"></use></svg>
           <span id="weekBillable" aria-live="polite"></span>
         </button>
 
         <div class="topbar-spacer"></div>
 
-        <div class="week-editor-actions" role="group" aria-label="Week editor actions">
-          <button id="weekNormalBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Normal mode (Escape)" aria-label="Normal mode">
+        <div class="week-editor-actions" role="group" data-i18n-aria-label="topbar.weekEditorActions" aria-label="Week editor actions">
+          <button id="weekNormalBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" data-i18n-title="topbar.normalModeTitle" title="Normal mode (Escape)" data-i18n-aria-label="topbar.normalMode" aria-label="Normal mode">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#arrow_selector_tool"></use></svg>
           </button>
-          <button id="weekAddBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Add mode (A)" aria-label="Add mode">
+          <button id="weekAddBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" data-i18n-title="topbar.addModeTitle" title="Add mode (A)" data-i18n-aria-label="topbar.addMode" aria-label="Add mode">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
           </button>
-          <button id="weekSplitBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" title="Split mode (S)" aria-label="Split selected entry">
+          <button id="weekSplitBtn" class="btn btn-secondary btn-icon week-mode-action" type="button" data-i18n-title="topbar.splitModeTitle" title="Split mode (S)" data-i18n-aria-label="topbar.splitMode" aria-label="Split selected entry">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#call_split"></use></svg>
           </button>
           <span class="week-action-separator week-mode-action" aria-hidden="true"></span>
         </div>
 
-        <div class="week-history-actions" role="group" aria-label="Undo and redo">
-          <button id="weekUndoBtn" class="btn btn-secondary btn-icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo">
+        <div class="week-history-actions" role="group" data-i18n-aria-label="topbar.history" aria-label="Undo and redo">
+          <button id="weekUndoBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.undoTitle" title="Undo (Ctrl+Z)" data-i18n-aria-label="topbar.undo" aria-label="Undo">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#undo"></use></svg>
           </button>
-          <button id="weekRedoBtn" class="btn btn-secondary btn-icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo">
+          <button id="weekRedoBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.redoTitle" title="Redo (Ctrl+Y)" data-i18n-aria-label="topbar.redo" aria-label="Redo">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#redo"></use></svg>
           </button>
         </div>
 
         <span class="week-action-separator week-zoom-separator" aria-hidden="true"></span>
-        <div class="week-zoom-actions" role="group" aria-label="Timeline zoom">
-          <button id="weekZoomOutBtn" class="btn btn-secondary btn-icon zoom-action" type="button" title="Zoom out (Ctrl+[ or Ctrl+-)" aria-label="Zoom out">
+        <div class="week-zoom-actions" role="group" data-i18n-aria-label="topbar.timelineZoom" aria-label="Timeline zoom">
+          <button id="weekZoomOutBtn" class="btn btn-secondary btn-icon zoom-action" type="button" data-i18n-title="topbar.zoomOutTitle" title="Zoom out (Ctrl+[ or Ctrl+-)" data-i18n-aria-label="topbar.zoomOut" aria-label="Zoom out">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_out"></use></svg>
           </button>
-          <button id="weekZoomInBtn" class="btn btn-secondary btn-icon zoom-action" type="button" title="Zoom in (Ctrl+] or Ctrl++)" aria-label="Zoom in">
+          <button id="weekZoomInBtn" class="btn btn-secondary btn-icon zoom-action" type="button" data-i18n-title="topbar.zoomInTitle" title="Zoom in (Ctrl+] or Ctrl++)" data-i18n-aria-label="topbar.zoomIn" aria-label="Zoom in">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#zoom_in"></use></svg>
           </button>
         </div>
 
-        <label class="zoom zoom-compact" title="Timeline zoom">
-          <span>Zoom</span>
+        <label class="zoom zoom-compact" data-i18n-title="topbar.timelineZoom" title="Timeline zoom">
+          <span data-i18n="topbar.zoom">Zoom</span>
           <input id="zoomInput" type="range" min="1" max="4" step="0.25" value="1" />
         </label>
       </div>
@@ -142,7 +177,9 @@
         id="editorBadge"
         class="editor-badge"
         type="button"
+        data-i18n-title="topbar.saveTitle"
         title="Save changes (Ctrl+S)"
+        data-i18n-aria-label="topbar.save"
         aria-label="Save changes"
         aria-live="polite"
         hidden
@@ -152,15 +189,20 @@
     <main>
       <section id="loginSection" class="landing" hidden>
         <header class="landing-nav">
-          <a class="landing-brand" href="./" aria-label="zeitplural home">
-            <img src="./assets/zeitplural-mark.svg" alt="" />
-            <span>zeitplural</span>
+          <a class="landing-brand" href="./" data-i18n-aria-label="nav.home" aria-label="zeitberg home">
+            <img src="./assets/zeitberg-mark.svg" alt="" />
+            <span>zeitberg</span>
           </a>
-          <nav aria-label="Landing page">
-            <a href="#architecture">Architecture</a>
-            <a href="#workspace">Setup</a>
-            <a href="#similar">Similar projects</a>
-            <a href="https://github.com/josephbirkner/zeitplural">Source ↗</a>
+          <nav data-i18n-aria-label="landing.navigation" aria-label="Landing page">
+            <a href="#architecture" data-i18n="landing.architectureLink">Architecture</a>
+            <a href="#workspace" data-i18n="landing.setupLink">Setup</a>
+            <a href="#similar" data-i18n="landing.similarLink">Similar projects</a>
+            <a href="https://github.com/josephbirkner/zeitberg" data-i18n="landing.sourceLink">Source ↗</a>
+            <select id="landingLanguage" class="landing-language-select" data-i18n-aria-label="settings.language" aria-label="Language">
+              <option value="auto" data-i18n="settings.languageAutomaticShort">Auto</option>
+              <option value="en" data-i18n="settings.languageEnglish">English</option>
+              <option value="de" data-i18n="settings.languageGerman">Deutsch</option>
+            </select>
             <button id="landingThemeToggleBtn" class="landing-theme-toggle" type="button" title="Use light theme" aria-label="Use light theme">
               <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#contrast"></use></svg>
               <span>Light</span>
@@ -171,103 +213,116 @@
         <div class="landing-shell">
           <section class="landing-hero" aria-labelledby="landingTitle">
             <div class="landing-hero-copy">
-              <p class="landing-eyebrow">STATIC BROWSER APP · GIT WORKSPACE</p>
               <h1 id="landingTitle">
-                <span>Time</span><b aria-hidden="true">|</b><span>Tasks</span><b aria-hidden="true">|</b><span>Expenses</span>
-                <strong>&gt; Git</strong>
+                <span data-i18n="landing.time">Time</span><b aria-hidden="true">|</b><span data-i18n="landing.tasks">Tasks</span><b aria-hidden="true">|</b><span data-i18n="landing.expenses">Expenses</span>
+                <strong data-i18n="landing.toGit">&gt; Git</strong>
               </h1>
-              <p class="landing-lede">
-                zeitplural is a static application. It reads and writes versioned workspace files directly in a Git repository
-                you choose; zeitplural.io has no data backend.
+              <p class="landing-lede" data-i18n="landing.lede">
+                zeitberg runs entirely in your browser. It reads and writes versioned files directly in a Git repository
+                you choose; zeitberg.io stores no workspace data.
               </p>
-              <ul class="landing-badges" aria-label="Project properties">
-                <li><span aria-hidden="true"></span>Static HTML5</li>
-                <li><span aria-hidden="true"></span>Direct provider API</li>
-                <li><span aria-hidden="true"></span>Versioned JSON</li>
-              </ul>
             </div>
             <div id="connect" class="landing-connect-card">
               <form id="loginForm" class="landing-login" autocomplete="off">
                 <div class="landing-login-head">
-                  <span class="landing-card-tag">OPEN WORKSPACE</span>
-                  <span class="landing-live"><i aria-hidden="true"></i>GitHub API</span>
+                  <strong class="landing-login-title" data-i18n="landing.openWorkspace">Open workspace</strong>
+                  <span id="landingProviderStatus" class="landing-live"><i aria-hidden="true"></i><span id="landingProviderStatusText">GitHub API</span></span>
                 </div>
                 <label>
-                  <span>Workspace repository</span>
+                  <span data-i18n="landing.provider">Provider</span>
+                  <select id="providerInput" name="provider">
+                    <option value="github">GitHub</option>
+                    <option value="gitlab">GitLab.com</option>
+                    <option value="codeberg">Codeberg</option>
+                    <option value="forgejo" data-i18n="landing.selfHostedForgejo">Forgejo (self-hosted)</option>
+                    <option value="custom" data-i18n="landing.autoDetect">Auto-detect self-hosted</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="landing.workspaceRepository">Workspace repository</span>
                   <input
                     id="repositoryInput"
                     name="repository"
                     type="url"
                     inputmode="url"
-                    placeholder="https://github.com/you/zeitplural-data"
+                    placeholder="https://github.com/you/zeitberg-data"
                     spellcheck="false"
                     required
                   />
                 </label>
                 <label>
-                  <span>Branch / ref</span>
+                  <span data-i18n="landing.branch">Branch / ref</span>
                   <input id="refInput" name="ref" type="text" spellcheck="false" required />
                 </label>
                 <label>
-                  <span>Fine-grained personal access token</span>
-                  <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" required />
+                  <span data-i18n="landing.accessToken">Provider access token</span>
+                  <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" />
                 </label>
 
                 <label class="landing-remember">
                   <input id="rememberInput" name="remember" type="checkbox" />
-                  <span>Remember this token on this device</span>
+                  <span data-i18n="landing.rememberToken">Remember this token on this device</span>
                 </label>
 
                 <div class="landing-login-actions">
-                  <button class="landing-button landing-button-primary" type="submit">Open workspace</button>
-                  <button id="clearSavedBtn" class="landing-button" type="button">Clear saved connection</button>
+                  <button class="landing-button landing-button-primary" type="submit" data-i18n="landing.openWorkspace">Open workspace</button>
+                  <button id="loginOAuthBtn" class="landing-button" type="button" data-i18n="landing.useOAuth">Use OAuth</button>
+                  <button id="createWorkspaceBtn" class="landing-button" type="button" data-i18n="landing.createWorkspace">Create workspace</button>
+                  <button id="clearSavedBtn" class="landing-button" type="button" data-i18n="landing.clearConnection">Clear saved connection</button>
                 </div>
-                <p class="landing-security-note">
-                  The token stays in browser storage and is sent only to GitHub’s API.
+                <p class="landing-security-note" data-i18n="landing.security">
+                  The token stays in browser storage and is sent only to the selected repository provider.
                 </p>
                 <pre id="loginError" class="error" hidden></pre>
               </form>
             </div>
+            <figure class="landing-landscape">
+              <img
+                src="./assets/zeitberg-landscape.svg"
+                data-i18n-alt="landing.landscapeAlt"
+                alt="A clock sun setting behind layered mountain peaks beside a coin moon."
+              />
+            </figure>
           </section>
 
           <figure id="architecture" class="landing-architecture">
             <img
               class="landing-architecture-dark"
               src="./assets/architecture.svg"
-              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+              data-i18n-alt="landing.architectureAlt"
+              alt="Static host loads zeitberg in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
             />
             <img
               class="landing-architecture-light"
               src="./assets/architecture-light.svg"
-              alt="Static host loads zeitplural in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
+              data-i18n-alt="landing.architectureAlt"
+              alt="Static host loads zeitberg in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
             />
-            <figcaption>Credentials remain in browser storage. Requests go directly to the selected Git provider.</figcaption>
+            <figcaption data-i18n="landing.architectureCaption">Credentials remain in browser storage. Requests go directly to the selected Git provider.</figcaption>
           </figure>
 
           <section id="workspace" class="landing-reference" aria-labelledby="workspaceTitle">
             <div class="landing-section-heading">
-              <p class="landing-eyebrow">01 · WORKSPACE</p>
-              <h2 id="workspaceTitle">Create a private data repository.</h2>
+              <h2 id="workspaceTitle" data-i18n="landing.workspaceTitle">Create a private data repository.</h2>
             </div>
             <div class="landing-reference-grid">
               <article>
-                <span class="landing-card-tag">GITHUB · AVAILABLE</span>
-                <h3>Connect directly</h3>
-                <p>Read-only tokens can browse. Saving requires <strong>Contents: Read &amp; write</strong>.</p>
+                <h3>GitHub</h3>
+                <p><span data-i18n="landing.readOnlyPrefix">Read-only tokens can browse. Saving requires</span> <strong data-i18n="landing.contentsPermission">Contents: Read &amp; write</strong>.</p>
                 <ol>
-                  <li>Create a private repository.</li>
-                  <li>Copy the <code>workspace-template</code> files into it.</li>
-                  <li>Enter its URL, branch, and PAT above.</li>
+                  <li data-i18n="landing.createPrivateRepository">Create a private repository.</li>
+                  <li data-i18n="landing.copyTemplate">Copy the workspace-template files into it.</li>
+                  <li data-i18n="landing.enterConnection">Enter its URL, branch, and PAT above.</li>
                 </ol>
-                <a class="landing-text-link" href="https://github.com/josephbirkner/zeitplural#workspace-setup">Detailed setup ↗</a>
+                <a class="landing-text-link" href="https://github.com/josephbirkner/zeitberg#workspace-setup" data-i18n="landing.detailedSetup">Detailed setup ↗</a>
               </article>
               <article>
-                <span class="landing-card-tag">OTHER ROUTES</span>
-                <h3>Planned or self-hosted</h3>
+                <h3>GitLab · Codeberg</h3>
                 <ul>
-                  <li>Codeberg and GitLab connectors are planned.</li>
-                  <li>Compatible private Git servers are planned.</li>
-                  <li>You can fork and host the static application yourself now.</li>
+                  <li data-i18n="landing.connectExisting">Connect an existing private repository with a provider token.</li>
+                  <li data-i18n="landing.createOther">Create and initialize a private GitLab.com or Codeberg workspace above.</li>
+                  <li data-i18n="landing.pkce">PKCE OAuth activates when this deployment has public client IDs.</li>
+                  <li data-i18n="landing.cors">CORS-enabled self-hosted GitLab and Forgejo servers are detected explicitly.</li>
                 </ul>
               </article>
             </div>
@@ -275,93 +330,94 @@
 
           <section id="similar" class="landing-similar" aria-labelledby="similarTitle">
             <div class="landing-section-heading">
-              <p class="landing-eyebrow">02 · SIMILAR PROJECTS</p>
-              <h2 id="similarTitle">Related work.</h2>
-              <p>No direct equivalent surfaced in this review. These projects overlap with zeitplural in scope or storage model.</p>
+              <h2 id="similarTitle" data-i18n="landing.similarTitle">Related work.</h2>
+              <p data-i18n="landing.similarIntro">We found no direct equivalent in our review. These projects overlap with zeitberg in scope or storage model.</p>
             </div>
             <div class="landing-related-list">
               <a href="https://github.com/GitJournal/GitJournal">
-                <strong>GitJournal</strong><span>Markdown notes in a Git repository of your choice.</span><small>Git-backed notes</small>
+                <strong>GitJournal</strong><span data-i18n="landing.gitJournal">Markdown notes in a Git repository of your choice.</span><small data-i18n="landing.gitBackedNotes">Git-backed notes</small>
               </a>
               <a href="https://github.com/HenriquesLab/TaskRepo">
-                <strong>TaskRepo</strong><span>Tasks stored as Markdown files in Git repositories.</span><small>Git-backed tasks</small>
+                <strong>TaskRepo</strong><span data-i18n="landing.taskRepo">Tasks stored as Markdown files in Git repositories.</span><small data-i18n="landing.gitBackedTasks">Git-backed tasks</small>
               </a>
               <a href="https://github.com/ActivityWatch/activitywatch">
-                <strong>ActivityWatch</strong><span>Automated time tracking with user-controlled local data.</span><small>Time · local-first</small>
+                <strong>ActivityWatch</strong><span data-i18n="landing.activityWatch">Automated time tracking with user-controlled local data.</span><small data-i18n="landing.timeLocalFirst">Time · local-first</small>
               </a>
               <a href="https://github.com/actualbudget/actual">
-                <strong>Actual Budget</strong><span>Local-first personal finance with optional synchronization.</span><small>Finance · local-first</small>
+                <strong>Actual Budget</strong><span data-i18n="landing.actualBudget">Local-first personal finance with optional synchronization.</span><small data-i18n="landing.financeLocalFirst">Finance · local-first</small>
               </a>
             </div>
           </section>
 
           <footer class="landing-footer">
             <div>
-              <img src="./assets/zeitplural-mark.svg" alt="" />
-              <strong>zeitplural</strong>
-              <span>static application · Git workspace</span>
+              <img src="./assets/zeitberg-mark.svg" alt="" />
+              <strong>zeitberg</strong>
             </div>
-            <p>The code for this project was written using large language models with extensive human supervision.</p>
-            <p>
-              Owl mark adapted from Google Material Symbols’ “owl”, licensed under Apache 2.0.
-              <a href="https://github.com/google/material-design-icons">Source ↗</a>
-            </p>
+            <p data-i18n="landing.aiDisclosure">The code for this project was written using large language models with extensive human supervision.</p>
+            <p data-i18n="landing.markAttribution">The zeitberg mark and landscape are original hand-authored SVGs. No image model was used.</p>
           </footer>
         </div>
       </section>
 
       <section id="loadingSection" class="loading-screen" aria-live="polite" aria-busy="true" hidden>
         <div class="loading-content">
-          <div class="loading-title">Loading diary</div>
+          <div class="loading-title" data-i18n="loading.title">Loading workspace</div>
           <progress id="loadProgress" max="1" value="0"></progress>
           <div id="loadProgressLabel" class="loading-label muted"></div>
           <pre id="loadingError" class="error" hidden></pre>
           <div id="loadingActions" class="loading-actions" hidden>
-            <button id="loadingRetryBtn" class="btn" type="button">Retry</button>
-            <button id="loadingLogoutBtn" class="btn btn-secondary" type="button">Back to login</button>
+            <button id="loadingRetryBtn" class="btn" type="button" data-i18n="loading.retry">Retry</button>
+            <button id="loadingLogoutBtn" class="btn btn-secondary" type="button" data-i18n="loading.backToLogin">Back to login</button>
           </div>
         </div>
       </section>
 
       <section id="appSection" class="stack" hidden>
         <section id="weekViewSection" class="week-view" hidden>
-          <div id="weekScroll" class="week-scroll" tabindex="0" aria-label="Week timeline"></div>
+          <div id="weekScroll" class="week-scroll" tabindex="0" data-i18n-aria-label="nav.week" aria-label="Week timeline"></div>
         </section>
 
         <section id="todoView" class="todo-view" hidden>
           <div class="todo-toolbar">
-            <div id="todoProjectFilters" class="todo-project-filters" role="toolbar" aria-label="Filter TODOs by project"></div>
+            <div id="todoProjectFilters" class="todo-project-filters" role="toolbar" data-i18n-aria-label="todo.filterByProject" aria-label="Filter tasks by project"></div>
           </div>
-          <div id="todoList" class="todo-list" role="listbox" tabindex="0" aria-label="TODOs"></div>
+          <div id="todoList" class="todo-list" role="listbox" tabindex="0" data-i18n-aria-label="todo.timeline" aria-label="Tasks"></div>
+        </section>
+
+        <section id="expenseView" class="expense-view" hidden>
+          <div id="expenseBalanceStrip" class="expense-balance-strip" aria-live="polite"></div>
+          <div id="expenseCategoryFilters" class="expense-category-filters" role="toolbar" data-i18n-aria-label="expenses.filterCategories" aria-label="Filter expenses by category"></div>
+          <div id="expenseList" class="expense-list" role="listbox" tabindex="0" data-i18n-aria-label="expenses.timeline" aria-label="Expenses and settlements"></div>
         </section>
 
         <div id="searchView" class="stack" hidden>
           <section class="card search-controls-card">
             <div id="stats" class="stats muted"></div>
             <details id="searchFiltersPanel" class="search-filters-panel" open>
-              <summary>Filters</summary>
+              <summary data-i18n="search.filters">Filters</summary>
               <div class="filters grid">
                 <label>
-                  <span>Project</span>
+                  <span data-i18n="search.project">Project</span>
                   <select id="projectSelect"></select>
                 </label>
                 <label>
-                  <span>From (CET)</span>
+                  <span id="searchFromLabel">From (CET)</span>
                   <input id="fromDate" type="date" />
                 </label>
                 <label>
-                  <span>To (CET)</span>
+                  <span id="searchToLabel">To (CET)</span>
                   <input id="toDate" type="date" />
                 </label>
                 <label>
-                  <span>Max rows</span>
+                  <span data-i18n="search.maxRows">Max rows</span>
                   <input id="maxRows" type="number" min="50" step="50" value="500" />
                 </label>
                 <label>
-                  <span>Sort</span>
+                  <span data-i18n="search.sort">Sort</span>
                   <select id="sortSelect">
-                    <option value="desc">Newest first</option>
-                    <option value="asc">Oldest first</option>
+                    <option value="desc" data-i18n="search.newest">Newest first</option>
+                    <option value="asc" data-i18n="search.oldest">Oldest first</option>
                   </select>
                 </label>
               </div>
@@ -370,16 +426,16 @@
 
           <section class="card search-results-card">
             <div class="table-wrap search-results-wrap">
-              <table class="table search-results-table" aria-label="Entries">
+              <table class="table search-results-table" data-i18n-aria-label="search.entries" aria-label="Entries">
                 <thead>
 	                  <tr>
-	                    <th>Date</th>
-	                    <th>Start</th>
-	                    <th>End</th>
-	                    <th>Duration</th>
-	                    <th>Project</th>
-	                    <th>Description</th>
-	                    <th>Billable</th>
+	                    <th data-i18n="search.date">Date</th>
+	                    <th data-i18n="search.start">Start</th>
+	                    <th data-i18n="search.end">End</th>
+	                    <th data-i18n="search.duration">Duration</th>
+	                    <th data-i18n="search.project">Project</th>
+	                    <th data-i18n="search.description">Description</th>
+	                    <th data-i18n="search.billable">Billable</th>
 	                  </tr>
 	                </thead>
                 <tbody id="entriesTbody"></tbody>
@@ -393,116 +449,453 @@
     <pre id="dataError" class="error error-toast" hidden></pre>
     <div id="repoLabel" class="data-badge" aria-live="polite"></div>
 
+    <dialog id="interfaceDialog" class="dialog interface-dialog">
+      <div class="dialog-card interface-dialog-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="settings.title">Interface</div>
+            <div class="dialog-meta muted" data-i18n="settings.meta">Preferences are stored in this browser independently of your workspaces.</div>
+          </div>
+          <button id="interfaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+          </button>
+        </div>
+
+        <label class="interface-language-setting">
+          <span data-i18n="settings.language">Language</span>
+          <select id="interfaceLanguage">
+            <option value="auto" data-i18n="settings.languageAutomatic">Automatic (browser)</option>
+            <option value="en" data-i18n="settings.languageEnglish">English</option>
+            <option value="de" data-i18n="settings.languageGerman">Deutsch</option>
+          </select>
+        </label>
+      </div>
+    </dialog>
+
+    <dialog id="workspaceDialog" class="dialog workspace-dialog">
+      <div class="dialog-card workspace-dialog-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="workspace.title">Workspaces</div>
+            <div class="dialog-meta muted" data-i18n="workspace.meta">Connections are stored in this browser. Credentials remain separate from workspace metadata.</div>
+          </div>
+          <button id="workspaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+          </button>
+        </div>
+
+        <div id="workspaceList" class="workspace-list" role="list"></div>
+
+        <form id="workspaceAddForm" class="workspace-add-form">
+          <div class="workspace-section-heading">
+            <strong data-i18n="workspace.add">Add workspace</strong>
+            <span class="muted" data-i18n="workspace.addMeta">Connect another repository without disconnecting the current one.</span>
+          </div>
+          <div class="grid dialog-grid workspace-add-grid">
+            <label>
+              <span data-i18n="landing.provider">Provider</span>
+              <select id="workspaceProvider">
+                <option value="github">GitHub</option>
+                <option value="gitlab">GitLab.com</option>
+                <option value="codeberg">Codeberg</option>
+                <option value="forgejo" data-i18n="landing.selfHostedForgejo">Forgejo (self-hosted)</option>
+                <option value="custom" data-i18n="landing.autoDetect">Auto-detect self-hosted</option>
+              </select>
+            </label>
+            <label class="col-span-2">
+              <span data-i18n="workspace.repositoryUrl">Repository URL</span>
+              <input id="workspaceRepository" type="url" inputmode="url" placeholder="https://github.com/you/zeitberg-data" spellcheck="false" required />
+            </label>
+            <label>
+              <span data-i18n="landing.branch">Branch / ref</span>
+              <input id="workspaceRef" type="text" value="main" spellcheck="false" required />
+            </label>
+            <label>
+              <span data-i18n="workspace.configPath">Workspace config path</span>
+              <input id="workspacePath" type="text" value="zeitberg.json" spellcheck="false" required />
+            </label>
+            <label class="col-span-2">
+              <span data-i18n="landing.accessToken">Provider access token</span>
+              <input id="workspaceToken" type="password" autocomplete="current-password" spellcheck="false" required />
+            </label>
+            <label class="workspace-remember col-span-2">
+              <input id="workspaceRemember" type="checkbox" />
+              <span data-i18n="landing.rememberToken">Remember this token on this device</span>
+            </label>
+          </div>
+          <pre id="workspaceError" class="error" hidden></pre>
+          <div class="row dialog-actions workspace-dialog-actions">
+            <button id="workspaceShareBtn" class="btn btn-secondary" type="button" data-i18n="workspace.shareActive">Share active workspace</button>
+            <button id="workspaceCreateBtn" class="btn btn-secondary" type="button" data-i18n="workspace.createPrivate">Create private workspace</button>
+            <span class="topbar-spacer"></span>
+            <button id="workspaceOAuthBtn" class="btn btn-secondary" type="button" data-i18n="landing.useOAuth">Use OAuth</button>
+            <button class="btn" type="submit" data-i18n="workspace.connect">Connect</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="workspaceCreateDialog" class="dialog workspace-create-dialog">
+      <form id="workspaceCreateForm" class="dialog-card workspace-create-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="workspace.createTitle">Create private workspace</div>
+            <div class="dialog-meta muted" data-i18n="workspace.createMeta">Create and initialize a repository without a zeitberg backend.</div>
+          </div>
+          <button id="workspaceCreateCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+          </button>
+        </div>
+        <div class="grid dialog-grid workspace-create-grid">
+          <label>
+            <span data-i18n="landing.provider">Provider</span>
+            <select id="workspaceCreateProvider">
+              <option value="gitlab">GitLab.com</option>
+              <option value="codeberg">Codeberg</option>
+            </select>
+          </label>
+          <label>
+            <span data-i18n="workspace.repositoryName">Repository name</span>
+            <input id="workspaceCreateRepository" type="text" value="zeitberg-data" spellcheck="false" required />
+          </label>
+          <label>
+            <span data-i18n="workspace.workspaceName">Workspace name</span>
+            <input id="workspaceCreateName" type="text" value="My workspace" required />
+          </label>
+          <label>
+            <span data-i18n="workspace.timezone">Timezone</span>
+            <input id="workspaceCreateTimezone" type="text" value="Europe/Berlin" spellcheck="false" required />
+          </label>
+          <label class="col-span-2">
+            <span data-i18n="landing.accessToken">Provider access token</span>
+            <input id="workspaceCreateToken" type="password" autocomplete="current-password" spellcheck="false" />
+          </label>
+          <label class="workspace-remember col-span-2">
+            <input id="workspaceCreateRemember" type="checkbox" />
+            <span data-i18n="workspace.rememberResult">Remember the resulting workspace credential on this device</span>
+          </label>
+        </div>
+        <p id="workspaceCreateProviderNote" class="muted"></p>
+        <pre id="workspaceCreateError" class="error" hidden></pre>
+        <div class="row dialog-actions">
+          <button id="workspaceCreateCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <span class="topbar-spacer"></span>
+          <button id="workspaceCreateOAuthBtn" class="btn btn-secondary" type="button" data-i18n="workspace.authorizeOAuth">Authorize with OAuth</button>
+          <button class="btn" type="submit" data-i18n="workspace.createWithToken">Create with token</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="workspaceShareDialog" class="dialog workspace-share-dialog">
+      <div class="dialog-card workspace-share-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="workspace.shareTitle">Share workspace</div>
+            <div id="workspaceShareDetails" class="dialog-meta muted"></div>
+          </div>
+          <button id="workspaceShareCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+          </button>
+        </div>
+
+        <section class="workspace-share-option">
+          <div>
+            <strong data-i18n="workspace.locatorTitle">Locator link</strong>
+            <p class="muted" data-i18n="workspace.locatorHelp">Contains the repository, branch, workspace identity, sub-app, and current view. The recipient authenticates independently.</p>
+          </div>
+          <button id="workspaceCopyLocatorBtn" class="btn btn-secondary" type="button" data-i18n="workspace.copyLocator">Copy locator link</button>
+        </section>
+
+        <section class="workspace-share-option workspace-capability-option">
+          <div>
+            <strong data-i18n="workspace.capabilityTitle">Capability link</strong>
+            <p class="workspace-capability-warning" data-i18n="workspace.capabilityWarning">Anyone holding this link receives the token's repository access. Treat it as a bearer credential.</p>
+            <p class="muted" data-i18n="workspace.capabilityHelp">Use a dedicated, expiring, least-privilege token for exactly this repository. zeitberg cannot mint or restrict a token for you.</p>
+          </div>
+          <label>
+            <span data-i18n="workspace.shareableToken">Dedicated shareable token</span>
+            <input id="workspaceShareToken" type="password" autocomplete="off" spellcheck="false" />
+          </label>
+          <button id="workspaceCopyCapabilityBtn" class="btn btn-danger" type="button" data-i18n="workspace.copyCapability">Copy capability link</button>
+        </section>
+        <pre id="workspaceShareError" class="error" hidden></pre>
+      </div>
+    </dialog>
+
+    <dialog id="capabilityImportDialog" class="dialog capability-import-dialog">
+      <div class="dialog-card capability-import-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="workspace.importTitle">Open capability link?</div>
+            <div id="capabilityImportDetails" class="dialog-meta muted"></div>
+          </div>
+        </div>
+        <p class="workspace-capability-warning" data-i18n="workspace.importWarning">
+          This link contains a bearer credential. Opening it grants this browser the token's access to the workspace shown above.
+        </p>
+        <p class="muted" data-i18n="workspace.importScrubbed">The secret fragment has already been removed from the address bar. It has not been sent to a Git provider or saved.</p>
+        <label id="capabilityHostConfirmWrap" class="workspace-host-confirm" hidden>
+          <input id="capabilityHostConfirm" type="checkbox" />
+          <span id="capabilityHostConfirmText" data-i18n="workspace.trustHost">I trust this custom provider host and permit sending the credential to it.</span>
+        </label>
+        <label class="workspace-remember">
+          <input id="capabilityRemember" type="checkbox" />
+          <span data-i18n="workspace.rememberSession">Remember this token on this device (session-only by default)</span>
+        </label>
+        <pre id="capabilityImportError" class="error" hidden></pre>
+        <div class="row dialog-actions">
+          <button id="capabilityImportCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="capabilityImportOpenBtn" class="btn" type="button" data-i18n="landing.openWorkspace">Open workspace</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="entryDialog" class="dialog">
       <form id="entryForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
-          <div class="dialog-title">Edit Entry</div>
-          <button id="entryCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+          <div class="dialog-title" data-i18n="entry.dialogTitle">Edit entry</div>
+          <button id="entryCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div id="entryMeta" class="dialog-meta muted"></div>
 
         <div class="grid dialog-grid">
           <label class="col-span-2">
-            <span>Description</span>
+            <span data-i18n="entry.description">Description</span>
             <textarea id="entryDesc" rows="4"></textarea>
             <div id="entryDescSuggestions" class="entry-suggestions" role="listbox" hidden></div>
           </label>
           <label class="col-span-2">
-            <span>Project / section</span>
-            <input id="entryAssignment" type="text" spellcheck="false" list="entryAssignmentList" placeholder="No project" autocomplete="off" />
+            <span data-i18n="entry.assignment">Project / section</span>
+            <input id="entryAssignment" type="text" spellcheck="false" list="entryAssignmentList" data-i18n-placeholder="entry.noProject" placeholder="No project" autocomplete="off" />
             <datalist id="entryAssignmentList"></datalist>
           </label>
         </div>
 
         <div class="row dialog-actions">
-          <button id="entryDeleteBtn" class="btn btn-danger dialog-delete-action" type="button">Delete</button>
-          <button id="entrySaveBtn" class="btn" type="submit">Save</button>
-          <button id="entryCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="entryDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n="common.delete">Delete</button>
+          <button id="entrySaveBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
+          <button id="entryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </dialog>
     <dialog id="todoDialog" class="dialog">
       <form id="todoForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
-          <div id="todoDialogTitle" class="dialog-title">Edit TODO</div>
-          <button id="todoCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+          <div id="todoDialogTitle" class="dialog-title" data-i18n="todo.editTitle">Edit task</div>
+          <button id="todoCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div id="todoDialogMeta" class="dialog-meta muted"></div>
 
         <div class="grid dialog-grid todo-dialog-grid">
           <label class="col-span-2">
-            <span>Title</span>
+            <span data-i18n="todo.title">Title</span>
             <input id="todoContent" type="text" autocomplete="off" required />
           </label>
           <label class="col-span-2">
-            <span>Description</span>
+            <span data-i18n="entry.description">Description</span>
             <textarea id="todoDescription" rows="4"></textarea>
           </label>
           <label class="col-span-2">
-            <span>Project / section</span>
-            <input id="todoAssignment" type="text" spellcheck="false" list="todoAssignmentList" placeholder="No project" autocomplete="off" />
+            <span data-i18n="entry.assignment">Project / section</span>
+            <input id="todoAssignment" type="text" spellcheck="false" list="todoAssignmentList" data-i18n-placeholder="entry.noProject" placeholder="No project" autocomplete="off" />
             <datalist id="todoAssignmentList"></datalist>
           </label>
           <label>
-            <span>Due date</span>
+            <span data-i18n="todo.dueDate">Due date</span>
             <input id="todoDueDate" type="date" />
           </label>
           <label>
-            <span>Due time</span>
+            <span data-i18n="todo.dueTime">Due time</span>
             <input id="todoDueTime" type="time" />
           </label>
           <label class="col-span-2">
-            <span>Recurrence</span>
-            <input id="todoRecurrence" type="text" placeholder="e.g. every Friday or every! 2 weeks" autocomplete="off" />
+            <span data-i18n="todo.recurrence">Recurrence</span>
+            <input id="todoRecurrence" type="text" data-i18n-placeholder="todo.recurrencePlaceholder" placeholder="e.g. every Friday or every! 2 weeks" autocomplete="off" />
           </label>
           <label>
-            <span>Priority</span>
+            <span data-i18n="todo.priority">Priority</span>
             <select id="todoPriority">
-              <option value="1">Normal</option>
-              <option value="2">Medium</option>
-              <option value="3">High</option>
-              <option value="4">Urgent</option>
+              <option value="1" data-i18n="todo.priorityNormal">Normal</option>
+              <option value="2" data-i18n="todo.priorityMedium">Medium</option>
+              <option value="3" data-i18n="todo.priorityHigh">High</option>
+              <option value="4" data-i18n="todo.priorityUrgent">Urgent</option>
             </select>
           </label>
           <label>
-            <span>Labels (comma-separated)</span>
+            <span data-i18n="todo.labels">Labels (comma-separated)</span>
             <input id="todoLabels" type="text" autocomplete="off" />
           </label>
         </div>
 
         <div class="row dialog-actions">
-          <button class="btn" type="submit">Ok</button>
-          <button id="todoCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="todoCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="todoConflictDialog" class="dialog todo-conflict-dialog">
+      <div class="dialog-card todo-conflict-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="todo.conflictsTitle">Resolve task conflicts</div>
+            <div class="dialog-meta muted" data-i18n="todo.conflictsMeta">Both this browser and GitHub changed these tasks. Choose one version for each task before saving.</div>
+          </div>
+          <button id="todoConflictCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <div id="todoConflictList" class="todo-conflict-list"></div>
+      </div>
+    </dialog>
+    <dialog id="expenseDialog" class="dialog expense-dialog">
+      <form id="expenseForm" method="dialog" class="dialog-card expense-dialog-card">
+        <div class="dialog-head">
+          <div>
+            <div id="expenseDialogTitle" class="dialog-title" data-i18n="expenses.editTitle">Edit expense</div>
+            <div id="expenseDialogMeta" class="dialog-meta muted"></div>
+          </div>
+          <button id="expenseCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+
+        <div class="grid dialog-grid expense-main-fields">
+          <label class="col-span-2">
+            <span data-i18n="expenses.description">Description</span>
+            <input id="expenseDescription" type="text" autocomplete="off" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.date">Date</span>
+            <input id="expenseDate" type="date" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.amount">Amount</span>
+            <input id="expenseAmount" type="text" inputmode="decimal" autocomplete="off" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.currency">Currency</span>
+            <input id="expenseCurrency" type="text" inputmode="text" maxlength="3" value="EUR" autocomplete="off" required />
+          </label>
+          <label>
+            <span data-i18n="expenses.category">Category</span>
+            <select id="expenseCategory"></select>
+          </label>
+          <label class="col-span-2">
+            <span data-i18n="entry.assignment">Project / section</span>
+            <input id="expenseAssignment" type="text" spellcheck="false" list="expenseAssignmentList" data-i18n-placeholder="entry.noProject" placeholder="No project" autocomplete="off" />
+            <datalist id="expenseAssignmentList"></datalist>
+          </label>
+          <label>
+            <span data-i18n="expenses.splitRule">Split rule</span>
+            <select id="expenseAllocationType">
+              <option value="equal" data-i18n="expenses.splitEqual">Equal</option>
+              <option value="percentage" data-i18n="expenses.splitPercentage">Percentage</option>
+              <option value="shares" data-i18n="expenses.splitShares">Shares</option>
+              <option value="exact" data-i18n="expenses.splitExact">Exact amounts</option>
+            </select>
+          </label>
+          <label class="col-span-2">
+            <span data-i18n="expenses.notes">Notes</span>
+            <textarea id="expenseNotes" rows="3"></textarea>
+          </label>
+        </div>
+
+        <div class="expense-split-heading">
+          <span data-i18n="expenses.participant">Participant</span>
+          <span data-i18n="expenses.paid">Paid</span>
+          <span id="expenseOwedHeading" data-i18n="expenses.owed">Owed</span>
+        </div>
+        <div id="expenseSplitRows" class="expense-split-rows"></div>
+
+        <div class="row dialog-actions">
+          <button id="expenseDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n="common.delete">Delete</button>
+          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="expenseCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="expenseSettlementDialog" class="dialog expense-settlement-dialog">
+      <div class="dialog-card expense-settlement-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="expenses.settle">Settle balances</div>
+            <div class="dialog-meta muted" data-i18n="expenses.settleMeta">Suggested payments are calculated independently per currency.</div>
+          </div>
+          <button id="expenseSettlementCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <div id="expenseSettlementList" class="expense-settlement-list"></div>
+      </div>
+    </dialog>
+
+    <dialog id="expenseInventoryDialog" class="dialog expense-inventory-dialog">
+      <form id="expenseInventoryForm" method="dialog" class="dialog-card expense-inventory-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="expenses.inventory">Participants and categories</div>
+            <div class="dialog-meta muted" data-i18n="expenses.inventoryMeta">Stable keys remain unchanged when names are edited.</div>
+          </div>
+          <button id="expenseInventoryCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <section class="expense-inventory-section">
+          <div class="expense-inventory-heading">
+            <strong data-i18n="expenses.participants">Participants</strong>
+            <button id="expenseAddParticipantBtn" class="btn btn-secondary" type="button" data-i18n="expenses.addParticipant">Add participant</button>
+          </div>
+          <div id="expenseParticipantList" class="expense-inventory-list"></div>
+        </section>
+        <section class="expense-inventory-section">
+          <div class="expense-inventory-heading">
+            <strong data-i18n="expenses.categories">Categories</strong>
+            <button id="expenseAddCategoryBtn" class="btn btn-secondary" type="button" data-i18n="expenses.addCategory">Add category</button>
+          </div>
+          <div id="expenseCategoryList" class="expense-inventory-list"></div>
+        </section>
+        <div class="row dialog-actions">
+          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="expenseInventoryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </dialog>
     <dialog id="projectsDialog" class="dialog">
       <form id="projectsForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
-          <div class="dialog-title">Projects</div>
-          <button id="projectsCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+          <div class="dialog-title" data-i18n="projects.title">Projects</div>
+          <button id="projectsCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div class="projects-toolbar row">
-          <div class="muted">Manage shared projects, sections, defaults, and archive state.</div>
-          <button id="addProjectBtn" class="btn btn-secondary" type="button">Add project</button>
+          <div class="muted" data-i18n="projects.meta">Manage shared projects, sections, defaults, and archive state.</div>
+          <button id="addProjectBtn" class="btn btn-secondary" type="button" data-i18n="projects.add">Add project</button>
         </div>
 
         <div id="projectsList" class="projects-list"></div>
 
         <div class="row dialog-actions">
-          <button id="projectsOkBtn" class="btn" type="submit">Ok</button>
-          <button id="projectsCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="projectsOkBtn" class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="projectsCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="projectBindingDialog" class="dialog project-binding-dialog">
+      <form id="projectBindingForm" method="dialog" class="dialog-card project-binding-card">
+        <div class="dialog-head">
+          <div>
+            <div class="dialog-title" data-i18n="projects.bindingPreviewTitle">GitHub project migration</div>
+            <div class="dialog-meta muted" data-i18n="projects.bindingPreviewMeta">Review local task handling. Upstream issues are never deleted; new issues are created only by a later manual task save.</div>
+          </div>
+          <button id="projectBindingCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <div id="projectBindingList" class="project-binding-list"></div>
+        <div class="row dialog-actions">
+          <button class="btn" type="submit" data-i18n="common.continue">Continue</button>
+          <button id="projectBindingCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </dialog>
     <dialog id="weekReqDialog" class="dialog">
       <form id="weekReqForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
-          <div class="dialog-title">Week Requirements</div>
-          <button id="weekReqCloseBtn" class="btn btn-secondary btn-icon" type="button" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+          <div class="dialog-title" data-i18n="requirements.title">Week requirements</div>
+          <button id="weekReqCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div id="weekReqMeta" class="dialog-meta muted"></div>
@@ -510,18 +903,18 @@
 
         <div class="grid dialog-grid">
           <label>
-            <span>Required hours</span>
+            <span data-i18n="requirements.requiredHours">Required hours</span>
             <input id="weekReqHours" type="number" min="0" max="168" step="0.25" />
           </label>
           <label class="col-span-2">
-            <span>Comment (optional)</span>
-            <textarea id="weekReqComment" rows="3" placeholder="Vacation, sick, holiday…"></textarea>
+            <span data-i18n="requirements.comment">Comment (optional)</span>
+            <textarea id="weekReqComment" rows="3" data-i18n-placeholder="requirements.commentPlaceholder" placeholder="Vacation, sick, holiday…"></textarea>
           </label>
         </div>
 
         <div class="row dialog-actions">
-          <button id="weekReqOkBtn" class="btn" type="submit">Ok</button>
-          <button id="weekReqCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="weekReqOkBtn" class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="weekReqCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </dialog>

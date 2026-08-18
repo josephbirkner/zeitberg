@@ -9,8 +9,15 @@ import { Manifest, Workspace } from "../model.js";
  */
 function makeWorkspaceRaw() {
     return {
-        $schema: "https://zeitplural.io/schema/workspace-v1.schema.json",
+        $schema: "https://zeitberg.io/schema/workspace-v1.schema.json",
         components: {
+            expenses: {
+                paths: {
+                    document: "records/expenses.json",
+                    manifest: "records/expenses-manifest.json",
+                },
+                type: "expenses",
+            },
             tasks: { paths: { document: "records/todos.json" }, type: "todos" },
             time: {
                 paths: {
@@ -37,6 +44,10 @@ test("workspace model resolves provider-neutral component paths", () => {
     assert.equal(workspace.getComponentPath("time_tracking", "entries"), "records/weeks");
     assert.equal(workspace.getComponentPath("time_tracking", "manifest"), "records/manifest.json");
     assert.equal(workspace.getComponentPath("todos", "document"), "records/todos.json");
+    assert.equal(workspace.getComponentPath("expenses", "document"), "records/expenses.json");
+    assert.equal(workspace.getComponentPath("expenses", "manifest"), "records/expenses-manifest.json");
+    assert.equal(workspace.hasComponent("todos"), true);
+    assert.equal(workspace.hasComponent("expenses"), true);
     assert.deepEqual(Workspace.fromRaw(workspace.toObject()).toObject(), workspace.toObject());
 });
 

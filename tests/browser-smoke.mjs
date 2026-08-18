@@ -1,0 +1,308 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import coverageLibrary from "istanbul-lib-coverage";
+import { chromium } from "playwright";
+import v8ToIstanbul from "v8-to-istanbul";
+
+const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const WORKSPACE_ID = "replace-with-a-unique-id";
+const BROWSER_SOURCE_FILES = [
+    "app.js",
+    "expense.view.js",
+    "search.view.js",
+    "theme-init.js",
+    "todo.view.js",
+    "week.view.js",
+];
+
+/**
+ * @typedef {Object} BrowserCoverageEntry
+ * @property {string} url Loaded script URL.
+ * @property {string} [source] Loaded source text.
+ * @property {Array<Object>} functions V8 precise-coverage functions.
+ */
+
+/**
+ * Reserves an available loopback port for the disposable local application server.
+ *
+ * @returns {Promise<number>} Available TCP port.
+ */
+function reservePort() {
+    return new Promise((resolve, reject) => {
+        const socket = net.createServer();
+        socket.once("error", reject);
+        socket.listen(0, "127.0.0.1", () => {
+            const address = socket.address();
+            const port = address && typeof address === "object" ? address.port : 0;
+            socket.close((error) => (error ? reject(error) : resolve(port)));
+        });
+    });
+}
+
+/**
+ * Polls the local server until its workspace-discovery endpoint is available.
+ *
+ * @param {string} baseUrl Loopback origin.
+ * @param {import("node:child_process").ChildProcess} process Local server process.
+ * @returns {Promise<void>}
+ */
+async function waitForServer(baseUrl, process) {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+        if (process.exitCode !== null) throw new Error(`Local server exited with code ${process.exitCode}.`);
+        try {
+            const response = await fetch(`${baseUrl}/local-workspaces`);
+            if (response.ok) return;
+        } catch {
+            // The listener may not have bound yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    throw new Error("Timed out waiting for the local application server.");
+}
+
+/**
+ * Opens one component route and waits for workspace initialization to finish.
+ *
+ * @param {import("playwright").Page} page Browser page.
+ * @param {string} baseUrl Loopback origin.
+ * @param {"time" | "todos" | "expenses"} component Component route.
+ * @returns {Promise<void>}
+ */
+async function openComponent(page, baseUrl, component) {
+    const params = new URLSearchParams({ source: "local", workspace: WORKSPACE_ID });
+    await page.goto(`${baseUrl}/${component}?${params}`, { waitUntil: "domcontentloaded" });
+    await page.locator("#appSection:not([hidden])").waitFor({ timeout: 10_000 });
+}
+
+/**
+ * Returns the viewport-relative size of a dialog card.
+ *
+ * @param {import("playwright").Locator} card Dialog card locator.
+ * @returns {Promise<{width: number, height: number, viewportWidth: number, viewportHeight: number}>}
+ */
+async function dialogSize(card) {
+    return card.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+            width: rect.width,
+            height: rect.height,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+        };
+    });
+}
+
+/**
+ * Converts Chromium's precise V8 data into an Istanbul summary for browser-only controllers.
+ * The result is reported separately from the 90% deterministic production-logic gate so difficult DOM code remains visible without mixing two incompatible execution environments.
+ *
+ * @param {BrowserCoverageEntry[]} entries Coverage entries collected across desktop and narrow pages.
+ * @returns {Promise<{total: Object, files: Object}>} Serializable aggregate and per-file metrics.
+ */
+async function summarizeBrowserCoverage(entries) {
+    const coverageMap = coverageLibrary.createCoverageMap({});
+    for (const entry of entries) {
+        let fileName = "";
+        try {
+            fileName = path.basename(new URL(entry.url).pathname);
+        } catch {
+            continue;
+        }
+        if (!BROWSER_SOURCE_FILES.includes(fileName) || typeof entry.source !== "string") continue;
+        const converter = v8ToIstanbul(path.join(APP_ROOT, fileName), 0, { source: entry.source });
+        await converter.load();
+        converter.applyCoverage(/** @type {any} */ (entry.functions));
+        coverageMap.merge(converter.toIstanbul());
+    }
+
+    const files = {};
+    for (const filePath of coverageMap.files().sort()) {
+        files[path.basename(filePath)] = coverageMap.fileCoverageFor(filePath).toSummary().toJSON();
+    }
+    assert.deepEqual(Object.keys(files).sort(), BROWSER_SOURCE_FILES.slice().sort());
+    return { total: coverageMap.getCoverageSummary().toJSON(), files };
+}
+
+/**
+ * Writes the browser-controller summary beside c8's reports for CI artifact retention.
+ *
+ * @param {BrowserCoverageEntry[]} entries Coverage entries collected across browser scenarios.
+ * @returns {Promise<Object>} Aggregate browser summary.
+ */
+async function writeBrowserCoverage(entries) {
+    const summary = await summarizeBrowserCoverage(entries);
+    const outputDirectory = path.join(APP_ROOT, "coverage");
+    await mkdir(outputDirectory, { recursive: true });
+    await writeFile(
+        path.join(outputDirectory, "browser-summary.json"),
+        `${JSON.stringify(
+            {
+                schema_version: 1,
+                generated_at: new Date().toISOString(),
+                scope: BROWSER_SOURCE_FILES,
+                ...summary,
+            },
+            null,
+            2,
+        )}\n`,
+        "utf8",
+    );
+    return summary.total;
+}
+
+const port = await reservePort();
+const baseUrl = `http://127.0.0.1:${port}`;
+const server = spawn(
+    "python3",
+    ["server.py", "--workspace", "workspace-template", "--host", "127.0.0.1", "--port", String(port)],
+    { cwd: APP_ROOT, stdio: ["ignore", "pipe", "pipe"] },
+);
+let serverOutput = "";
+server.stdout?.on("data", (chunk) => {
+    serverOutput += String(chunk);
+});
+server.stderr?.on("data", (chunk) => {
+    serverOutput += String(chunk);
+});
+
+let browser;
+try {
+    await waitForServer(baseUrl, server);
+    browser = await chromium.launch({ headless: true });
+
+    const germanContext = await browser.newContext({ locale: "de-DE" });
+    const germanLanding = await germanContext.newPage();
+    await germanLanding.goto(`${baseUrl}/index.html`, { waitUntil: "domcontentloaded" });
+    await germanLanding.locator("#loginSection:not([hidden])").waitFor();
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "de");
+    assert.match(await germanLanding.locator("#landingTitle").textContent(), /Zeiterfassung/);
+    assert.equal(await germanLanding.locator("#landingLanguage").inputValue(), "auto");
+    await germanLanding.locator("#landingLanguage").selectOption("en");
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "en");
+    await germanLanding.reload({ waitUntil: "domcontentloaded" });
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "en");
+    await germanLanding.locator("#landingLanguage").selectOption("auto");
+    assert.equal(await germanLanding.locator("html").getAttribute("lang"), "de");
+    await germanContext.close();
+
+    const desktop = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await desktop.coverage.startJSCoverage({ resetOnNavigation: false });
+    const browserErrors = [];
+    desktop.on("pageerror", (error) => browserErrors.push(error.message));
+    desktop.on("console", (message) => {
+        if (message.type() === "error") browserErrors.push(message.text());
+    });
+
+    await openComponent(desktop, baseUrl, "time");
+    assert.equal(await desktop.locator("#weekViewSection").isVisible(), true);
+    assert.match(await desktop.title(), /zeitberg/);
+    await desktop.locator("#appZoomInBtn").click();
+    assert.notEqual(await desktop.locator("#appZoomLabel").textContent(), "100%");
+    await desktop.locator("#appZoomResetBtn").click();
+    assert.equal(await desktop.locator("#appZoomLabel").textContent(), "100%");
+
+    await desktop.locator("#interfaceSettingsBtn").click();
+    assert.equal(await desktop.locator("#interfaceDialog").evaluate((dialog) => dialog.open), true);
+    assert.match(desktop.url(), /panel=settings/);
+    await desktop.locator("#interfaceLanguage").selectOption("de");
+    assert.equal(await desktop.locator("html").getAttribute("lang"), "de");
+    assert.equal(await desktop.locator("#appLanguageLabel").textContent(), "DE");
+    await desktop.locator("#interfaceLanguage").selectOption("en");
+    await desktop.locator("#interfaceDialogCloseBtn").click();
+    await desktop.waitForURL((url) => !url.searchParams.has("panel"));
+
+    await desktop.locator("#workspaceSettingsBtn").click();
+    assert.equal(await desktop.locator("#workspaceDialog").evaluate((dialog) => dialog.open), true);
+    await desktop.locator("#workspaceDialogCloseBtn").click();
+    await desktop.locator("#projectsBtn").click();
+    assert.equal(await desktop.locator("#projectsDialog").evaluate((dialog) => dialog.open), true);
+    await desktop.locator("#projectsCancelBtn").click();
+
+    await desktop.locator("#menuTodoBtn").click();
+    await desktop.waitForURL(/\/todos\?/);
+    assert.equal(await desktop.locator("#todoView").isVisible(), true);
+    await desktop.locator("#todoCurrentFilterBtn").click();
+    await desktop.locator("#todoOpenFilterBtn").click();
+    await desktop.locator("#todoAddBtn").click();
+    assert.equal(await desktop.locator("#todoDialog").evaluate((dialog) => dialog.open), true);
+    await desktop.locator("#todoCancelBtn").click();
+
+    await openComponent(desktop, baseUrl, "expenses");
+    assert.equal(await desktop.locator("#expenseView").isVisible(), true);
+    await desktop.locator("#expenseInventoryBtn").click();
+    assert.equal(await desktop.locator("#expenseInventoryDialog").evaluate((dialog) => dialog.open), true);
+    await desktop.locator("#expenseInventoryCancelBtn").click();
+
+    await openComponent(desktop, baseUrl, "time");
+    await desktop.locator("#menuSearchBtn").click();
+    assert.equal(await desktop.locator("#searchView").isVisible(), true);
+    assert.match(desktop.url(), /panel=search/);
+    await desktop.goBack();
+    await desktop.locator("#weekViewSection:not([hidden])").waitFor();
+    await desktop.goForward();
+    await desktop.locator("#searchView:not([hidden])").waitFor();
+
+    // A hosted/provider-only start must ignore the local workspace that the preceding local session persisted.
+    await desktop.goto(`${baseUrl}/index.html`, { waitUntil: "domcontentloaded" });
+    await desktop.locator("#loginSection:not([hidden])").waitFor();
+    assert.equal(await desktop.locator("#loginSection").isVisible(), true);
+    assert.deepEqual(browserErrors, []);
+    const desktopCoverage = await desktop.coverage.stopJSCoverage();
+
+    const narrow = await browser.newPage({ viewport: { width: 500, height: 800 } });
+    await narrow.coverage.startJSCoverage({ resetOnNavigation: false });
+    const narrowErrors = [];
+    narrow.on("pageerror", (error) => narrowErrors.push(error.message));
+    narrow.on("console", (message) => {
+        if (message.type() === "error") narrowErrors.push(message.text());
+    });
+    await openComponent(narrow, baseUrl, "todos");
+    await narrow.locator("#todoAddBtn").click();
+    const todoDialog = await dialogSize(narrow.locator("#todoDialog .dialog-card"));
+    assert.equal(todoDialog.width, todoDialog.viewportWidth);
+    assert.equal(todoDialog.height, todoDialog.viewportHeight);
+    await narrow.locator("#todoCancelBtn").click();
+
+    await openComponent(narrow, baseUrl, "time");
+    await narrow.locator("#interfaceSettingsBtn").click();
+    const interfaceDialog = await dialogSize(narrow.locator("#interfaceDialog .dialog-card"));
+    assert.equal(interfaceDialog.width, interfaceDialog.viewportWidth);
+    assert.equal(interfaceDialog.height, interfaceDialog.viewportHeight);
+    await narrow.locator("#interfaceDialogCloseBtn").click();
+    await narrow.waitForURL((url) => !url.searchParams.has("panel"));
+    await narrow.locator("#workspaceSettingsBtn").click();
+    const workspaceDialog = await dialogSize(narrow.locator("#workspaceDialog .dialog-card"));
+    assert.equal(workspaceDialog.width, workspaceDialog.viewportWidth);
+    assert.equal(workspaceDialog.height, workspaceDialog.viewportHeight);
+    await narrow.locator("#workspaceDialogCloseBtn").click();
+    assert.deepEqual(narrowErrors, []);
+    const narrowCoverage = await narrow.coverage.stopJSCoverage();
+
+    const browserCoverage = await writeBrowserCoverage(
+        /** @type {BrowserCoverageEntry[]} */ ([...desktopCoverage, ...narrowCoverage]),
+    );
+
+    console.log("Browser smoke passed: routing, workspace load, dialogs, history, and narrow layouts.");
+    console.log(
+        `Browser-controller coverage: ${browserCoverage.lines.pct}% lines, ${browserCoverage.functions.pct}% functions, ${browserCoverage.branches.pct}% branches.`,
+    );
+} catch (error) {
+    if (serverOutput.trim()) console.error(serverOutput.trim());
+    throw error;
+} finally {
+    await browser?.close();
+    if (server.exitCode === null) {
+        server.kill("SIGTERM");
+        const exited = await Promise.race([
+            new Promise((resolve) => server.once("exit", () => resolve(true))),
+            new Promise((resolve) => setTimeout(() => resolve(false), 2_000)),
+        ]);
+        if (!exited && server.exitCode === null) server.kill("SIGKILL");
+    }
+}

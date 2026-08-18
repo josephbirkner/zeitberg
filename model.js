@@ -1,4 +1,13 @@
-import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, jsonStringifySorted, utf8ByteLength } from "./utils.js";
+import {
+    addIsoDays,
+    cloneJson,
+    gitBlobSha1,
+    isoWeekInfo,
+    isoWeekStart,
+    isoWeekdayIndex,
+    jsonStringifySorted,
+    utf8ByteLength,
+} from "./utils.js";
 
 /**
  * @typedef {Object} EntryRaw
@@ -133,11 +142,140 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
  */
 
 /**
+ * @typedef {Object} GitHubTodoOverlayRaw
+ * @description Zeitberg-only scheduling metadata for one GitHub-owned issue task; title, body, labels, and state remain exclusively upstream.
+ * @property {string} repository
+ * @property {number} issue_number
+ * @property {string | null} [parent_id]
+ * @property {TodoDueRaw | null} [due]
+ * @property {RecurrenceRaw | null} [recurrence]
+ * @property {TodoCompletionRaw[]} [completion_history]
+ * @property {Object | null} [deadline]
+ * @property {number} [priority]
+ * @property {number} [order]
+ * @property {string | null} [section_key_override] Temporary local section assignment while its configured GitHub label awaits synchronization.
+ */
+
+/**
  * @typedef {Object} TodosFileRaw
  * @description The complete data/todos.json document persisted by the application.
  * @property {string} [generated_at]
  * @property {number} [schema_version]
  * @property {TodoRaw[]} [todos]
+ * @property {GitHubTodoOverlayRaw[]} [github_overlays]
+ */
+
+/**
+ * @typedef {Object} ExpenseSourceRaw
+ * @description Provider-neutral provenance used for retry-safe imports and source-ID deduplication.
+ * @property {string} provider
+ * @property {string} id
+ */
+
+/**
+ * @typedef {Object} ExpenseParticipantRaw
+ * @description One person or account that can pay, owe, send, or receive money in an expense ledger.
+ * @property {string} key
+ * @property {string} name
+ * @property {boolean} [archived]
+ * @property {ExternalReferenceRaw[]} [source_refs]
+ */
+
+/**
+ * @typedef {Object} ExpenseCategoryRaw
+ * @description Ledger-local category metadata; shared project keys may additionally classify individual expenses.
+ * @property {string} key
+ * @property {string} name
+ * @property {string} [color]
+ * @property {boolean} [archived]
+ * @property {ExternalReferenceRaw[]} [source_refs]
+ */
+
+/**
+ * @typedef {Object} ExpenseAmountRaw
+ * @description One participant's exact integer-minor-unit contribution or allocation.
+ * @property {string} participant_key
+ * @property {number} amount_minor
+ */
+
+/**
+ * @typedef {"equal" | "percentage" | "shares" | "exact"} ExpenseAllocationRuleType
+ */
+
+/**
+ * @typedef {Object} ExpenseAllocationUnitRaw
+ * @property {string} participant_key
+ * @property {number} value
+ */
+
+/**
+ * @typedef {Object} ExpenseAllocationRuleRaw
+ * @description Optional editing intent retained alongside authoritative exact allocations. Percentage values use basis points.
+ * @property {ExpenseAllocationRuleType} type
+ * @property {ExpenseAllocationUnitRaw[]} units
+ */
+
+/**
+ * @typedef {Object} ExpenseRaw
+ * @description One shared purchase whose payer contributions and owed allocations each sum exactly to amount_minor.
+ * @property {string} id
+ * @property {string} description
+ * @property {string} date
+ * @property {string} currency
+ * @property {number} amount_minor
+ * @property {ExpenseAmountRaw[]} payers
+ * @property {ExpenseAmountRaw[]} allocations
+ * @property {ExpenseAllocationRuleRaw | null} [allocation_rule]
+ * @property {string | null} [category_key]
+ * @property {string | null} [project_key]
+ * @property {string | null} [section_key]
+ * @property {string} [notes]
+ * @property {string} [created_at]
+ * @property {string} [updated_at]
+ * @property {ExpenseSourceRaw | null} [source]
+ */
+
+/**
+ * @typedef {Object} ExpenseTransferRaw
+ * @description A direct settlement from one participant to another in one explicit currency.
+ * @property {string} id
+ * @property {string} date
+ * @property {string} currency
+ * @property {number} amount_minor
+ * @property {string} from_participant_key
+ * @property {string} to_participant_key
+ * @property {string} [notes]
+ * @property {string} [created_at]
+ * @property {string} [updated_at]
+ * @property {ExpenseSourceRaw | null} [source]
+ */
+
+/**
+ * @typedef {Object} ExpensesFileRaw
+ * @description Complete, provider-neutral expense ledger persisted as one reviewable Git document.
+ * @property {number} [schema_version]
+ * @property {string} [generated_at]
+ * @property {ExpenseParticipantRaw[]} [participants]
+ * @property {ExpenseCategoryRaw[]} [categories]
+ * @property {ExpenseRaw[]} [expenses]
+ * @property {ExpenseTransferRaw[]} [transfers]
+ */
+
+/**
+ * @typedef {Object} ExpenseManifestFileRaw
+ * @description Compact index for integrity checks and loading metadata for an expense document.
+ * @property {number} [schema_version]
+ * @property {string} [generated_at]
+ * @property {string} [path]
+ * @property {string} [sha]
+ * @property {number} [size]
+ * @property {number} [participants]
+ * @property {number} [categories]
+ * @property {number} [expenses]
+ * @property {number} [transfers]
+ * @property {string[]} [currencies]
+ * @property {string | null} [date_from]
+ * @property {string | null} [date_to]
  */
 
 /**
@@ -176,14 +314,14 @@ import { addIsoDays, cloneJson, isoWeekInfo, isoWeekStart, isoWeekdayIndex, json
 
 /**
  * @typedef {Object} WorkspaceComponentRaw
- * @description One enabled zeitplural component and the repository-relative documents it owns.
+ * @description One enabled zeitberg component and the repository-relative documents it owns.
  * @property {string} type
  * @property {Object.<string, string>} paths
  */
 
 /**
  * @typedef {Object} WorkspaceRaw
- * @description The root zeitplural.json document that describes one independently shareable data repository.
+ * @description The root zeitberg.json document that describes one independently shareable data repository.
  * @property {string} [$schema]
  * @property {number} schema_version
  * @property {string} workspace_id
@@ -217,7 +355,7 @@ export function normalizeRepositoryPath(value, label) {
 }
 
 /**
- * Represents the versioned root configuration of one zeitplural data workspace.
+ * Represents the versioned root configuration of one zeitberg data workspace.
  * The model keeps repository discovery independent from any hosting provider and centralizes every mutable document path used by the application.
  * Component keys are stable instance identifiers, while component types let future versions add finances or multiple sharing ledgers without changing the bootstrap format.
  */
@@ -243,64 +381,64 @@ export class Workspace {
     }
 
     /**
-     * Parses and validates a zeitplural.json payload.
+     * Parses and validates a zeitberg.json payload.
      * Besides schema-version checks, this validates timezone support, stable identifiers, component uniqueness, and every repository-relative path before network or filesystem access occurs.
      * @param {unknown} raw Untrusted JSON payload returned by a data source.
      * @returns {Workspace}
      */
     static fromRaw(raw) {
-        if (!raw || typeof raw !== "object") throw new Error("zeitplural.json must be a JSON object.");
+        if (!raw || typeof raw !== "object") throw new Error("zeitberg.json must be a JSON object.");
         const rawObj = /** @type {WorkspaceRaw} */ (raw);
-        if (Number(rawObj.schema_version) !== 1) throw new Error("zeitplural.json must use schema_version 1.");
+        if (Number(rawObj.schema_version) !== 1) throw new Error("zeitberg.json must use schema_version 1.");
 
         const workspaceId = String(rawObj.workspace_id || "").trim();
         if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(workspaceId)) {
-            throw new Error("zeitplural.json contains an invalid workspace_id.");
+            throw new Error("zeitberg.json contains an invalid workspace_id.");
         }
         const name = String(rawObj.name || "").trim();
-        if (!name) throw new Error("zeitplural.json must define a workspace name.");
+        if (!name) throw new Error("zeitberg.json must define a workspace name.");
         const timezone = String(rawObj.timezone || "").trim();
         try {
             new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
         } catch {
-            throw new Error(`zeitplural.json contains an invalid timezone: ${timezone || "(empty)"}.`);
+            throw new Error(`zeitberg.json contains an invalid timezone: ${timezone || "(empty)"}.`);
         }
 
         if (!rawObj.resources || typeof rawObj.resources !== "object" || Array.isArray(rawObj.resources)) {
-            throw new Error("zeitplural.json resources must be an object.");
+            throw new Error("zeitberg.json resources must be an object.");
         }
         /** @type {Object.<string, string>} */
         const resources = {};
         for (const [key, value] of Object.entries(rawObj.resources)) {
-            if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`zeitplural.json contains an invalid resource key: ${key}.`);
+            if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`zeitberg.json contains an invalid resource key: ${key}.`);
             resources[key] = normalizeRepositoryPath(value, `resources.${key}`);
         }
 
         if (!rawObj.components || typeof rawObj.components !== "object" || Array.isArray(rawObj.components)) {
-            throw new Error("zeitplural.json components must be an object.");
+            throw new Error("zeitberg.json components must be an object.");
         }
         /** @type {Object.<string, WorkspaceComponentRaw>} */
         const components = {};
         for (const [componentId, candidate] of Object.entries(rawObj.components)) {
             if (!/^[a-z][a-z0-9_-]*$/.test(componentId)) {
-                throw new Error(`zeitplural.json contains an invalid component id: ${componentId}.`);
+                throw new Error(`zeitberg.json contains an invalid component id: ${componentId}.`);
             }
             if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-                throw new Error(`zeitplural.json component ${componentId} must be an object.`);
+                throw new Error(`zeitberg.json component ${componentId} must be an object.`);
             }
             const rawComponent = /** @type {WorkspaceComponentRaw} */ (candidate);
             const type = String(rawComponent.type || "").trim();
             if (!/^[a-z][a-z0-9_]*$/.test(type)) {
-                throw new Error(`zeitplural.json component ${componentId} has an invalid type.`);
+                throw new Error(`zeitberg.json component ${componentId} has an invalid type.`);
             }
             if (!rawComponent.paths || typeof rawComponent.paths !== "object" || Array.isArray(rawComponent.paths)) {
-                throw new Error(`zeitplural.json component ${componentId} paths must be an object.`);
+                throw new Error(`zeitberg.json component ${componentId} paths must be an object.`);
             }
             /** @type {Object.<string, string>} */
             const paths = {};
             for (const [pathKey, value] of Object.entries(rawComponent.paths)) {
                 if (!/^[a-z][a-z0-9_]*$/.test(pathKey)) {
-                    throw new Error(`zeitplural.json component ${componentId} contains an invalid path key: ${pathKey}.`);
+                    throw new Error(`zeitberg.json component ${componentId} contains an invalid path key: ${pathKey}.`);
                 }
                 paths[pathKey] = normalizeRepositoryPath(value, `components.${componentId}.paths.${pathKey}`);
             }
@@ -324,6 +462,17 @@ export class Workspace {
             .find(([, component]) => component.type === normalizedType);
         if (!match) throw new Error(`Workspace does not enable the ${normalizedType} component.`);
         return cloneJson(match[1]);
+    }
+
+    /**
+     * Reports whether at least one configured component has the requested provider-neutral type.
+     * Route restoration uses this non-throwing check to fall back cleanly when a shared link targets a component that the selected workspace does not provide.
+     * @param {string} type Component type such as time_tracking, todos, or expenses.
+     * @returns {boolean}
+     */
+    hasComponent(type) {
+        const normalizedType = String(type || "").trim();
+        return Object.values(this.components).some((component) => component.type === normalizedType);
     }
 
     /**
@@ -840,12 +989,15 @@ export class ProjectList {
 
     /**
      * Registers one upstream identifier and rejects ambiguous configuration immediately.
+     * GitHub labels are intentionally excluded because their identity is scoped by the owning repository and issue mapping resolves them within the parent project.
      * @param {ExternalReferenceRaw} reference
      * @param {string} projectKey
      * @param {string | null} sectionKey
      * @returns {void}
      */
     addExternalReference(reference, projectKey, sectionKey) {
+        // GitHub labels are repository-scoped and are resolved only within their parent project's issue collection.
+        if (reference.provider === "github-label") return;
         const key = `${reference.provider}\u0000${reference.id}`;
         const prior = this.assignmentsByExternalRef.get(key);
         if (prior && (prior.projectKey !== projectKey || prior.sectionKey !== sectionKey)) {
@@ -1107,6 +1259,20 @@ const WEEKDAY_BY_NAME = new Map([
     ["sat", 6],
     ["sunday", 7],
     ["sun", 7],
+    ["montag", 1],
+    ["montags", 1],
+    ["dienstag", 2],
+    ["dienstags", 2],
+    ["mittwoch", 3],
+    ["mittwochs", 3],
+    ["donnerstag", 4],
+    ["donnerstags", 4],
+    ["freitag", 5],
+    ["freitags", 5],
+    ["samstag", 6],
+    ["samstags", 6],
+    ["sonntag", 7],
+    ["sonntags", 7],
 ]);
 const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -1247,7 +1413,8 @@ export class Recurrence {
     }
 
     /**
-     * Converts the supported natural-language subset used by the editor and Todoist import into structured fields.
+     * Converts the supported English and German natural-language subsets used by the editor and legacy imports into structured fields.
+     * German completion-relative rules use a trailing “nach Abschluss”; time suffixes beginning with “at” or “um” do not alter recurrence dates.
      * Unsupported phrases return null rather than creating a task that cannot advance safely.
      * @param {string} text
      * @param {string} anchorDate
@@ -1263,22 +1430,30 @@ export class Recurrence {
         if (normalized.startsWith("every!")) {
             basis = "after_completion";
             normalized = normalized.slice("every!".length).trim();
-        } else if (normalized.startsWith("every ")) {
-            normalized = normalized.slice("every ".length).trim();
+        } else if (normalized.endsWith(" nach abschluss")) {
+            basis = "after_completion";
+            normalized = normalized.slice(0, -" nach abschluss".length).trim();
         }
-        normalized = normalized.replace(/\s+at\s+.+$/, "").trim();
+        if (normalized.startsWith("every ")) {
+            normalized = normalized.slice("every ".length).trim();
+        } else if (normalized.startsWith("alle ")) {
+            normalized = normalized.slice("alle ".length).trim();
+        } else {
+            normalized = normalized.replace(/^(?:jeden|jede|jedes)\s+/, "");
+        }
+        normalized = normalized.replace(/\s+(?:at|um)\s+.+$/, "").trim();
 
         const anchorDateText = formatTodoCalendarDate(anchor.year, anchor.month, anchor.day);
         const anchorWeekday = isoWeekdayIndex(anchorDateText) + 1;
         const common = { basis, source_text: sourceText };
 
-        if (normalized === "daily" || normalized === "day") {
+        if (normalized === "daily" || normalized === "day" || normalized === "täglich" || normalized === "tag") {
             return new Recurrence({ ...common, frequency: "daily", interval: 1 });
         }
-        if (normalized === "weekly" || normalized === "week") {
+        if (normalized === "weekly" || normalized === "week" || normalized === "wöchentlich" || normalized === "woche") {
             return new Recurrence({ ...common, frequency: "weekly", interval: 1, weekdays: [anchorWeekday] });
         }
-        if (normalized === "monthly" || normalized === "month") {
+        if (normalized === "monthly" || normalized === "month" || normalized === "monatlich" || normalized === "monat") {
             return new Recurrence({
                 ...common,
                 frequency: "monthly",
@@ -1286,7 +1461,13 @@ export class Recurrence {
                 month_day: anchor.day,
             });
         }
-        if (normalized === "yearly" || normalized === "annually" || normalized === "year") {
+        if (
+            normalized === "yearly" ||
+            normalized === "annually" ||
+            normalized === "year" ||
+            normalized === "jährlich" ||
+            normalized === "jahr"
+        ) {
             return new Recurrence({
                 ...common,
                 frequency: "yearly",
@@ -1301,17 +1482,19 @@ export class Recurrence {
             return new Recurrence({ ...common, frequency: "weekly", interval: 1, weekdays: [weekday] });
         }
 
-        const intervalMatch = /^(\d+)\s+(days?|weeks?|months?|years?)$/.exec(normalized);
+        const intervalMatch = /^(\d+)\s+(days?|weeks?|months?|years?|tage?n?|wochen?|monate?n?|jahre?n?)$/.exec(
+            normalized,
+        );
         if (!intervalMatch) return null;
         const interval = Number(intervalMatch[1]);
         const unit = intervalMatch[2];
-        if (unit.startsWith("day")) {
+        if (unit.startsWith("day") || unit.startsWith("tag")) {
             return new Recurrence({ ...common, frequency: "daily", interval });
         }
-        if (unit.startsWith("week")) {
+        if (unit.startsWith("week") || unit.startsWith("woch")) {
             return new Recurrence({ ...common, frequency: "weekly", interval, weekdays: [anchorWeekday] });
         }
-        if (unit.startsWith("month")) {
+        if (unit.startsWith("month") || unit.startsWith("monat")) {
             return new Recurrence({ ...common, frequency: "monthly", interval, month_day: anchor.day });
         }
         return new Recurrence({
@@ -1629,11 +1812,13 @@ export class TodoList {
      * The input order is retained because imported child ordering is meaningful when due dates are equal.
      * @param {Todo[]} todos
      * @param {string} generatedAt
+     * @param {GitHubTodoOverlayRaw[]} [githubOverlays] Compact metadata for tasks whose main records live in GitHub Issues.
      */
-    constructor(todos, generatedAt) {
+    constructor(todos, generatedAt, githubOverlays = []) {
         this.todos = todos;
         this.generated_at = generatedAt;
-        this.schema_version = 3;
+        this.schema_version = 4;
+        this.github_overlays = cloneJson(githubOverlays);
         this.todosById = new Map();
         for (const todo of todos) {
             this.todosById.set(todo.id, todo);
@@ -1648,8 +1833,9 @@ export class TodoList {
      */
     static fromRaw(raw) {
         const rawObj = raw && typeof raw === "object" ? /** @type {TodosFileRaw} */ (raw) : null;
-        if (!rawObj || Number(rawObj.schema_version) !== 3) {
-            throw new Error("todos.json must use schema_version 3.");
+        const schemaVersion = Number(rawObj?.schema_version);
+        if (!rawObj || (schemaVersion !== 3 && schemaVersion !== 4)) {
+            throw new Error("todos.json must use schema_version 3 or 4.");
         }
         const rawTodos = Array.isArray(rawObj.todos) ? rawObj.todos : [];
         const byId = new Map();
@@ -1663,7 +1849,71 @@ export class TodoList {
             byId.set(todo.id, todo);
         }
         const generatedAt = typeof rawObj.generated_at === "string" ? rawObj.generated_at : "";
-        return new TodoList(Array.from(byId.values()), generatedAt);
+        const overlays = schemaVersion === 4
+            ? (Array.isArray(rawObj.github_overlays) ? rawObj.github_overlays : []).map((overlay) =>
+                  TodoList.normalizeGitHubOverlay(overlay),
+              )
+            : [];
+        const seenOverlays = new Set();
+        for (const overlay of overlays) {
+            const identity = `${overlay.repository}#${overlay.issue_number}`;
+            if (seenOverlays.has(identity)) throw new Error(`todos.json contains duplicate GitHub overlay ${identity}.`);
+            seenOverlays.add(identity);
+        }
+        return new TodoList(Array.from(byId.values()), generatedAt, overlays);
+    }
+
+    /**
+     * Validates one compact GitHub issue overlay without accepting any upstream-owned title, body, labels, or state fields.
+     * @param {unknown} raw Candidate overlay from todos.json.
+     * @returns {GitHubTodoOverlayRaw}
+     */
+    static normalizeGitHubOverlay(raw) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            throw new Error("todos.json contains an invalid GitHub overlay.");
+        }
+        const candidate = /** @type {Partial<GitHubTodoOverlayRaw>} */ (raw);
+        const repository = String(candidate.repository || "").trim();
+        if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+            throw new Error(`todos.json contains an invalid GitHub overlay repository: ${repository || "(empty)"}.`);
+        }
+        const issueNumber = Number(candidate.issue_number);
+        if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+            throw new Error(`todos.json contains an invalid GitHub overlay issue number for ${repository}.`);
+        }
+        const priority = Number(candidate.priority ?? 1);
+        if (!Number.isInteger(priority) || priority < 1 || priority > 4) {
+            throw new Error(`todos.json contains an invalid GitHub overlay priority for ${repository}#${issueNumber}.`);
+        }
+        const order = Number(candidate.order ?? 0);
+        if (!Number.isFinite(order)) {
+            throw new Error(`todos.json contains an invalid GitHub overlay order for ${repository}#${issueNumber}.`);
+        }
+        const due = Todo.normalizeDue(candidate.due);
+        const recurrence = Recurrence.fromRaw(candidate.recurrence);
+        if (recurrence && !due) {
+            throw new Error(`GitHub overlay ${repository}#${issueNumber} has recurrence without a due date.`);
+        }
+        const hasSectionOverride = Object.prototype.hasOwnProperty.call(candidate, "section_key_override");
+        const sectionKeyOverride =
+            typeof candidate.section_key_override === "string" && candidate.section_key_override.trim()
+                ? candidate.section_key_override.trim()
+                : null;
+        if (hasSectionOverride && sectionKeyOverride !== null && !PROJECT_KEY_PATTERN.test(sectionKeyOverride)) {
+            throw new Error(`GitHub overlay ${repository}#${issueNumber} has an invalid section override.`);
+        }
+        return {
+            repository,
+            issue_number: issueNumber,
+            parent_id: typeof candidate.parent_id === "string" && candidate.parent_id.trim() ? candidate.parent_id.trim() : null,
+            due,
+            recurrence: recurrence ? recurrence.toRaw() : null,
+            completion_history: Todo.normalizeCompletionHistory(candidate.completion_history),
+            deadline: candidate.deadline && typeof candidate.deadline === "object" ? cloneJson(candidate.deadline) : null,
+            priority,
+            order,
+            ...(hasSectionOverride ? { section_key_override: sectionKeyOverride } : {}),
+        };
     }
 
     /**
@@ -1672,7 +1922,7 @@ export class TodoList {
      * @returns {TodoList}
      */
     static createEmpty(generatedAt = "") {
-        return new TodoList([], generatedAt);
+        return new TodoList([], generatedAt, []);
     }
 
     /**
@@ -1707,6 +1957,7 @@ export class TodoList {
     toObject() {
         return {
             generated_at: this.generated_at,
+            github_overlays: cloneJson(this.github_overlays),
             schema_version: this.schema_version,
             todos: this.snapshotRaw(),
         };
@@ -1714,6 +1965,663 @@ export class TodoList {
 
     /**
      * Produces deterministic JSON for data/todos.json in both GitHub and local modes.
+     * @returns {string}
+     */
+    toJson() {
+        return jsonStringifySorted(this.toObject());
+    }
+}
+
+/**
+ * Validates a stable expense-ledger identifier used by participants, categories, expenses, and transfers.
+ * The deliberately conservative character set keeps identifiers safe in DOM datasets, URLs, and source-specific import scripts without provider-specific escaping.
+ * @param {unknown} value Candidate identifier.
+ * @param {string} label Human-readable field name for validation errors.
+ * @returns {string}
+ */
+function normalizeExpenseIdentifier(value, label) {
+    const id = String(value || "").trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/.test(id)) {
+        throw new Error(`${label} contains an invalid identifier.`);
+    }
+    return id;
+}
+
+/**
+ * Normalizes one ISO-4217-style currency code while keeping the model provider-neutral.
+ * Three uppercase letters are required; currency-specific decimal precision is intentionally handled only at input/output boundaries because persisted values are already integer minor units.
+ * @param {unknown} value Candidate currency code.
+ * @param {string} label Human-readable field name for validation errors.
+ * @returns {string}
+ */
+function normalizeExpenseCurrency(value, label) {
+    const currency = String(value || "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) throw new Error(`${label} must be a three-letter currency code.`);
+    return currency;
+}
+
+/**
+ * Validates one calendar date without introducing timezone-dependent parsing.
+ * Reformatting the UTC date catches impossible values such as 2026-02-31 while retaining the original date-only representation.
+ * @param {unknown} value Candidate YYYY-MM-DD value.
+ * @param {string} label Human-readable field name for validation errors.
+ * @returns {string}
+ */
+function normalizeExpenseDate(value, label) {
+    const date = String(value || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`${label} must use YYYY-MM-DD.`);
+    const [year, month, day] = date.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+        parsed.getUTCFullYear() !== year ||
+        parsed.getUTCMonth() !== month - 1 ||
+        parsed.getUTCDate() !== day
+    ) {
+        throw new Error(`${label} contains an invalid calendar date.`);
+    }
+    return date;
+}
+
+/**
+ * Validates a positive integer minor-unit amount and rejects unsafe JavaScript integers.
+ * No floating-point amount is ever accepted into the ledger model.
+ * @param {unknown} value Candidate amount.
+ * @param {string} label Human-readable field name for validation errors.
+ * @returns {number}
+ */
+function normalizePositiveMinorAmount(value, label) {
+    const amount = Number(value);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+        throw new Error(`${label} must be a positive integer minor-unit amount.`);
+    }
+    return amount;
+}
+
+/**
+ * Normalizes optional import provenance used for retry-safe source-ID deduplication.
+ * Both fields are mandatory whenever a source object is present so partially imported records cannot bypass identity checks.
+ * @param {unknown} value Candidate source object.
+ * @param {string} label Human-readable field name for validation errors.
+ * @returns {ExpenseSourceRaw | null}
+ */
+function normalizeExpenseSource(value, label) {
+    if (value === null || value === undefined) return null;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`${label} must be an object or null.`);
+    }
+    const source = /** @type {Partial<ExpenseSourceRaw>} */ (value);
+    const provider = String(source.provider || "").trim().toLowerCase();
+    const id = String(source.id || "").trim();
+    if (!provider || !id) throw new Error(`${label} must define provider and id.`);
+    return { provider, id };
+}
+
+/**
+ * Normalizes exact payer or allocation lines and verifies participant references.
+ * Duplicate participants are rejected rather than merged because duplicate source rows usually indicate an importer bug that should be visible during validation.
+ * @param {unknown} value Candidate amount-line array.
+ * @param {Set<string>} participantKeys Valid participant keys.
+ * @param {string} label Human-readable field name for validation errors.
+ * @returns {ExpenseAmountRaw[]}
+ */
+function normalizeExpenseAmountLines(value, participantKeys, label) {
+    if (!Array.isArray(value) || !value.length) throw new Error(`${label} must contain at least one participant.`);
+    const seen = new Set();
+    return value.map((candidate, index) => {
+        if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+            throw new Error(`${label}[${index}] must be an object.`);
+        }
+        const line = /** @type {Partial<ExpenseAmountRaw>} */ (candidate);
+        const participantKey = normalizeExpenseIdentifier(line.participant_key, `${label}[${index}].participant_key`);
+        if (!participantKeys.has(participantKey)) {
+            throw new Error(`${label}[${index}] references unknown participant ${participantKey}.`);
+        }
+        if (seen.has(participantKey)) throw new Error(`${label} contains duplicate participant ${participantKey}.`);
+        seen.add(participantKey);
+        return {
+            participant_key: participantKey,
+            amount_minor: normalizePositiveMinorAmount(line.amount_minor, `${label}[${index}].amount_minor`),
+        };
+    });
+}
+
+/**
+ * Distributes an integer total across weighted participants with a deterministic largest-remainder calculation.
+ * Ties are resolved by participant key, ensuring two browsers derive byte-identical exact allocations for equal, percentage, and share-based rules.
+ * @param {number} totalMinor Positive total in integer minor units.
+ * @param {ExpenseAllocationUnitRaw[]} units Positive integer weights.
+ * @returns {ExpenseAmountRaw[]}
+ */
+export function allocateExpenseByWeights(totalMinor, units) {
+    const total = normalizePositiveMinorAmount(totalMinor, "Expense total");
+    if (!Array.isArray(units) || !units.length) throw new Error("An allocation rule needs participants.");
+    const normalized = units.map((unit, index) => ({
+        participant_key: normalizeExpenseIdentifier(unit?.participant_key, `Allocation unit ${index + 1}`),
+        value: normalizePositiveMinorAmount(unit?.value, `Allocation unit ${index + 1} value`),
+    }));
+    const keys = new Set(normalized.map((unit) => unit.participant_key));
+    if (keys.size !== normalized.length) throw new Error("An allocation rule contains duplicate participants.");
+    const totalWeight = normalized.reduce((sum, unit) => sum + unit.value, 0);
+    if (!Number.isSafeInteger(totalWeight)) throw new Error("Allocation weights exceed the safe integer range.");
+
+    const rows = normalized.map((unit) => {
+        const numerator = BigInt(total) * BigInt(unit.value);
+        const denominator = BigInt(totalWeight);
+        return {
+            participant_key: unit.participant_key,
+            amount_minor: Number(numerator / denominator),
+            remainder: numerator % denominator,
+        };
+    });
+    let remaining = total - rows.reduce((sum, row) => sum + row.amount_minor, 0);
+    rows.sort((left, right) => {
+        if (left.remainder === right.remainder) return left.participant_key.localeCompare(right.participant_key);
+        return left.remainder > right.remainder ? -1 : 1;
+    });
+    for (let index = 0; index < remaining; index += 1) rows[index].amount_minor += 1;
+    return rows
+        .filter((row) => row.amount_minor > 0)
+        .sort((left, right) => left.participant_key.localeCompare(right.participant_key))
+        .map(({ participant_key, amount_minor }) => ({ participant_key, amount_minor }));
+}
+
+/**
+ * Represents one participant in a shared expense ledger.
+ * Stable keys are used by all money records, while names and source references may evolve independently.
+ */
+export class ExpenseParticipant {
+    /**
+     * Normalizes one participant definition.
+     * @param {ExpenseParticipantRaw} raw Untrusted participant payload.
+     */
+    constructor(raw) {
+        this.key = normalizeExpenseIdentifier(raw?.key, "Participant key");
+        this.name = String(raw?.name || "").trim();
+        if (!this.name) throw new Error(`Participant ${this.key} needs a name.`);
+        this.archived = raw?.archived === true;
+        this.source_refs = normalizeExternalReferences(raw?.source_refs);
+    }
+
+    /**
+     * Returns a detached JSON-ready participant definition.
+     * @returns {ExpenseParticipantRaw}
+     */
+    toRaw() {
+        return {
+            key: this.key,
+            name: this.name,
+            archived: this.archived,
+            source_refs: cloneJson(this.source_refs),
+        };
+    }
+}
+
+/**
+ * Represents one ledger-local category used for filtering and visual grouping.
+ * Categories remain independent from shared projects, allowing a household ledger to use groceries or rent while still optionally attaching a cross-component project.
+ */
+export class ExpenseCategory {
+    /**
+     * Normalizes one category definition.
+     * @param {ExpenseCategoryRaw} raw Untrusted category payload.
+     */
+    constructor(raw) {
+        this.key = normalizeExpenseIdentifier(raw?.key, "Category key");
+        this.name = String(raw?.name || "").trim();
+        if (!this.name) throw new Error(`Category ${this.key} needs a name.`);
+        const color = String(raw?.color || "#64748b").trim().toLowerCase();
+        if (!/^#[0-9a-f]{6}$/.test(color)) throw new Error(`Category ${this.key} has an invalid color.`);
+        this.color = color;
+        this.archived = raw?.archived === true;
+        this.source_refs = normalizeExternalReferences(raw?.source_refs);
+    }
+
+    /**
+     * Returns a detached JSON-ready category definition.
+     * @returns {ExpenseCategoryRaw}
+     */
+    toRaw() {
+        return {
+            key: this.key,
+            name: this.name,
+            color: this.color,
+            archived: this.archived,
+            source_refs: cloneJson(this.source_refs),
+        };
+    }
+}
+
+/**
+ * Represents a shared expense with exact payer contributions and exact owed allocations.
+ * The optional allocation rule records editing intent only; all balances are always computed from allocations so imports and historical rounding remain lossless.
+ */
+export class Expense {
+    /**
+     * Validates one expense against the participant and category inventories.
+     * @param {ExpenseRaw} raw Untrusted expense payload.
+     * @param {Set<string>} participantKeys Valid participant keys.
+     * @param {Set<string>} categoryKeys Valid category keys.
+     */
+    constructor(raw, participantKeys, categoryKeys) {
+        this.id = normalizeExpenseIdentifier(raw?.id, "Expense id");
+        this.description = String(raw?.description || "").trim();
+        if (!this.description) throw new Error(`Expense ${this.id} needs a description.`);
+        this.date = normalizeExpenseDate(raw?.date, `Expense ${this.id} date`);
+        this.currency = normalizeExpenseCurrency(raw?.currency, `Expense ${this.id} currency`);
+        this.amount_minor = normalizePositiveMinorAmount(raw?.amount_minor, `Expense ${this.id} amount_minor`);
+        this.payers = normalizeExpenseAmountLines(raw?.payers, participantKeys, `Expense ${this.id} payers`);
+        this.allocations = normalizeExpenseAmountLines(raw?.allocations, participantKeys, `Expense ${this.id} allocations`);
+        const payerTotal = this.payers.reduce((sum, line) => sum + line.amount_minor, 0);
+        const allocationTotal = this.allocations.reduce((sum, line) => sum + line.amount_minor, 0);
+        if (payerTotal !== this.amount_minor) throw new Error(`Expense ${this.id} payer contributions do not equal its total.`);
+        if (allocationTotal !== this.amount_minor) throw new Error(`Expense ${this.id} allocations do not equal its total.`);
+
+        this.allocation_rule = Expense.normalizeAllocationRule(raw?.allocation_rule, this.allocations, this.amount_minor);
+        this.category_key = raw?.category_key ? normalizeExpenseIdentifier(raw.category_key, `Expense ${this.id} category`) : null;
+        if (this.category_key && !categoryKeys.has(this.category_key)) {
+            throw new Error(`Expense ${this.id} references unknown category ${this.category_key}.`);
+        }
+        this.project_key = raw?.project_key ? normalizeExpenseIdentifier(raw.project_key, `Expense ${this.id} project`) : null;
+        this.section_key = raw?.section_key ? normalizeExpenseIdentifier(raw.section_key, `Expense ${this.id} section`) : null;
+        if (!this.project_key && this.section_key) throw new Error(`Expense ${this.id} cannot define a section without a project.`);
+        this.notes = String(raw?.notes || "");
+        this.created_at = String(raw?.created_at || "");
+        this.updated_at = String(raw?.updated_at || "");
+        this.source = normalizeExpenseSource(raw?.source, `Expense ${this.id} source`);
+        this.searchHaystack = `${this.description} ${this.notes} ${this.category_key || ""} ${this.project_key || ""} ${this.section_key || ""}`.toLowerCase();
+    }
+
+    /**
+     * Validates optional rule metadata and verifies that it describes the same participant set and exact result as the authoritative allocations.
+     * Percentage values use integer basis points summing to 10,000; equal and share rules use positive integer weights; exact values use minor units.
+     * @param {ExpenseAllocationRuleRaw | null | undefined} raw Candidate rule.
+     * @param {ExpenseAmountRaw[]} allocations Authoritative exact allocations.
+     * @param {number} totalMinor Expense total in minor units.
+     * @returns {ExpenseAllocationRuleRaw | null}
+     */
+    static normalizeAllocationRule(raw, allocations, totalMinor) {
+        if (raw === null || raw === undefined) return null;
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Expense allocation_rule must be an object or null.");
+        const type = String(raw.type || "");
+        if (!new Set(["equal", "percentage", "shares", "exact"]).has(type)) {
+            throw new Error(`Unsupported expense allocation rule: ${type || "(empty)"}.`);
+        }
+        if (!Array.isArray(raw.units) || !raw.units.length) throw new Error("Expense allocation_rule needs units.");
+        const units = raw.units.map((candidate, index) => ({
+            participant_key: normalizeExpenseIdentifier(candidate?.participant_key, `Allocation rule unit ${index + 1}`),
+            value: normalizePositiveMinorAmount(candidate?.value, `Allocation rule unit ${index + 1} value`),
+        }));
+        const keys = new Set(units.map((unit) => unit.participant_key));
+        if (keys.size !== units.length) throw new Error("Expense allocation_rule contains duplicate participants.");
+        const allocationKeys = new Set(allocations.map((line) => line.participant_key));
+        if ([...allocationKeys].some((key) => !keys.has(key))) {
+            throw new Error("Expense allocation_rule participants do not match exact allocations.");
+        }
+        if (type === "equal" && units.some((unit) => unit.value !== 1)) {
+            throw new Error("Equal allocation_rule values must all be 1.");
+        }
+        if (type === "percentage" && units.reduce((sum, unit) => sum + unit.value, 0) !== 10000) {
+            throw new Error("Percentage allocation_rule values must sum to 10000 basis points.");
+        }
+        const expected =
+            type === "exact"
+                ? units.map((unit) => ({ participant_key: unit.participant_key, amount_minor: unit.value }))
+                : allocateExpenseByWeights(totalMinor, units);
+        const expectedByKey = new Map(expected.map((line) => [line.participant_key, line.amount_minor]));
+        if (
+            expected.length !== allocations.length ||
+            allocations.some((line) => expectedByKey.get(line.participant_key) !== line.amount_minor)
+        ) {
+            throw new Error("Expense allocation_rule does not reproduce exact allocations.");
+        }
+        return { type: /** @type {ExpenseAllocationRuleType} */ (type), units };
+    }
+
+    /**
+     * Returns a detached JSON-ready expense record.
+     * @returns {ExpenseRaw}
+     */
+    toRaw() {
+        return {
+            id: this.id,
+            description: this.description,
+            date: this.date,
+            currency: this.currency,
+            amount_minor: this.amount_minor,
+            payers: cloneJson(this.payers),
+            allocations: cloneJson(this.allocations),
+            allocation_rule: this.allocation_rule ? cloneJson(this.allocation_rule) : null,
+            category_key: this.category_key,
+            project_key: this.project_key,
+            section_key: this.section_key,
+            notes: this.notes,
+            created_at: this.created_at,
+            updated_at: this.updated_at,
+            source: this.source ? cloneJson(this.source) : null,
+        };
+    }
+}
+
+/**
+ * Represents a direct settlement payment between two ledger participants.
+ * Transfers affect balances but never alter historical expenses or their exact allocations.
+ */
+export class ExpenseTransfer {
+    /**
+     * Validates one transfer against the participant inventory.
+     * @param {ExpenseTransferRaw} raw Untrusted transfer payload.
+     * @param {Set<string>} participantKeys Valid participant keys.
+     */
+    constructor(raw, participantKeys) {
+        this.id = normalizeExpenseIdentifier(raw?.id, "Transfer id");
+        this.date = normalizeExpenseDate(raw?.date, `Transfer ${this.id} date`);
+        this.currency = normalizeExpenseCurrency(raw?.currency, `Transfer ${this.id} currency`);
+        this.amount_minor = normalizePositiveMinorAmount(raw?.amount_minor, `Transfer ${this.id} amount_minor`);
+        this.from_participant_key = normalizeExpenseIdentifier(raw?.from_participant_key, `Transfer ${this.id} sender`);
+        this.to_participant_key = normalizeExpenseIdentifier(raw?.to_participant_key, `Transfer ${this.id} recipient`);
+        if (!participantKeys.has(this.from_participant_key) || !participantKeys.has(this.to_participant_key)) {
+            throw new Error(`Transfer ${this.id} references an unknown participant.`);
+        }
+        if (this.from_participant_key === this.to_participant_key) {
+            throw new Error(`Transfer ${this.id} sender and recipient must differ.`);
+        }
+        this.notes = String(raw?.notes || "");
+        this.created_at = String(raw?.created_at || "");
+        this.updated_at = String(raw?.updated_at || "");
+        this.source = normalizeExpenseSource(raw?.source, `Transfer ${this.id} source`);
+        this.searchHaystack = this.notes.toLowerCase();
+    }
+
+    /**
+     * Returns a detached JSON-ready transfer record.
+     * @returns {ExpenseTransferRaw}
+     */
+    toRaw() {
+        return {
+            id: this.id,
+            date: this.date,
+            currency: this.currency,
+            amount_minor: this.amount_minor,
+            from_participant_key: this.from_participant_key,
+            to_participant_key: this.to_participant_key,
+            notes: this.notes,
+            created_at: this.created_at,
+            updated_at: this.updated_at,
+            source: this.source ? cloneJson(this.source) : null,
+        };
+    }
+}
+
+/**
+ * Owns a complete versioned expense ledger and enforces cross-record references and source identities.
+ * The model is intentionally provider-neutral: source-specific reconstruction belongs in private import scripts, while this document retains only exact resulting money movements.
+ */
+export class ExpenseDocument {
+    /**
+     * Creates a validated ledger from normalized model objects.
+     * Callers should generally use fromRaw() so all uniqueness and reference checks run together.
+     * @param {ExpenseParticipant[]} participants Participant inventory.
+     * @param {ExpenseCategory[]} categories Category inventory.
+     * @param {Expense[]} expenses Historical expense rows.
+     * @param {ExpenseTransfer[]} transfers Historical settlement rows.
+     * @param {string} generatedAt Last successful serialization timestamp.
+     */
+    constructor(participants, categories, expenses, transfers, generatedAt) {
+        this.schema_version = 1;
+        this.generated_at = generatedAt;
+        this.participants = participants;
+        this.categories = categories;
+        this.expenses = expenses;
+        this.transfers = transfers;
+        this.participantsByKey = new Map(participants.map((participant) => [participant.key, participant]));
+        this.categoriesByKey = new Map(categories.map((category) => [category.key, category]));
+        this.expensesById = new Map(expenses.map((expense) => [expense.id, expense]));
+        this.transfersById = new Map(transfers.map((transfer) => [transfer.id, transfer]));
+    }
+
+    /**
+     * Returns an empty but valid ledger for new workspace initialization.
+     * @param {string} [generatedAt] Optional generation timestamp.
+     * @returns {ExpenseDocument}
+     */
+    static createEmpty(generatedAt = "") {
+        return new ExpenseDocument([], [], [], [], generatedAt);
+    }
+
+    /**
+     * Parses one expense document and validates schema version, stable identities, references, exact sums, and import-source uniqueness.
+     * @param {unknown} raw Untrusted expenses.json payload.
+     * @returns {ExpenseDocument}
+     */
+    static fromRaw(raw) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("expenses.json must be a JSON object.");
+        const rawObj = /** @type {ExpensesFileRaw} */ (raw);
+        if (Number(rawObj.schema_version) !== 1) throw new Error("expenses.json must use schema_version 1.");
+        const participantsRaw = Array.isArray(rawObj.participants) ? rawObj.participants : [];
+        const categoriesRaw = Array.isArray(rawObj.categories) ? rawObj.categories : [];
+        const participants = participantsRaw.map((participant) => new ExpenseParticipant(participant));
+        const categories = categoriesRaw.map((category) => new ExpenseCategory(category));
+        ExpenseDocument.assertUnique(participants.map((participant) => participant.key), "participant key");
+        ExpenseDocument.assertUnique(categories.map((category) => category.key), "category key");
+        const participantKeys = new Set(participants.map((participant) => participant.key));
+        const categoryKeys = new Set(categories.map((category) => category.key));
+        const expenses = (Array.isArray(rawObj.expenses) ? rawObj.expenses : []).map(
+            (expense) => new Expense(expense, participantKeys, categoryKeys),
+        );
+        const transfers = (Array.isArray(rawObj.transfers) ? rawObj.transfers : []).map(
+            (transfer) => new ExpenseTransfer(transfer, participantKeys),
+        );
+        ExpenseDocument.assertUnique(expenses.map((expense) => expense.id), "expense id");
+        ExpenseDocument.assertUnique(transfers.map((transfer) => transfer.id), "transfer id");
+        ExpenseDocument.assertUnique(
+            expenses.filter((expense) => expense.source).map((expense) => `${expense.source.provider}:${expense.source.id}`),
+            "expense source identity",
+        );
+        ExpenseDocument.assertUnique(
+            transfers.filter((transfer) => transfer.source).map((transfer) => `${transfer.source.provider}:${transfer.source.id}`),
+            "transfer source identity",
+        );
+        return new ExpenseDocument(
+            participants,
+            categories,
+            expenses,
+            transfers,
+            typeof rawObj.generated_at === "string" ? rawObj.generated_at : "",
+        );
+    }
+
+    /**
+     * Rejects duplicate stable keys while preserving the original document order for rendering and review.
+     * @param {string[]} values Values that must be unique.
+     * @param {string} label Human-readable identity kind.
+     * @returns {void}
+     */
+    static assertUnique(values, label) {
+        const seen = new Set();
+        for (const value of values) {
+            if (seen.has(value)) throw new Error(`expenses.json contains duplicate ${label} ${value}.`);
+            seen.add(value);
+        }
+    }
+
+    /**
+     * Finds one expense by stable id.
+     * @param {string} id Expense id.
+     * @returns {Expense | null}
+     */
+    getExpenseById(id) {
+        return this.expensesById.get(String(id || "")) || null;
+    }
+
+    /**
+     * Finds one transfer by stable id.
+     * @param {string} id Transfer id.
+     * @returns {ExpenseTransfer | null}
+     */
+    getTransferById(id) {
+        return this.transfersById.get(String(id || "")) || null;
+    }
+
+    /**
+     * Returns a detached JSON-ready ledger preserving collection order.
+     * @returns {ExpensesFileRaw}
+     */
+    toObject() {
+        return {
+            schema_version: this.schema_version,
+            generated_at: this.generated_at,
+            participants: this.participants.map((participant) => participant.toRaw()),
+            categories: this.categories.map((category) => category.toRaw()),
+            expenses: this.expenses.map((expense) => expense.toRaw()),
+            transfers: this.transfers.map((transfer) => transfer.toRaw()),
+        };
+    }
+
+    /**
+     * Serializes the complete ledger with stable object-key ordering and a trailing newline.
+     * @returns {string}
+     */
+    toJson() {
+        return jsonStringifySorted(this.toObject());
+    }
+}
+
+/**
+ * Represents integrity and summary metadata for one expense document.
+ * Keeping this separate from the ledger allows lightweight repository checks and gives future schema versions room to shard ledgers without changing workspace discovery.
+ */
+export class ExpenseManifest {
+    /**
+     * Creates already validated manifest metadata.
+     * @param {ExpenseManifestFileRaw} raw Normalized manifest payload.
+     */
+    constructor(raw) {
+        this.schema_version = 1;
+        this.generated_at = String(raw.generated_at || "");
+        this.path = String(raw.path || "");
+        this.sha = String(raw.sha || "");
+        this.size = Number(raw.size || 0);
+        this.participants = Number(raw.participants || 0);
+        this.categories = Number(raw.categories || 0);
+        this.expenses = Number(raw.expenses || 0);
+        this.transfers = Number(raw.transfers || 0);
+        this.currencies = Array.isArray(raw.currencies) ? raw.currencies.slice() : [];
+        this.date_from = raw.date_from || null;
+        this.date_to = raw.date_to || null;
+    }
+
+    /**
+     * Parses and validates a persisted expense manifest, optionally requiring the exact workspace-configured document path.
+     * @param {unknown} raw Untrusted manifest payload.
+     * @param {string} [expectedPath] Workspace-configured expense document path.
+     * @returns {ExpenseManifest}
+     */
+    static fromRaw(raw, expectedPath = "") {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+            throw new Error("expenses-manifest.json must be a JSON object.");
+        }
+        const rawObj = /** @type {ExpenseManifestFileRaw} */ (raw);
+        if (Number(rawObj.schema_version) !== 1) throw new Error("expenses-manifest.json must use schema_version 1.");
+        const path = normalizeRepositoryPath(rawObj.path, "expenses-manifest.json path");
+        if (expectedPath && path !== normalizeRepositoryPath(expectedPath, "Expense document path")) {
+            throw new Error("expenses-manifest.json path does not match the workspace expense document.");
+        }
+        const sha = String(rawObj.sha || "").trim().toLowerCase();
+        if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("expenses-manifest.json contains an invalid blob SHA.");
+        const integerFields = ["size", "participants", "categories", "expenses", "transfers"];
+        for (const field of integerFields) {
+            const value = Number(rawObj[field]);
+            if (!Number.isSafeInteger(value) || value < 0) throw new Error(`expenses-manifest.json ${field} must be a non-negative integer.`);
+        }
+        const currencies = Array.isArray(rawObj.currencies)
+            ? rawObj.currencies.map((currency) => normalizeExpenseCurrency(currency, "Manifest currency"))
+            : [];
+        ExpenseDocument.assertUnique(currencies, "manifest currency");
+        const dateFrom = rawObj.date_from === null || rawObj.date_from === undefined ? null : normalizeExpenseDate(rawObj.date_from, "Manifest date_from");
+        const dateTo = rawObj.date_to === null || rawObj.date_to === undefined ? null : normalizeExpenseDate(rawObj.date_to, "Manifest date_to");
+        if ((dateFrom === null) !== (dateTo === null) || (dateFrom && dateTo && dateFrom > dateTo)) {
+            throw new Error("expenses-manifest.json contains an invalid date range.");
+        }
+        return new ExpenseManifest({
+            schema_version: 1,
+            generated_at: typeof rawObj.generated_at === "string" ? rawObj.generated_at : "",
+            path,
+            sha,
+            size: Number(rawObj.size),
+            participants: Number(rawObj.participants),
+            categories: Number(rawObj.categories),
+            expenses: Number(rawObj.expenses),
+            transfers: Number(rawObj.transfers),
+            currencies: [...currencies].sort(),
+            date_from: dateFrom,
+            date_to: dateTo,
+        });
+    }
+
+    /**
+     * Builds manifest metadata directly from the exact serialized ledger content that will be saved in the same Git commit.
+     * @param {ExpenseDocument} document Expense document represented by content.
+     * @param {string} path Workspace-relative expense document path.
+     * @param {string} content Exact UTF-8 JSON content.
+     * @param {string} generatedAt Manifest generation timestamp.
+     * @returns {ExpenseManifest}
+     */
+    static fromDocument(document, path, content, generatedAt) {
+        const dated = [...document.expenses, ...document.transfers];
+        const dates = dated.map((item) => item.date).sort();
+        const currencies = [...new Set(dated.map((item) => item.currency))].sort();
+        return ExpenseManifest.fromRaw(
+            {
+                schema_version: 1,
+                generated_at: generatedAt,
+                path,
+                sha: gitBlobSha1(content),
+                size: utf8ByteLength(content),
+                participants: document.participants.length,
+                categories: document.categories.length,
+                expenses: document.expenses.length,
+                transfers: document.transfers.length,
+                currencies,
+                date_from: dates[0] || null,
+                date_to: dates[dates.length - 1] || null,
+            },
+            path,
+        );
+    }
+
+    /**
+     * Verifies that loaded expense content matches the hash and byte count advertised by this manifest.
+     * @param {string} content Exact UTF-8 ledger content.
+     * @returns {void}
+     */
+    verifyContent(content) {
+        if (gitBlobSha1(content) !== this.sha) throw new Error(`Expense document SHA mismatch for ${this.path}.`);
+        if (utf8ByteLength(content) !== this.size) throw new Error(`Expense document size mismatch for ${this.path}.`);
+    }
+
+    /**
+     * Returns a detached JSON-ready manifest representation.
+     * @returns {ExpenseManifestFileRaw}
+     */
+    toObject() {
+        return {
+            schema_version: this.schema_version,
+            generated_at: this.generated_at,
+            path: this.path,
+            sha: this.sha,
+            size: this.size,
+            participants: this.participants,
+            categories: this.categories,
+            expenses: this.expenses,
+            transfers: this.transfers,
+            currencies: this.currencies.slice(),
+            date_from: this.date_from,
+            date_to: this.date_to,
+        };
+    }
+
+    /**
+     * Serializes manifest metadata using the shared deterministic JSON format.
      * @returns {string}
      */
     toJson() {

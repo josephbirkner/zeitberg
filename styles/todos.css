@@ -1,0 +1,437 @@
+/* TODO navigation, lists, editor details, and TODO-specific responsive rules. */
+
+.todo-conflict-card {
+  width: min(760px, calc(100vw - 24px));
+}
+
+.todo-conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+}
+
+.todo-conflict-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.todo-conflict-comparison {
+  overflow-wrap: anywhere;
+}
+
+.todo-conflict-actions {
+  justify-content: flex-end;
+}
+
+html.ui-narrow .todo-conflict-dialog {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+}
+
+html.ui-narrow .todo-conflict-card {
+  width: 100%;
+  min-height: 100%;
+  border-radius: 0;
+}
+
+body.app-mode #todoView {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar[data-active-tab="search"] .global-search,
+.topbar[data-active-tab="todos"] .global-search {
+  flex: 1;
+  max-width: 720px;
+}
+
+.todo-topbar-controls,
+.todo-view-toggles {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.todo-topbar-controls .btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+}
+
+.todo-view-toggles .btn[aria-pressed="true"] {
+  border-color: rgba(var(--accent-rgb), 0.9);
+  background: rgba(var(--accent-rgb), 0.28);
+  box-shadow: inset 0 -2px 0 rgba(var(--accent-rgb), 0.9);
+}
+
+.todo-view {
+  min-height: 0;
+  background: color-mix(in srgb, var(--bg) 88%, var(--text) 12%);
+}
+
+.todo-toolbar {
+  flex: none;
+  min-height: 40px;
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+}
+
+.todo-project-filters {
+  min-width: 0;
+  padding: 1px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  scrollbar-width: none;
+}
+
+.todo-project-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.todo-project-filter {
+  flex: none;
+  min-height: 29px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-faint);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
+.todo-project-filter:hover,
+.todo-project-filter:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.7);
+  color: var(--text);
+}
+
+.todo-project-filter[aria-pressed="true"] {
+  border-color: rgba(var(--accent-rgb), 0.9);
+  background: rgba(var(--accent-rgb), 0.24);
+  color: var(--text);
+}
+
+.todo-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0 18px;
+  outline: none;
+}
+
+.todo-list:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.42);
+}
+
+.todo-project-group {
+  --todo-project-color: var(--border);
+  margin: 7px 7px 13px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-faint);
+}
+
+.todo-group-header,
+.todo-section-header {
+  min-height: 34px;
+  padding: 5px 7px 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.todo-group-header {
+  border-bottom: 1px solid var(--border);
+  border-left: 4px solid var(--todo-project-color);
+  background: var(--surface-soft);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.todo-group-title,
+.todo-section-header > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-group-count {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.55rem;
+}
+
+.todo-group-add {
+  flex: none;
+  width: 25px;
+  height: 25px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.todo-group-add:hover,
+.todo-group-add:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.75);
+  background: rgba(var(--accent-rgb), 0.18);
+  color: var(--text);
+}
+
+.todo-section-group {
+  margin: 5px 0 0 13px;
+  border-top: 1px solid var(--border);
+}
+
+.todo-section-header {
+  color: var(--muted);
+  background: var(--surface-faint);
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.todo-row {
+  --todo-depth: 0;
+  --todo-project-color: var(--border);
+  position: relative;
+  min-height: 50px;
+  margin: 0 5px;
+  padding: 7px 10px 7px 8px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--todo-project-color);
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  cursor: default;
+}
+
+.todo-project-group > .todo-row,
+.todo-section-group > .todo-row {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.todo-row:hover {
+  background: var(--surface-faint);
+}
+
+.todo-row.is-selected {
+  background: rgba(var(--accent-rgb), 0.13);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.34);
+}
+
+.todo-row.is-completed {
+  opacity: 0.58;
+}
+
+.todo-row.is-completed .todo-content {
+  text-decoration: line-through;
+}
+
+.todo-check {
+  width: 19px;
+  height: 19px;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--control-bg);
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.todo-check-icon {
+  width: 0.78rem;
+  height: 0.78rem;
+}
+
+.todo-check:hover,
+.todo-check:focus-visible {
+  border-color: var(--accent-2);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(57, 217, 138, 0.16);
+}
+
+.todo-row.is-completed .todo-check {
+  border-color: rgba(57, 217, 138, 0.7);
+  background: rgba(57, 217, 138, 0.26);
+}
+
+.todo-body {
+  min-width: 0;
+  padding-left: calc(var(--todo-depth) * 18px);
+}
+
+.todo-content {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-description {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  display: -webkit-box;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.todo-meta {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.5625rem;
+}
+
+.todo-issue-link,
+.todo-dialog-issue-link {
+  color: rgba(153, 187, 255, 0.9);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.todo-issue-link:hover,
+.todo-issue-link:focus-visible,
+.todo-dialog-issue-link:hover,
+.todo-dialog-issue-link:focus-visible {
+  color: #bfd2ff;
+  outline: none;
+  text-decoration: underline;
+}
+
+.todo-issue-icon {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.todo-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.todo-recurrence-icon {
+  width: 0.68rem;
+  height: 0.68rem;
+}
+
+.todo-due.is-overdue {
+  color: rgba(255, 117, 142, 0.95);
+}
+
+.todo-due.is-today {
+  color: rgba(250, 208, 0, 0.95);
+}
+
+.todo-priority {
+  font-weight: 800;
+}
+
+.todo-priority.priority-4 {
+  color: rgba(255, 94, 122, 0.95);
+}
+
+.todo-priority.priority-3 {
+  color: rgba(255, 174, 76, 0.95);
+}
+
+.todo-priority.priority-2 {
+  color: rgba(93, 177, 255, 0.95);
+}
+
+.todo-empty {
+  padding: 32px 16px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.todo-dialog-grid {
+  align-items: start;
+}
+
+html.ui-narrow .topbar[data-active-tab="search"] .global-search,
+html.ui-narrow .topbar[data-active-tab="todos"] .global-search {
+  max-width: none;
+}
+
+html.ui-narrow .todo-toolbar {
+  min-height: 40px;
+}
+
+html.ui-narrow .todo-project-group {
+  margin-right: 4px;
+  margin-left: 4px;
+}
+
+html.ui-compact .todo-toolbar {
+  min-height: 40px;
+}
+
+html.ui-compact .todo-group-header,
+html.ui-compact .todo-section-header {
+  padding-right: 4px;
+  padding-left: 7px;
+}
+
+html.ui-compact .todo-section-group {
+  margin-left: 8px;
+}
+
+html.ui-compact .todo-row {
+  padding-right: 6px;
+  padding-left: 6px;
+}
+
+:root[data-theme="light"] .todo-issue-link,
+:root[data-theme="light"] .todo-dialog-issue-link {
+  color: #315e9d;
+}

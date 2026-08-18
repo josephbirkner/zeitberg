@@ -1,6 +1,13 @@
 {
-  "$schema": "https://zeitplural.io/schema/workspace-v1.schema.json",
+  "$schema": "https://zeitberg.io/schema/workspace-v1.schema.json",
   "components": {
+    "expenses": {
+      "paths": {
+        "document": "data/expenses.json",
+        "manifest": "data/index/expenses-manifest.json"
+      },
+      "type": "expenses"
+    },
     "tasks": {
       "paths": {
         "document": "data/todos.json"

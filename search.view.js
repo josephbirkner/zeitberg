@@ -1,9 +1,10 @@
-import { formatDuration, safeText, setVisible } from "./utils.js";
+import { safeText, setVisible } from "./utils.js";
 
 /**
  * @typedef {Object} SearchViewOptions
  * @property {import("./store.js").EntryStore} store
  * @property {import("./utils.js").TimeContext} timeContext
+ * @property {import("./locale.js").LocaleService} locale
  * @property {Object} elements
  * @property {HTMLElement} elements.searchView
  * @property {HTMLInputElement} elements.searchInput
@@ -15,6 +16,7 @@ import { formatDuration, safeText, setVisible } from "./utils.js";
  * @property {HTMLElement} elements.stats
  * @property {HTMLTableSectionElement} elements.entriesTbody
  * @property {(entry: import("./model.js").Entry) => void} onJumpToEntry
+ * @property {() => void} [onStateChange]
  */
 
 /**
@@ -30,6 +32,7 @@ export class SearchView {
     constructor(options) {
         this.store = options.store;
         this.timeContext = options.timeContext;
+        this.locale = options.locale;
 
         this.searchViewEl = options.elements.searchView;
         this.searchInput = options.elements.searchInput;
@@ -41,13 +44,25 @@ export class SearchView {
         this.statsEl = options.elements.stats;
         this.entriesTbody = options.elements.entriesTbody;
         this.onJumpToEntry = options.onJumpToEntry;
+        this.onStateChange = options.onStateChange || (() => {});
 
         this.active = false;
         this.query = "";
         this.allEntries = [];
         this.searchDirty = false;
+        this.restoringRoute = false;
 
         this.bindEvents();
+    }
+
+    /**
+     * Invalidates localized options and result cells after the application language changes.
+     * The active filters retain their stable values while user-facing labels are rebuilt.
+     * @returns {void}
+     */
+    refreshLocale() {
+        this.searchDirty = true;
+        if (this.active || this.allEntries.length) this.applyFiltersAndRender();
     }
 
     /**
@@ -102,6 +117,64 @@ export class SearchView {
         this.query = String(value || "");
         if (this.active) this.searchInput.value = this.query;
         if (shouldRender && this.active) this.applyFiltersAndRender();
+        this.notifyStateChange();
+    }
+
+    /**
+     * Returns the serializable filter state owned by the Time search panel.
+     * App merges this with the current week state when producing a `/time` route, so switching between timeline and search never loses either context.
+     * @returns {{query: string, project: string, from: string, to: string, maxRows: number, sort: "asc" | "desc"}}
+     */
+    getRouteState() {
+        return {
+            query: this.query,
+            project: this.projectSelect.value,
+            from: this.fromDateInput.value,
+            to: this.toDateInput.value,
+            maxRows: Math.max(50, Number.parseInt(this.maxRowsInput.value || "500", 10) || 500),
+            sort: this.sortSelect.value === "asc" ? "asc" : "desc",
+        };
+    }
+
+    /**
+     * Restores search filters after repository data and project options are available.
+     * Invalid project values fall back to the all-project option instead of leaving the select in a browser-dependent state.
+     * @param {Object.<string, unknown>} state Parsed route state.
+     * @returns {void}
+     */
+    restoreRouteState(state) {
+        const routeState = state && typeof state === "object" ? state : {};
+        this.restoringRoute = true;
+        try {
+            this.query = String(routeState.query || "");
+            this.searchInput.value = this.query;
+            this.fromDateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(String(routeState.from || ""))
+                ? String(routeState.from)
+                : "";
+            this.toDateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(String(routeState.to || ""))
+                ? String(routeState.to)
+                : "";
+            const maxRows = Number(routeState.maxRows);
+            this.maxRowsInput.value = String(Number.isFinite(maxRows) ? Math.max(50, Math.min(10000, Math.round(maxRows))) : 500);
+            this.sortSelect.value = routeState.sort === "asc" ? "asc" : "desc";
+            this.searchDirty = true;
+            this.applyFiltersAndRender();
+            const project = String(routeState.project || "");
+            this.projectSelect.value = project;
+            if (this.projectSelect.value !== project) this.projectSelect.value = "";
+            this.applyFiltersAndRender();
+        } finally {
+            this.restoringRoute = false;
+        }
+    }
+
+    /**
+     * Announces a user-visible filter change to the route coordinator.
+     * Notifications are suppressed during history restoration to avoid writing a second route while popstate is still being applied.
+     * @returns {void}
+     */
+    notifyStateChange() {
+        if (!this.restoringRoute) this.onStateChange();
     }
 
     /**
@@ -141,21 +214,23 @@ export class SearchView {
         this.projectSelect.innerHTML = "";
         const allOpt = document.createElement("option");
         allOpt.value = "";
-        allOpt.textContent = "All projects";
+        allOpt.textContent = this.locale.t("search.allProjects");
         this.projectSelect.append(allOpt);
 
         const noneOpt = document.createElement("option");
         noneOpt.value = "__none__";
-        noneOpt.textContent = "No project";
+        noneOpt.textContent = this.locale.t("search.noProject");
         this.projectSelect.append(noneOpt);
 
-        const sortedKnown = knownProjects.slice().sort((a, b) => a.name.localeCompare(b.name));
+        const sortedKnown = knownProjects.slice().sort((a, b) => this.locale.compare(a.name, b.name));
         for (const project of sortedKnown) {
             const group = document.createElement("optgroup");
-            group.label = project.archived ? `${project.name} (archived)` : project.name;
-            group.append(new Option(`All ${project.name}`, `p:${project.key}`));
+            group.label = project.archived
+                ? `${project.name} (${this.locale.t("search.archived")})`
+                : project.name;
+            group.append(new Option(this.locale.t("search.allProject", { project: project.name }), `p:${project.key}`));
             for (const section of project.listSections()) {
-                const suffix = section.archived ? " (archived)" : "";
+                const suffix = section.archived ? ` (${this.locale.t("search.archived")})` : "";
                 group.append(new Option(`${section.name}${suffix}`, `s:${project.key}/${section.key}`));
             }
             this.projectSelect.append(group);
@@ -222,14 +297,18 @@ export class SearchView {
             }
             return sum;
         }, 0);
-        this.statsEl.textContent = `${total} match • ${formatDuration(dur)} total • showing ${shown.length}`;
+        this.statsEl.textContent = this.locale.t("search.stats", {
+            matches: this.locale.formatNumber(total),
+            duration: this.locale.formatDuration(dur),
+            shown: this.locale.formatNumber(shown.length),
+        });
 
         this.entriesTbody.innerHTML = "";
         const frag = document.createDocumentFragment();
         for (const entry of shown) {
             const tr = document.createElement("tr");
             tr.classList.add("row-link", "search-result-card");
-            tr.title = "Open this entry in Week view";
+            tr.title = this.locale.t("search.openWeek");
             tr.tabIndex = 0;
             tr.addEventListener("click", () => this.onJumpToEntry(entry));
             tr.addEventListener("keydown", (event) => {
@@ -240,37 +319,45 @@ export class SearchView {
 
             const tdDate = document.createElement("td");
             tdDate.className = "search-result-cell search-result-date";
-            tdDate.dataset.label = "Date";
-            tdDate.textContent = this.timeContext.formatDate(entry.startDate);
+            tdDate.dataset.label = this.locale.t("search.date");
+            tdDate.textContent = this.locale.formatDate(entry.startDate, this.timeContext.timeZone);
             const tdStart = document.createElement("td");
             tdStart.className = "search-result-cell search-result-start";
-            tdStart.dataset.label = "Start";
-            tdStart.textContent = this.timeContext.formatTime(entry.startDate);
+            tdStart.dataset.label = this.locale.t("search.start");
+            tdStart.textContent = this.locale.formatTime(entry.startDate, this.timeContext.timeZone);
             const tdEnd = document.createElement("td");
             tdEnd.className = "search-result-cell search-result-end";
-            tdEnd.dataset.label = "End";
-            tdEnd.textContent = entry.endDate ? this.timeContext.formatTime(entry.endDate) : "—";
+            tdEnd.dataset.label = this.locale.t("search.end");
+            tdEnd.textContent = entry.endDate
+                ? this.locale.formatTime(entry.endDate, this.timeContext.timeZone)
+                : "—";
             const tdDur = document.createElement("td");
             tdDur.className = "search-result-cell search-result-duration";
-            tdDur.dataset.label = "Duration";
-            tdDur.textContent = formatDuration(entry.durationSeconds);
+            tdDur.dataset.label = this.locale.t("search.duration");
+            tdDur.textContent = this.locale.formatDuration(entry.durationSeconds);
 
             const tdProject = document.createElement("td");
             tdProject.className = "search-result-cell search-result-project";
-            tdProject.dataset.label = "Project";
-            tdProject.textContent = this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) || "No project";
+            tdProject.dataset.label = this.locale.t("search.project");
+            tdProject.textContent =
+                this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) || this.locale.t("search.noProject");
             const tdDesc = document.createElement("td");
             tdDesc.className = "search-result-cell search-result-description";
-            tdDesc.dataset.label = "Description";
+            tdDesc.dataset.label = this.locale.t("search.description");
             tdDesc.textContent = safeText(entry.description);
             const tdBillable = document.createElement("td");
             tdBillable.className = "search-result-cell search-result-billable";
-            tdBillable.dataset.label = "Billable";
-            tdBillable.textContent = entry.billable === true ? "Yes" : entry.billable === false ? "No" : "—";
+            tdBillable.dataset.label = this.locale.t("search.billable");
+            tdBillable.textContent = entry.billable === true
+                ? this.locale.t("common.yes")
+                : entry.billable === false
+                  ? this.locale.t("common.no")
+                  : "—";
 
             tr.append(tdDate, tdStart, tdEnd, tdDur, tdProject, tdDesc, tdBillable);
             frag.append(tr);
         }
         this.entriesTbody.append(frag);
+        this.notifyStateChange();
     }
 }

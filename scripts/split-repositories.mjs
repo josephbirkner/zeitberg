@@ -30,7 +30,7 @@ const CODE_PATHS = [
 ];
 
 const DATA_PATHS = [
-    "zeitplural.json",
+    "zeitberg.json",
     "data/index/entries-manifest.json",
     "data/projects.json",
     "data/todos.json",
@@ -73,7 +73,7 @@ function parseArgs(argv) {
             process.stdout.write(
                 "Usage: node scripts/split-repositories.mjs --output PATH [--source PATH_OR_URL] " +
                     "[--branch NAME] [--skip-verify]\n\n" +
-                    "Creates PATH/zeitplural and PATH/zeitplural-data from fresh clones. It never pushes or modifies the source.\n",
+                    "Creates PATH/zeitberg and PATH/zeitberg-data from fresh clones. It never pushes or modifies the source.\n",
             );
             process.exit(0);
         } else {
@@ -124,8 +124,8 @@ function normalizeSource(source) {
  * @returns {{code: string, data: string}}
  */
 function prepareDestinations(outputParent) {
-    const code = join(outputParent, "zeitplural");
-    const data = join(outputParent, "zeitplural-data");
+    const code = join(outputParent, "zeitberg");
+    const data = join(outputParent, "zeitberg-data");
     if (existsSync(code) || existsSync(data)) {
         throw new Error(`Refusing to overwrite existing split destination under ${outputParent}.`);
     }
@@ -227,24 +227,23 @@ function finalizeCodeLayout(repository) {
             .replaceAll("../", "../")
             .replaceAll("index.html", "index.html")
             .replaceAll("app.js", "app.js")
-            .replaceAll("style.css", "style.css")
             .replaceAll("/?source=local", "/?source=local")
             .replaceAll('"include": ["*.js"]', '"include": ["*.js"]')
-            .replaceAll('repo: "zeitplural-data"', 'repo: "zeitplural-data"')
+            .replaceAll('repo: "zeitberg-data"', 'repo: "zeitberg-data"')
             .replaceAll(
                 "Application files live at the repository root; private workspace documents are loaded exclusively from a separate repository.",
                 "Application files live at the repository root; private workspace documents are loaded exclusively from a separate repository.",
             )
             .replaceAll(
-                "With a sibling `zeitplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
-                "With a sibling `zeitplural-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
+                "With a sibling `zeitberg-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
+                "With a sibling `zeitberg-data` checkout, `--workspace` may be omitted. Open `http://127.0.0.1:8000/?source=local`.",
             );
         if (after !== before) writeFileSync(path, after, "utf8");
     }
     const status = run("git", ["status", "--porcelain"], repository, true);
     if (!status.trim()) return;
     run("git", ["add", "-A"], repository);
-    run("git", ["commit", "-m", "Finalize top-level zeitplural layout."], repository);
+    run("git", ["commit", "-m", "Finalize top-level zeitberg layout."], repository);
 }
 
 /**
@@ -261,7 +260,7 @@ function auditFilteredHistory(codeRepository, dataRepository) {
         .filter(Boolean);
     const leakedPublicPath = publicPaths.find(
         (path) =>
-            path === "zeitplural.json" ||
+            path === "zeitberg.json" ||
             path.startsWith("data/") ||
             /^\d{4}\.csv$/i.test(path) ||
             /^\d{4}\/\d+\.png$/i.test(path),
@@ -274,7 +273,7 @@ function auditFilteredHistory(codeRepository, dataRepository) {
         .filter(Boolean);
     const invalidDataPath = dataPaths.find(
         (path) =>
-            path !== "zeitplural.json" &&
+            path !== "zeitberg.json" &&
             path !== "data/index/entries-manifest.json" &&
             path !== "data/projects.json" &&
             path !== "data/todos.json" &&

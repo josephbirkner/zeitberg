@@ -123,6 +123,41 @@ test("provider ids resolve independently from editable display names", () => {
     });
 });
 
+test("GitHub section labels may be reused across independently bound repositories", () => {
+    const project = (key, repository) => ({
+        archived: false,
+        billable: false,
+        color: "#315e9d",
+        external_refs: [{ provider: "github", id: repository }],
+        key,
+        name: key.toUpperCase(),
+        sections: [
+            {
+                archived: false,
+                billable: null,
+                color: null,
+                external_refs: [{ provider: "github-label", id: "type/feature" }],
+                key: "features",
+                name: "Features",
+            },
+        ],
+    });
+    const projects = ProjectList.fromRaw({
+        generated_at: "",
+        schema_version: 2,
+        projects: [project("alpha", "owner/alpha"), project("beta", "owner/beta")],
+    });
+
+    assert.equal(
+        projects.getProjectByKey("alpha")?.getSectionByKey("features")?.getExternalReference("github-label")?.id,
+        "type/feature",
+    );
+    assert.equal(
+        projects.getProjectByKey("beta")?.getSectionByKey("features")?.getExternalReference("github-label")?.id,
+        "type/feature",
+    );
+});
+
 test("TODO store rejects section keys outside the shared taxonomy", () => {
     const entryStore = new EntryStore(new TimeContext("Europe/Berlin"));
     entryStore.setProjectList(makeProjects());

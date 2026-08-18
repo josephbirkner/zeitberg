@@ -1,17 +1,50 @@
 {
-  "name": "zeitplural",
-  "version": "1.0.0",
+  "name": "zeitberg",
+  "version": "1.1.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "build:icons": "node scripts/build-icons.mjs",
     "check:data": "node scripts/validate-workspace.mjs",
+    "coverage": "node scripts/run-coverage.mjs",
     "import:todoist": "node scripts/import-todoist.mjs",
     "split:prepare": "node scripts/split-repositories.mjs",
     "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/browser-smoke.mjs",
     "typecheck": "npx tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "c8": "^12.0.0",
+    "fake-indexeddb": "^6.2.5",
+    "istanbul-lib-coverage": "^3.2.2",
+    "playwright": "^1.62.1",
+    "sharp": "^0.35.3",
+    "typescript": "^5.9.3",
+    "v8-to-istanbul": "^9.3.0"
+  },
+  "c8": {
+    "all": true,
+    "check-coverage": true,
+    "lines": 90,
+    "include": [
+      "appstate.js",
+      "cache.js",
+      "config.js",
+      "datasource.js",
+      "locale.js",
+      "model.js",
+      "oauth.js",
+      "routing.js",
+      "store.js",
+      "utils.js"
+    ],
+    "reporter": [
+      "text",
+      "html",
+      "json-summary",
+      "lcov"
+    ],
+    "reports-dir": "coverage"
   }
 }

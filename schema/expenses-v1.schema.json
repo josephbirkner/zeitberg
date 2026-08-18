@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zeitberg.io/schema/expenses-v1.schema.json",
+  "title": "Zeitberg Expense Ledger (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["categories", "expenses", "generated_at", "participants", "schema_version", "transfers"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "generated_at": { "type": "string" },
+    "participants": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/participant" }
+    },
+    "categories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/category" }
+    },
+    "expenses": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/expense" }
+    },
+    "transfers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/transfer" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$"
+    },
+    "keyOrNull": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$"
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "minorAmount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "externalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "provider"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "provider"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archived", "key", "name", "source_refs"],
+      "properties": {
+        "archived": { "type": "boolean" },
+        "key": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "source_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/externalReference" }
+        }
+      }
+    },
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archived", "color", "key", "name", "source_refs"],
+      "properties": {
+        "archived": { "type": "boolean" },
+        "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "key": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "source_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/externalReference" }
+        }
+      }
+    },
+    "amountLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount_minor", "participant_key"],
+      "properties": {
+        "amount_minor": { "$ref": "#/$defs/minorAmount" },
+        "participant_key": { "$ref": "#/$defs/id" }
+      }
+    },
+    "allocationUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participant_key", "value"],
+      "properties": {
+        "participant_key": { "$ref": "#/$defs/id" },
+        "value": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "allocationRule": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["type", "units"],
+      "properties": {
+        "type": { "enum": ["equal", "percentage", "shares", "exact"] },
+        "units": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/allocationUnit" }
+        }
+      }
+    },
+    "expense": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allocation_rule",
+        "allocations",
+        "amount_minor",
+        "category_key",
+        "created_at",
+        "currency",
+        "date",
+        "description",
+        "id",
+        "notes",
+        "payers",
+        "project_key",
+        "section_key",
+        "source",
+        "updated_at"
+      ],
+      "properties": {
+        "allocation_rule": { "$ref": "#/$defs/allocationRule" },
+        "allocations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/amountLine" } },
+        "amount_minor": { "$ref": "#/$defs/minorAmount" },
+        "category_key": { "$ref": "#/$defs/keyOrNull" },
+        "created_at": { "type": "string" },
+        "currency": { "$ref": "#/$defs/currency" },
+        "date": { "$ref": "#/$defs/date" },
+        "description": { "type": "string", "minLength": 1 },
+        "id": { "$ref": "#/$defs/id" },
+        "notes": { "type": "string" },
+        "payers": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/amountLine" } },
+        "project_key": { "$ref": "#/$defs/keyOrNull" },
+        "section_key": { "$ref": "#/$defs/keyOrNull" },
+        "source": { "$ref": "#/$defs/source" },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "transfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amount_minor",
+        "created_at",
+        "currency",
+        "date",
+        "from_participant_key",
+        "id",
+        "notes",
+        "source",
+        "to_participant_key",
+        "updated_at"
+      ],
+      "properties": {
+        "amount_minor": { "$ref": "#/$defs/minorAmount" },
+        "created_at": { "type": "string" },
+        "currency": { "$ref": "#/$defs/currency" },
+        "date": { "$ref": "#/$defs/date" },
+        "from_participant_key": { "$ref": "#/$defs/id" },
+        "id": { "$ref": "#/$defs/id" },
+        "notes": { "type": "string" },
+        "source": { "$ref": "#/$defs/source" },
+        "to_participant_key": { "$ref": "#/$defs/id" },
+        "updated_at": { "type": "string" }
+      }
+    }
+  }
+}
