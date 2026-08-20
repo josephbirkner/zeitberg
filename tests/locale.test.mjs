@@ -18,6 +18,8 @@ test("English and German dictionaries expose the same complete key set", () => {
     assert.equal(DE_MESSAGES["landing.toGit"], "> Git");
     assert.match(EN_MESSAGES["landing.similarIntro"], /our review/);
     assert.doesNotMatch(EN_MESSAGES["landing.similarIntro"], /this review/);
+    assert.match(EN_MESSAGES["landing.notZoidbergBody"], /entirely unrelated/);
+    assert.match(DE_MESSAGES["landing.notZoidbergBody"], /keinerlei Verbindung/);
 });
 
 test("all declarative document localization bindings resolve in the fallback dictionary", async () => {

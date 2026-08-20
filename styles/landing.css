@@ -408,7 +408,8 @@ body:not(.app-mode) main {
 }
 
 .landing-reference,
-.landing-similar {
+.landing-similar,
+.landing-not-zoidberg {
   scroll-margin-top: 20px;
   padding: 70px 0 76px;
   border-bottom: 1px solid var(--landing-line);
@@ -536,6 +537,53 @@ body:not(.app-mode) main {
   outline-offset: 3px;
 }
 
+.landing-not-zoidberg {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.72fr) minmax(0, 1.28fr);
+  align-items: center;
+  gap: clamp(42px, 7vw, 92px);
+}
+
+.landing-zoidberg-meme {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--landing-line);
+  background: var(--landing-card);
+}
+
+.landing-zoidberg-meme img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.landing-zoidberg-meme figcaption {
+  padding: 10px 4px 3px;
+  color: var(--landing-slate);
+  font-family: var(--mono);
+  font-size: 0.61rem;
+  line-height: 1.5;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.landing-zoidberg-meme figcaption span {
+  max-width: 520px;
+}
+
+.landing-zoidberg-meme figcaption a {
+  color: var(--landing-blue);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.landing-zoidberg-meme figcaption a:hover,
+.landing-zoidberg-meme figcaption a:focus-visible {
+  color: var(--landing-orange);
+}
+
 .landing-footer {
   padding: 30px 0 38px;
   color: var(--landing-slate);
@@ -598,6 +646,15 @@ body:not(.app-mode) main {
   .landing-similar {
     grid-template-columns: 1fr;
     gap: 36px;
+  }
+
+  .landing-not-zoidberg {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+
+  .landing-zoidberg-meme {
+    width: min(100%, 680px);
   }
 
   .landing-footer {
@@ -694,8 +751,15 @@ body:not(.app-mode) main {
   }
 
   .landing-reference,
-  .landing-similar {
+  .landing-similar,
+  .landing-not-zoidberg {
     padding: 54px 0 58px;
+  }
+
+  .landing-zoidberg-meme figcaption {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .landing-reference-grid {

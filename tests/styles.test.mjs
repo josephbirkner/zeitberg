@@ -62,6 +62,7 @@ test("each stylesheet declares and retains its component ownership", async () =>
     assert.match(landing, /^\/\* Public landing page/);
     assert.match(landing, /\.landing-hero\s*\{/);
     assert.match(landing, /\.landing-landscape\s*\{/);
+    assert.match(landing, /\.landing-not-zoidberg\s*\{/);
     assert.match(landing, /body:not\(\.app-mode\)/);
     assert.doesNotMatch(landing, /\.landing-(?:eyebrow|badges)\b/);
     assert.doesNotMatch(landing, /\.week-grid\s*\{/);
