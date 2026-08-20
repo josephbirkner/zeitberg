@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("the static application enforces first-party scripts and provider-aware connect policy", async () => {
@@ -26,4 +26,13 @@ test("OAuth client ids are explicit public deployment configuration", async () =
     assert.match(html, /name="zeitberg-oauth-codeberg-client-id" content=""/);
     assert.match(html, /id="loginOAuthBtn"/);
     assert.match(html, /id="workspaceCreateOAuthBtn"/);
+});
+
+test("the Zoidberg disclaimer uses a local image and identifies its template source", async () => {
+    const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+    assert.match(html, /id="not-zoidberg"/);
+    assert.match(html, /src="\.\/assets\/why-not-zeitberg\.png"/);
+    assert.match(html, /href="https:\/\/imgflip\.com\/memegenerator\/Futurama-Zoidberg"/);
+    assert.doesNotMatch(html, /<img\b[^>]*\bsrc="https?:\/\//);
+    await access(new URL("../assets/why-not-zeitberg.png", import.meta.url));
 });

@@ -252,3 +252,11 @@ The code for this project was written using large language models with extensive
 The zeitberg mark and landing landscape are original hand-authored SVGs. The mark's iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitberg-mark.svg`](./assets/zeitberg-mark.svg) by `npm run build:icons`. Interface icons use [Google Material Symbols](https://github.com/google/material-design-icons) under the [Apache License 2.0](./icons/LICENSE). The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
 
 No generative or diffusion-based image model was used for the mark, landing landscape, or architecture graphic.
+
+<p align="center">
+  <a href="https://imgflip.com/memegenerator/Futurama-Zoidberg">
+    <img src="./assets/why-not-zeitberg.png" width="640" alt="Dr. Zoidberg asks: Want your data in Git? Why not Zeitberg?" />
+  </a>
+</p>
+
+[`assets/why-not-zeitberg.png`](./assets/why-not-zeitberg.png) is a meme created from the [Futurama Zoidberg template on Imgflip](https://imgflip.com/memegenerator/Futurama-Zoidberg). The underlying Futurama and Dr. Zoidberg artwork is third-party material, remains the property of its respective rights holders, and is not covered by this repository's Apache License 2.0. zeitberg is an independent project and is not affiliated with Futurama or Dr. Zoidberg.
