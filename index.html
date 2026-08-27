@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-8nn3ErIkoHHqsU744KFP3IhPMvCXh92M2FIEznuoiko='; style-src 'self' 'unsafe-inline'; worker-src 'self'"
+      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-YC6KvPsqhNs5PgyEd0Bwid10dRQl12PJCG/EZMP33bY='; style-src 'self' 'unsafe-inline'; worker-src 'self'"
     />
     <meta name="theme-color" content="#17191f" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -36,15 +36,15 @@
     <meta name="twitter:image:alt" content="Why not zeitberg? Dr. Zoidberg presents the zeitberg logo." />
     <link rel="canonical" href="https://zeitberg.io/" />
     <title data-i18n="document.title">zeitberg — time, tasks, expenses → Git</title>
-    <script src="./theme-init.js?v=1.2.0"></script>
+    <script src="./theme-init.js?v=1.2.1"></script>
     <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
-    <link rel="stylesheet" href="./styles/common.css?v=1.2.0" />
-    <link rel="stylesheet" href="./styles/time.css?v=1.2.0" />
-    <link rel="stylesheet" href="./styles/todos.css?v=1.2.0" />
-    <link rel="stylesheet" href="./styles/expenses.css?v=1.2.0" />
-    <link rel="stylesheet" href="./styles/landing.css?v=1.2.0" />
+    <link rel="stylesheet" href="./styles/common.css?v=1.2.1" />
+    <link rel="stylesheet" href="./styles/time.css?v=1.2.1" />
+    <link rel="stylesheet" href="./styles/todos.css?v=1.2.1" />
+    <link rel="stylesheet" href="./styles/expenses.css?v=1.2.1" />
+    <link rel="stylesheet" href="./styles/landing.css?v=1.2.1" />
   </head>
   <body>
     <aside id="appSidebar" class="app-sidebar" data-i18n-aria-label="nav.application" aria-label="Application navigation" hidden>
@@ -753,34 +753,6 @@
       </div>
     </dialog>
 
-    <dialog id="capabilityImportDialog" class="dialog capability-import-dialog">
-      <div class="dialog-card capability-import-card">
-        <div class="dialog-head">
-          <div>
-            <div class="dialog-title" data-i18n="workspace.importTitle">Open capability link?</div>
-            <div id="capabilityImportDetails" class="dialog-meta muted"></div>
-          </div>
-        </div>
-        <p class="workspace-capability-warning" data-i18n="workspace.importWarning">
-          This link contains a bearer credential. Opening it grants this browser the token's access to the workspace shown above.
-        </p>
-        <p class="muted" data-i18n="workspace.importScrubbed">The secret fragment has already been removed from the address bar. It has not been sent to a Git provider or saved.</p>
-        <label id="capabilityHostConfirmWrap" class="workspace-host-confirm" hidden>
-          <input id="capabilityHostConfirm" type="checkbox" />
-          <span id="capabilityHostConfirmText" data-i18n="workspace.trustHost">I trust this custom provider host and permit sending the credential to it.</span>
-        </label>
-        <label class="workspace-remember">
-          <input id="capabilityRemember" type="checkbox" />
-          <span data-i18n="workspace.rememberSession">Remember this token on this device (session-only by default)</span>
-        </label>
-        <pre id="capabilityImportError" class="error" hidden></pre>
-        <div class="row dialog-actions">
-          <button id="capabilityImportCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
-          <button id="capabilityImportOpenBtn" class="btn" type="button" data-i18n="landing.openWorkspace">Open workspace</button>
-        </div>
-      </div>
-    </dialog>
-
     <dialog id="entryDialog" class="dialog">
       <form id="entryForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
@@ -1139,27 +1111,27 @@
     <script type="importmap">
       {
         "imports": {
-          "./appstate.js": "./appstate.js?v=1.2.0",
-          "./cache.js": "./cache.js?v=1.2.0",
-          "./config.js": "./config.js?v=1.2.0",
-          "./datasource.js": "./datasource.js?v=1.2.0",
-          "./expense.view.js": "./expense.view.js?v=1.2.0",
-          "./locale.js": "./locale.js?v=1.2.0",
-          "./model.js": "./model.js?v=1.2.0",
-          "./oauth.js": "./oauth.js?v=1.2.0",
-          "./project.view.js": "./project.view.js?v=1.2.0",
-          "./routing.js": "./routing.js?v=1.2.0",
-          "./search.view.js": "./search.view.js?v=1.2.0",
-          "./shell.view.js": "./shell.view.js?v=1.2.0",
-          "./store.js": "./store.js?v=1.2.0",
-          "./todo.view.js": "./todo.view.js?v=1.2.0",
-          "./utils.js": "./utils.js?v=1.2.0",
-          "./week.view.js": "./week.view.js?v=1.2.0",
-          "./workspace.js": "./workspace.js?v=1.2.0",
-          "./workspace.loader.js": "./workspace.loader.js?v=1.2.0"
+          "./appstate.js": "./appstate.js?v=1.2.1",
+          "./cache.js": "./cache.js?v=1.2.1",
+          "./config.js": "./config.js?v=1.2.1",
+          "./datasource.js": "./datasource.js?v=1.2.1",
+          "./expense.view.js": "./expense.view.js?v=1.2.1",
+          "./locale.js": "./locale.js?v=1.2.1",
+          "./model.js": "./model.js?v=1.2.1",
+          "./oauth.js": "./oauth.js?v=1.2.1",
+          "./project.view.js": "./project.view.js?v=1.2.1",
+          "./routing.js": "./routing.js?v=1.2.1",
+          "./search.view.js": "./search.view.js?v=1.2.1",
+          "./shell.view.js": "./shell.view.js?v=1.2.1",
+          "./store.js": "./store.js?v=1.2.1",
+          "./todo.view.js": "./todo.view.js?v=1.2.1",
+          "./utils.js": "./utils.js?v=1.2.1",
+          "./week.view.js": "./week.view.js?v=1.2.1",
+          "./workspace.js": "./workspace.js?v=1.2.1",
+          "./workspace.loader.js": "./workspace.loader.js?v=1.2.1"
         }
       }
     </script>
-    <script type="module" src="./app.js?v=1.2.0"></script>
+    <script type="module" src="./app.js?v=1.2.1"></script>
   </body>
 </html>
