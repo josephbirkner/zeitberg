@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { allocateExpenseByWeights, ExpenseDocument, ExpenseManifest } from "../model.js";
+import {
+    allocateExpenseByWeights,
+    createDefaultExpenseCategories,
+    ExpenseDocument,
+    ExpenseManifest,
+} from "../model.js";
 import { EntryStore, ExpenseStore } from "../store.js";
 import { TimeContext } from "../utils.js";
 
@@ -51,6 +56,30 @@ function makeLedgerRaw() {
         transfers: [],
     };
 }
+
+test("new expense ledgers receive stable starter categories", () => {
+    const categories = createDefaultExpenseCategories();
+    assert.deepEqual(categories.map((category) => category.key), [
+        "groceries",
+        "food-drink",
+        "transport",
+        "accommodation",
+        "activities",
+        "household",
+        "other",
+    ]);
+    assert.equal(new Set(categories.map((category) => category.color)).size, categories.length);
+    assert.doesNotThrow(() =>
+        ExpenseDocument.fromRaw({
+            categories,
+            expenses: [],
+            generated_at: "",
+            participants: [],
+            schema_version: 1,
+            transfers: [],
+        }),
+    );
+});
 
 test("weighted allocation uses deterministic integer largest remainders", () => {
     assert.deepEqual(

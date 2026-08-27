@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self'"
+      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-8nn3ErIkoHHqsU744KFP3IhPMvCXh92M2FIEznuoiko='; style-src 'self' 'unsafe-inline'; worker-src 'self'"
     />
     <meta name="theme-color" content="#17191f" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -20,15 +20,15 @@
       content="A static browser application for time, tasks, and expenses. Your data lives in a Git repository you control."
     />
     <title data-i18n="document.title">zeitberg — time, tasks, expenses → Git</title>
-    <script src="./theme-init.js"></script>
+    <script src="./theme-init.js?v=1.2.0"></script>
     <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
-    <link rel="stylesheet" href="./styles/common.css" />
-    <link rel="stylesheet" href="./styles/time.css" />
-    <link rel="stylesheet" href="./styles/todos.css" />
-    <link rel="stylesheet" href="./styles/expenses.css" />
-    <link rel="stylesheet" href="./styles/landing.css" />
+    <link rel="stylesheet" href="./styles/common.css?v=1.2.0" />
+    <link rel="stylesheet" href="./styles/time.css?v=1.2.0" />
+    <link rel="stylesheet" href="./styles/todos.css?v=1.2.0" />
+    <link rel="stylesheet" href="./styles/expenses.css?v=1.2.0" />
+    <link rel="stylesheet" href="./styles/landing.css?v=1.2.0" />
   </head>
   <body>
     <aside id="appSidebar" class="app-sidebar" data-i18n-aria-label="nav.application" aria-label="Application navigation" hidden>
@@ -37,7 +37,7 @@
       </a>
       <nav class="sidebar-nav" data-i18n-aria-label="nav.views" aria-label="Views">
         <button id="workspaceSettingsBtn" class="sidebar-button" type="button" data-i18n-title="nav.workspaces" title="Workspaces" data-i18n-aria-label="nav.manageWorkspaces" aria-label="Manage workspaces">
-          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#account_tree"></use></svg>
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#widgets"></use></svg>
         </button>
         <span class="sidebar-separator" aria-hidden="true"></span>
         <button id="menuWeekBtn" class="sidebar-button" type="button" data-i18n-title="nav.weekTitle" title="Week (Ctrl+W)" data-i18n-aria-label="nav.week" aria-label="Week view">
@@ -510,6 +510,97 @@
 
         <div id="workspaceList" class="workspace-list" role="list"></div>
 
+        <form id="workspaceConfigForm" class="workspace-config-form" hidden>
+          <div class="workspace-section-heading">
+            <strong data-i18n="workspace.configure">Configure zeitberg.json</strong>
+            <span id="workspaceConfigMeta" class="muted" data-i18n="workspace.configureMeta">Choose the shared workspace identity and the component documents this repository provides.</span>
+          </div>
+          <div class="grid dialog-grid workspace-config-grid">
+            <label>
+              <span data-i18n="workspace.workspaceName">Workspace name</span>
+              <input id="workspaceConfigName" type="text" required />
+            </label>
+            <label>
+              <span data-i18n="workspace.workspaceId">Workspace ID</span>
+              <input id="workspaceConfigId" type="text" spellcheck="false" readonly required />
+            </label>
+            <label>
+              <span data-i18n="workspace.timezone">Timezone</span>
+              <input id="workspaceConfigTimezone" type="text" spellcheck="false" required />
+            </label>
+            <label>
+              <span data-i18n="workspace.projectsPath">Projects path</span>
+              <input id="workspaceConfigProjectsPath" type="text" spellcheck="false" required />
+            </label>
+          </div>
+
+          <div class="workspace-component-list">
+            <fieldset class="workspace-component">
+              <legend>
+                <label>
+                  <input id="workspaceConfigTimeEnabled" type="checkbox" />
+                  <span data-i18n="workspace.timeComponent">Time tracking</span>
+                </label>
+              </legend>
+              <div id="workspaceConfigTimeFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="time">
+                <label>
+                  <span data-i18n="workspace.entriesPath">Week entries directory</span>
+                  <input id="workspaceConfigTimeEntries" type="text" spellcheck="false" required />
+                </label>
+                <label>
+                  <span data-i18n="workspace.entriesManifestPath">Entries manifest path</span>
+                  <input id="workspaceConfigTimeManifest" type="text" spellcheck="false" required />
+                </label>
+                <label class="col-span-2">
+                  <span data-i18n="workspace.requirementsPath">Week requirements path</span>
+                  <input id="workspaceConfigTimeRequirements" type="text" spellcheck="false" required />
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="workspace-component">
+              <legend>
+                <label>
+                  <input id="workspaceConfigTodosEnabled" type="checkbox" />
+                  <span data-i18n="workspace.todosComponent">Tasks</span>
+                </label>
+              </legend>
+              <div id="workspaceConfigTodosFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="todos">
+                <label class="col-span-2">
+                  <span data-i18n="workspace.todosPath">Tasks document path</span>
+                  <input id="workspaceConfigTodosDocument" type="text" spellcheck="false" required />
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="workspace-component">
+              <legend>
+                <label>
+                  <input id="workspaceConfigExpensesEnabled" type="checkbox" />
+                  <span data-i18n="workspace.expensesComponent">Expenses</span>
+                </label>
+              </legend>
+              <div id="workspaceConfigExpensesFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="expenses">
+                <label>
+                  <span data-i18n="workspace.expensesPath">Expenses document path</span>
+                  <input id="workspaceConfigExpensesDocument" type="text" spellcheck="false" required />
+                </label>
+                <label>
+                  <span data-i18n="workspace.expensesManifestPath">Expenses manifest path</span>
+                  <input id="workspaceConfigExpensesManifest" type="text" spellcheck="false" required />
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <pre id="workspaceConfigError" class="error" hidden></pre>
+          <div class="row dialog-actions workspace-config-actions">
+            <span id="workspaceConfigSaveNote" class="muted" data-i18n="workspace.initializeMissing">Missing documents are initialized; existing data is kept unchanged.</span>
+            <span class="topbar-spacer"></span>
+            <button id="workspaceConfigSaveBtn" class="btn" type="submit" data-i18n="workspace.saveConfiguration">Save configuration</button>
+          </div>
+        </form>
+
         <form id="workspaceAddForm" class="workspace-add-form">
           <div class="workspace-section-heading">
             <strong data-i18n="workspace.add">Add workspace</strong>
@@ -772,67 +863,152 @@
       </div>
     </dialog>
     <dialog id="expenseDialog" class="dialog expense-dialog">
-      <form id="expenseForm" method="dialog" class="dialog-card expense-dialog-card">
-        <div class="dialog-head">
-          <div>
-            <div id="expenseDialogTitle" class="dialog-title" data-i18n="expenses.editTitle">Edit expense</div>
-            <div id="expenseDialogMeta" class="dialog-meta muted"></div>
-          </div>
+      <form id="expenseForm" method="dialog" class="dialog-card expense-dialog-card" novalidate>
+        <div class="dialog-head expense-dialog-head">
+          <div id="expenseDialogTitle" class="dialog-title" data-i18n="expenses.editTitle">Edit expense</div>
           <button id="expenseCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
-        <div class="grid dialog-grid expense-main-fields">
-          <label class="col-span-2">
+        <div id="expenseDialogError" class="error dialog-inline-error" role="alert" hidden></div>
+
+        <div class="expense-receipt-composer">
+          <div class="expense-value-row">
+            <label class="expense-ifta-field expense-amount-field">
+              <input id="expenseAmount" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder=" " autofocus />
+              <span data-i18n="expenses.amount">Amount</span>
+            </label>
+            <label class="expense-ifta-field expense-currency-field">
+              <input id="expenseCurrency" type="text" inputmode="text" maxlength="3" value="EUR" autocomplete="off" placeholder=" " />
+              <span data-i18n="expenses.currency">Currency</span>
+            </label>
+          </div>
+          <label class="expense-ifta-field expense-description-field">
+            <input id="expenseDescription" type="text" autocomplete="off" enterkeyhint="next" placeholder=" " />
             <span data-i18n="expenses.description">Description</span>
-            <input id="expenseDescription" type="text" autocomplete="off" required />
           </label>
-          <label>
-            <span data-i18n="expenses.date">Date</span>
-            <input id="expenseDate" type="date" required />
-          </label>
-          <label>
-            <span data-i18n="expenses.amount">Amount</span>
-            <input id="expenseAmount" type="text" inputmode="decimal" autocomplete="off" required />
-          </label>
-          <label>
-            <span data-i18n="expenses.currency">Currency</span>
-            <input id="expenseCurrency" type="text" inputmode="text" maxlength="3" value="EUR" autocomplete="off" required />
-          </label>
-          <label>
-            <span data-i18n="expenses.category">Category</span>
-            <select id="expenseCategory"></select>
-          </label>
-          <label class="col-span-2">
-            <span data-i18n="entry.assignment">Project / section</span>
-            <input id="expenseAssignment" type="text" spellcheck="false" list="expenseAssignmentList" data-i18n-placeholder="entry.noProject" placeholder="No project" autocomplete="off" />
-            <datalist id="expenseAssignmentList"></datalist>
-          </label>
-          <label>
-            <span data-i18n="expenses.splitRule">Split rule</span>
-            <select id="expenseAllocationType">
-              <option value="equal" data-i18n="expenses.splitEqual">Equal</option>
-              <option value="percentage" data-i18n="expenses.splitPercentage">Percentage</option>
-              <option value="shares" data-i18n="expenses.splitShares">Shares</option>
-              <option value="exact" data-i18n="expenses.splitExact">Exact amounts</option>
-            </select>
-          </label>
-          <label class="col-span-2">
-            <span data-i18n="expenses.notes">Notes</span>
-            <textarea id="expenseNotes" rows="3"></textarea>
-          </label>
+          <div class="expense-editor-context">
+            <label class="expense-ifta-field expense-context-control">
+              <input id="expenseDate" type="date" />
+              <span data-i18n="expenses.date">Date</span>
+            </label>
+            <div class="expense-category-field">
+              <label class="expense-ifta-field expense-context-control expense-category-control">
+                <input id="expenseCategory" type="text" list="expenseCategoryOptions" autocomplete="off" spellcheck="false" placeholder=" " aria-describedby="expenseCategoryHint" />
+                <span data-i18n="expenses.category">Category</span>
+              </label>
+              <datalist id="expenseCategoryOptions"></datalist>
+              <small id="expenseCategoryHint" class="expense-context-hint" aria-live="polite"></small>
+            </div>
+          </div>
         </div>
 
-        <div class="expense-split-heading">
-          <span data-i18n="expenses.participant">Participant</span>
-          <span data-i18n="expenses.paid">Paid</span>
-          <span id="expenseOwedHeading" data-i18n="expenses.owed">Owed</span>
+        <div class="expense-flow-cards">
+          <button id="expensePayerSummaryBtn" class="expense-flow-card" type="button" aria-expanded="false" aria-controls="expensePayerPanel">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#payments"></use></svg>
+            <span class="expense-flow-copy">
+              <small data-i18n="expenses.paidByLabel">Paid by</small>
+              <strong id="expensePayerSummary"></strong>
+              <span id="expensePayerSummaryMeta" class="muted"></span>
+            </span>
+            <span class="expense-flow-chevron" aria-hidden="true"></span>
+          </button>
+          <button id="expenseSplitSummaryBtn" class="expense-flow-card" type="button" aria-expanded="false" aria-controls="expenseSplitPanel">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#call_split"></use></svg>
+            <span class="expense-flow-copy">
+              <small data-i18n="expenses.splitSummaryLabel">Split</small>
+              <strong id="expenseSplitSummary"></strong>
+              <span id="expenseSplitSummaryMeta" class="muted"></span>
+            </span>
+            <span class="expense-flow-chevron" aria-hidden="true"></span>
+          </button>
         </div>
-        <div id="expenseSplitRows" class="expense-split-rows"></div>
+
+        <section id="expensePayerPanel" class="expense-context-panel" aria-labelledby="expensePayerPanelTitle" hidden>
+          <div class="expense-context-panel-head">
+            <div>
+              <strong id="expensePayerPanelTitle" data-i18n="expenses.payerPanelTitle">Who paid?</strong>
+              <small data-i18n="expenses.payerPanelMeta">Choose one payer or divide the payment.</small>
+            </div>
+            <button id="expensePayerPanelCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+              <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+            </button>
+          </div>
+          <label class="expense-payer-mode">
+            <span data-i18n="expenses.paymentMode">Payment</span>
+            <select id="expensePayer"></select>
+          </label>
+          <div id="expensePayerCustomFields" class="expense-participant-editor" hidden>
+            <div class="expense-person-heading">
+              <span data-i18n="expenses.participant">Participant</span>
+              <span data-i18n="expenses.paid">Paid</span>
+              <span data-i18n="expenses.result">Result</span>
+            </div>
+            <div id="expensePayerRows" class="expense-person-rows"></div>
+            <div id="expensePayerRemaining" class="expense-editor-status" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="expenseSplitPanel" class="expense-context-panel" aria-labelledby="expenseSplitPanelTitle" hidden>
+          <div class="expense-context-panel-head">
+            <div>
+              <strong id="expenseSplitPanelTitle" data-i18n="expenses.splitPanelTitle">Who shares it?</strong>
+              <small data-i18n="expenses.splitPanelMeta">Choose people and how much each person owes.</small>
+            </div>
+            <button id="expenseSplitPanelCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+              <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+            </button>
+          </div>
+          <select id="expenseAllocationType" hidden>
+            <option value="equal" data-i18n="expenses.splitEqual">Equal</option>
+            <option value="percentage" data-i18n="expenses.splitPercentage">Percentage</option>
+            <option value="shares" data-i18n="expenses.splitShares">Shares</option>
+            <option value="exact" data-i18n="expenses.splitExact">Exact amounts</option>
+          </select>
+          <div id="expenseAllocationChoices" class="expense-allocation-choices" role="group" data-i18n-aria-label="expenses.splitRule" aria-label="Split rule">
+            <button type="button" data-allocation-type="equal" data-i18n="expenses.splitEqual" aria-pressed="true">Equal</button>
+            <button type="button" data-allocation-type="percentage" data-i18n="expenses.splitPercentage" aria-pressed="false">Percentage</button>
+            <button type="button" data-allocation-type="shares" data-i18n="expenses.splitShares" aria-pressed="false">Shares</button>
+            <button type="button" data-allocation-type="exact" data-i18n="expenses.splitExact" aria-pressed="false">Exact amounts</button>
+          </div>
+          <div class="expense-person-heading expense-split-heading">
+            <span data-i18n="expenses.participant">Participant</span>
+            <span id="expenseOwedHeading" data-i18n="expenses.owed">Owed</span>
+            <span data-i18n="expenses.result">Result</span>
+          </div>
+          <div id="expenseSplitRows" class="expense-person-rows expense-split-rows"></div>
+          <div id="expenseSplitRemaining" class="expense-editor-status" aria-live="polite"></div>
+        </section>
+
+        <aside id="expenseOutcome" class="expense-outcome" aria-live="polite" hidden>
+          <div class="expense-outcome-label" data-i18n="expenses.outcomeTitle">After this expense</div>
+          <strong id="expenseOutcomeSummary"></strong>
+          <div id="expenseOutcomeDetails" class="expense-outcome-details"></div>
+        </aside>
+
+        <details id="expenseAdvancedDetails" class="expense-disclosure">
+          <summary>
+            <span>
+              <strong data-i18n="expenses.moreDetails">More details</strong>
+              <small data-i18n="expenses.moreDetailsMeta">Project assignment and notes.</small>
+            </span>
+          </summary>
+          <div class="grid dialog-grid expense-advanced-fields">
+            <label class="col-span-2">
+              <span data-i18n="entry.assignment">Project / section</span>
+              <input id="expenseAssignment" type="text" spellcheck="false" list="expenseAssignmentList" data-i18n-placeholder="entry.noProject" placeholder="No project" autocomplete="off" />
+              <datalist id="expenseAssignmentList"></datalist>
+            </label>
+            <label class="col-span-2">
+              <span data-i18n="expenses.notes">Notes</span>
+              <textarea id="expenseNotes" rows="3"></textarea>
+            </label>
+          </div>
+        </details>
 
         <div class="row dialog-actions">
           <button id="expenseDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n="common.delete">Delete</button>
-          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="expenseCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="expenseSubmitBtn" class="btn" type="submit" data-i18n="expenses.saveAction">Save changes</button>
         </div>
       </form>
     </dialog>
@@ -851,14 +1027,15 @@
     </dialog>
 
     <dialog id="expenseInventoryDialog" class="dialog expense-inventory-dialog">
-      <form id="expenseInventoryForm" method="dialog" class="dialog-card expense-inventory-card">
+      <form id="expenseInventoryForm" method="dialog" class="dialog-card expense-inventory-card" novalidate>
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="expenses.inventory">Participants and categories</div>
-            <div class="dialog-meta muted" data-i18n="expenses.inventoryMeta">Stable keys remain unchanged when names are edited.</div>
+            <div id="expenseInventoryTitle" class="dialog-title" data-i18n="expenses.inventory">Participants and categories</div>
+            <div id="expenseInventoryMeta" class="dialog-meta muted" data-i18n="expenses.inventoryMeta">Stable keys remain unchanged when names are edited.</div>
           </div>
           <button id="expenseInventoryCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
+        <div id="expenseInventoryError" class="error dialog-inline-error" role="alert" hidden></div>
         <section class="expense-inventory-section">
           <div class="expense-inventory-heading">
             <strong data-i18n="expenses.participants">Participants</strong>
@@ -866,7 +1043,7 @@
           </div>
           <div id="expenseParticipantList" class="expense-inventory-list"></div>
         </section>
-        <section class="expense-inventory-section">
+        <section id="expenseInventoryCategoriesSection" class="expense-inventory-section">
           <div class="expense-inventory-heading">
             <strong data-i18n="expenses.categories">Categories</strong>
             <button id="expenseAddCategoryBtn" class="btn btn-secondary" type="button" data-i18n="expenses.addCategory">Add category</button>
@@ -874,7 +1051,7 @@
           <div id="expenseCategoryList" class="expense-inventory-list"></div>
         </section>
         <div class="row dialog-actions">
-          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
+          <button id="expenseInventorySubmitBtn" class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="expenseInventoryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
@@ -943,6 +1120,30 @@
       </form>
     </dialog>
 
-    <script type="module" src="./app.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "./appstate.js": "./appstate.js?v=1.2.0",
+          "./cache.js": "./cache.js?v=1.2.0",
+          "./config.js": "./config.js?v=1.2.0",
+          "./datasource.js": "./datasource.js?v=1.2.0",
+          "./expense.view.js": "./expense.view.js?v=1.2.0",
+          "./locale.js": "./locale.js?v=1.2.0",
+          "./model.js": "./model.js?v=1.2.0",
+          "./oauth.js": "./oauth.js?v=1.2.0",
+          "./project.view.js": "./project.view.js?v=1.2.0",
+          "./routing.js": "./routing.js?v=1.2.0",
+          "./search.view.js": "./search.view.js?v=1.2.0",
+          "./shell.view.js": "./shell.view.js?v=1.2.0",
+          "./store.js": "./store.js?v=1.2.0",
+          "./todo.view.js": "./todo.view.js?v=1.2.0",
+          "./utils.js": "./utils.js?v=1.2.0",
+          "./week.view.js": "./week.view.js?v=1.2.0",
+          "./workspace.js": "./workspace.js?v=1.2.0",
+          "./workspace.loader.js": "./workspace.loader.js?v=1.2.0"
+        }
+      }
+    </script>
+    <script type="module" src="./app.js?v=1.2.0"></script>
   </body>
 </html>

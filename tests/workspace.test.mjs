@@ -51,6 +51,30 @@ test("workspace model resolves provider-neutral component paths", () => {
     assert.deepEqual(Workspace.fromRaw(workspace.toObject()).toObject(), workspace.toObject());
 });
 
+test("workspace defaults provide every supported component with canonical paths", () => {
+    const workspace = Workspace.createDefault("new-workspace", "New workspace", "Europe/Berlin");
+
+    assert.equal(workspace.workspace_id, "new-workspace");
+    assert.equal(workspace.getResourcePath("projects"), "data/projects.json");
+    assert.equal(workspace.getComponentPath("time_tracking", "manifest"), "data/index/entries-manifest.json");
+    assert.equal(workspace.getComponentPath("todos", "document"), "data/todos.json");
+    assert.equal(workspace.getComponentPath("expenses", "document"), "data/expenses.json");
+});
+
+test("workspace model rejects incomplete component inventories and reused paths", () => {
+    const noComponents = makeWorkspaceRaw();
+    noComponents.components = {};
+    assert.throws(() => Workspace.fromRaw(noComponents), /at least one component/);
+
+    const missingRequiredPath = makeWorkspaceRaw();
+    delete missingRequiredPath.components.time.paths.week_requirements;
+    assert.throws(() => Workspace.fromRaw(missingRequiredPath), /must define the week_requirements path/);
+
+    const reusedPath = makeWorkspaceRaw();
+    reusedPath.components.tasks.paths.document = reusedPath.resources.projects;
+    assert.throws(() => Workspace.fromRaw(reusedPath), /reuses records\/projects\.json/);
+});
+
 test("workspace model rejects unsafe repository paths", () => {
     const traversal = makeWorkspaceRaw();
     traversal.resources.projects = "../outside.json";

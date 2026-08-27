@@ -24,7 +24,7 @@ function readRepositoryFile(path) {
 test("the document loads modular stylesheets explicitly and in dependency order", async () => {
     const html = await readRepositoryFile("index.html");
     const linkedStylesheets = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/>/g)].map(
-        (match) => match[1],
+        (match) => match[1].split("?", 1)[0],
     );
     assert.deepEqual(linkedStylesheets, expectedStylesheets);
     await assert.rejects(access(new URL("style.css", repositoryRoot)), { code: "ENOENT" });

@@ -10,6 +10,7 @@ import {
     LocalDataSource,
     parseGitHubRepositoryId,
     parseHostedRepositoryUrl,
+    WorkspaceConfigurationError,
 } from "../datasource.js";
 import { Workspace } from "../model.js";
 import { gitBlobSha1 } from "../utils.js";
@@ -130,6 +131,41 @@ test("the hosted data-source factory selects GitHub, GitLab, and Forgejo impleme
             "t",
         ) instanceof ForgejoDataSource,
     );
+});
+
+test("GitHub workspace discovery distinguishes setup from repository failures", async (context) => {
+    let mode = "missing";
+    context.mock.method(globalThis, "fetch", async () => {
+        if (mode === "missing") return jsonResponse({ message: "Not Found" }, 404);
+        if (mode === "invalid") return new Response("{not-json", { status: 200 });
+        if (mode === "present") return new Response('{"schema_version":1}', { status: 200 });
+        return jsonResponse({ message: "Forbidden" }, 403);
+    });
+    const source = new GitHubDataSource(
+        { owner: "owner", repo: "repo", ref: "main", workspacePath: "config/zeitberg.json" },
+        "token",
+    );
+
+    await assert.rejects(
+        () => source.fetchWorkspace(),
+        (error) =>
+            error instanceof WorkspaceConfigurationError &&
+            error.reason === "missing" &&
+            error.path === "config/zeitberg.json",
+    );
+    assert.equal(await source.repositoryFileExists("data/projects.json"), false);
+
+    mode = "invalid";
+    await assert.rejects(
+        () => source.fetchWorkspace(),
+        (error) => error instanceof WorkspaceConfigurationError && error.reason === "invalid_json",
+    );
+
+    mode = "present";
+    assert.equal(await source.repositoryFileExists("data/projects.json"), true);
+
+    mode = "forbidden";
+    await assert.rejects(() => source.fetchWorkspace(), /GitHub API error 403/);
 });
 
 test("custom hosted providers report browser CORS incompatibility during protocol detection", async (context) => {
@@ -395,12 +431,14 @@ test("GitLab reads configured files and writes changed documents in one guarded 
     assert.match(requests[0].url.pathname, /\/api\/v4\/projects\/group%2Fnested%2Fworkspace\/repository\/files/);
 });
 
-test("Forgejo decodes immutable blobs and commits the entries manifest last", async (context) => {
+test("Forgejo decodes immutable blobs and exposes workspace configuration only after seed manifests", async (context) => {
     const workspace = makeWorkspace();
     const weekPath = "data/entries/2026/33.json";
     const weekText = '{"entries":[],"schema_version":2}\n';
     const manifestPath = "data/index/entries-manifest.json";
     const manifestText = '{"chunks":[],"schema_version":2,"timezone":"Europe/Berlin"}\n';
+    const workspacePath = "zeitberg.json";
+    const workspaceText = workspace.toJson();
     const requests = [];
     const blobSha = gitBlobSha1(weekText);
 
@@ -419,6 +457,7 @@ test("Forgejo decodes immutable blobs and commits the entries manifest last", as
         const path = encodedPath.split("/").map(decodeURIComponent).join("/");
         if (method === "GET") {
             if (path === weekPath) return jsonResponse({ content: base64("old"), encoding: "base64", sha: "a".repeat(40) });
+            if (path === workspacePath) return jsonResponse([]);
             if (path === manifestPath) return jsonResponse({ message: "not found" }, 404);
         }
         if (method === "PUT" || method === "POST") {
@@ -438,10 +477,19 @@ test("Forgejo decodes immutable blobs and commits the entries manifest last", as
         },
         "forgejo-token",
     );
+    await assert.rejects(
+        () => source.fetchWorkspace(),
+        (error) =>
+            error instanceof WorkspaceConfigurationError &&
+            error.reason === "missing" &&
+            error.path === workspacePath,
+    );
+    assert.equal(await source.repositoryFileExists(workspacePath), false);
     source.setWorkspace(workspace);
     assert.equal(await source.fetchChunkText(makeChunk(blobSha, 33, weekText)), weekText);
     const result = await source.saveFiles(
         [
+            { path: workspacePath, content: workspaceText },
             { path: manifestPath, content: manifestText },
             { path: weekPath, content: weekText },
         ],
@@ -449,16 +497,75 @@ test("Forgejo decodes immutable blobs and commits the entries manifest last", as
     );
 
     const writes = requests.filter((request) => request.method === "PUT" || request.method === "POST");
-    assert.equal(writes.length, 2);
+    assert.equal(writes.length, 3);
     assert.match(writes[0].url.pathname, /data\/entries\/2026\/33\.json$/);
     assert.equal(writes[0].method, "PUT");
     assert.equal(writes[0].body.sha, "a".repeat(40));
     assert.match(writes[1].url.pathname, /data\/index\/entries-manifest\.json$/);
     assert.equal(writes[1].method, "POST");
+    assert.match(writes[2].url.pathname, /contents\/zeitberg\.json$/);
+    assert.equal(writes[2].method, "POST");
     assert.deepEqual(
         result.files.map((file) => file.path),
-        [weekPath, manifestPath],
+        [weekPath, manifestPath, workspacePath],
     );
+});
+
+test("Forgejo saves an expense-only workspace without resolving a time manifest", async (context) => {
+    const workspace = Workspace.fromRaw({
+        components: {
+            expenses: {
+                paths: {
+                    document: "data/expenses.json",
+                    manifest: "data/index/expenses-manifest.json",
+                },
+                type: "expenses",
+            },
+        },
+        name: "Expense only",
+        resources: { projects: "data/projects.json" },
+        schema_version: 1,
+        timezone: "Europe/Berlin",
+        workspace_id: "expense-only",
+    });
+    const document = '{"categories":[],"expenses":[],"participants":[],"schema_version":1,"transfers":[]}\n';
+    const manifest = '{"categories":0,"expenses":0,"participants":0,"schema_version":1,"transfers":0}\n';
+    const writes = [];
+    context.mock.method(globalThis, "fetch", async (url, options = {}) => {
+        const requestUrl = new URL(String(url));
+        const method = options.method || "GET";
+        if (method === "GET") return jsonResponse({ message: "not found" }, 404);
+        const body = JSON.parse(String(options.body || "{}"));
+        const content = Buffer.from(body.content, "base64").toString("utf8");
+        writes.push(requestUrl.pathname);
+        return jsonResponse({ content: { sha: gitBlobSha1(content) } });
+    });
+    const source = new ForgejoDataSource(
+        {
+            owner: "",
+            repo: "",
+            ref: "main",
+            provider: "codeberg",
+            repositoryUrl: "https://codeberg.org/person/expenses",
+        },
+        "forgejo-token",
+    );
+    source.setWorkspace(workspace);
+
+    const result = await source.saveFiles(
+        [
+            { path: "data/index/expenses-manifest.json", content: manifest },
+            { path: "data/expenses.json", content: document },
+        ],
+        "Save expenses",
+    );
+
+    assert.deepEqual(result.files.map((file) => file.path), [
+        "data/expenses.json",
+        "data/index/expenses-manifest.json",
+    ]);
+    assert.match(writes[0], /contents\/data\/expenses\.json$/);
+    assert.match(writes[1], /contents\/data\/index\/expenses-manifest\.json$/);
 });
 
 test("GitLab and Codeberg repository creation is private and initializes a SHA-1-compatible default branch", async (context) => {

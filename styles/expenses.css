@@ -241,32 +241,475 @@ body.app-mode #expenseView {
   font-size: 0.72rem;
 }
 
+.expense-dialog,
+.expense-inventory-dialog {
+  max-width: min(760px, calc(100vw - 24px));
+}
+
 .expense-dialog-card,
 .expense-inventory-card {
-  width: min(760px, calc(100vw - 24px));
-  max-height: min(900px, calc(100dvh - 24px));
-  overflow: auto;
+  width: 100%;
+  max-height: min(940px, calc(100dvh - 24px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .expense-settlement-card {
-  width: min(620px, calc(100vw - 24px));
+  width: 100%;
 }
 
-.expense-main-fields {
-  margin-bottom: 12px;
+.expense-dialog-card .dialog-head .dialog-meta {
+  margin: 2px 0 0;
 }
 
-.expense-split-heading,
-.expense-split-row {
+.expense-dialog-head {
+  margin-bottom: 0;
+}
+
+.dialog-inline-error {
+  margin: 8px 0 12px;
+  padding: 9px 11px;
+  overflow: visible;
+  font-size: 0.68rem;
+}
+
+.expense-receipt-composer {
+  display: block;
+  margin-top: 9px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--accent) 9%, transparent), transparent 52%),
+    var(--surface-faint);
+}
+
+.expense-value-row {
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.65fr) minmax(100px, 0.65fr);
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 10px;
+}
+
+.expense-ifta-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+  margin: 0;
+}
+
+.expense-ifta-field > input {
+  width: 100%;
+  padding: 24px 13px 8px;
+  background: color-mix(in srgb, var(--chrome-strong) 75%, transparent);
+}
+
+.expense-ifta-field > span {
+  position: absolute;
+  top: 8px;
+  left: 13px;
+  z-index: 1;
+  max-width: calc(100% - 26px);
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: color 120ms ease;
+}
+
+.expense-ifta-field:focus-within > span {
+  color: var(--accent);
+}
+
+.expense-amount-field input {
+  height: 78px;
+  font-family: var(--mono);
+  font-size: clamp(1.9rem, 5vw, 2.35rem);
+  font-weight: 850;
+  letter-spacing: -0.035em;
+}
+
+.expense-currency-field input {
+  height: 78px;
+  padding-inline: 12px;
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.expense-description-field {
+  margin-top: 10px;
+}
+
+.expense-description-field input {
+  height: 62px;
+  font-size: 0.92rem;
+}
+
+.expense-editor-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.expense-context-control {
+  min-width: 0;
+}
+
+.expense-context-control > input {
+  height: 58px;
+}
+
+.expense-category-field {
+  min-width: 0;
+}
+
+.expense-context-hint {
+  display: block;
+  min-height: 0;
+  margin: 3px 2px 0;
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.expense-context-hint:empty {
+  display: none;
+}
+
+.expense-flow-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.expense-flow-card {
+  min-width: 0;
+  min-height: 82px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-faint);
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 12px;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.expense-flow-card:hover,
+.expense-flow-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  background: var(--surface-soft);
+}
+
+.expense-flow-card:active {
+  transform: translateY(1px);
+}
+
+.expense-flow-card:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.expense-flow-card:disabled:hover,
+.expense-flow-card:disabled:focus-visible,
+.expense-flow-card:disabled:active {
+  border-color: var(--border);
+  background: var(--surface-faint);
+  transform: none;
+}
+
+.expense-flow-card[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-faint));
+}
+
+.expense-flow-card > .app-icon {
+  width: 22px;
+  height: 22px;
+  padding: 6px;
+  border-radius: 9px;
+  box-sizing: content-box;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-soft));
+  color: var(--accent);
+}
+
+.expense-flow-copy,
+.expense-flow-copy > * {
+  min-width: 0;
+  display: block;
+}
+
+.expense-flow-copy small {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.expense-flow-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
+.expense-flow-copy > span {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.61rem;
+}
+
+.expense-flow-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 120ms ease;
+}
+
+.expense-flow-card[aria-expanded="true"] .expense-flow-chevron {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.expense-context-panel {
+  margin-top: 8px;
+  scroll-margin-block: 12px 84px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--accent) 12%);
+}
+
+.expense-context-panel[hidden] {
+  display: none;
+}
+
+.expense-context-panel-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.expense-context-panel-head strong,
+.expense-context-panel-head small {
+  display: block;
+}
+
+.expense-context-panel-head strong {
+  font-size: 0.78rem;
+}
+
+.expense-context-panel-head small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.61rem;
+}
+
+.expense-payer-mode {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.6fr) minmax(0, 1.4fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.expense-payer-mode > span {
+  margin: 0;
+}
+
+.expense-participant-editor {
+  margin-top: 10px;
+}
+
+.expense-person-heading,
+.expense-person-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(105px, 0.68fr) minmax(110px, 0.72fr);
   gap: 8px;
   align-items: center;
 }
 
-.expense-split-heading {
-  padding: 7px 8px;
+.expense-person-heading {
+  padding: 6px 8px;
   border-block: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.expense-person-row {
+  min-height: 48px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.expense-person-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  font-size: 0.69rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expense-person-avatar {
+  flex: none;
+  width: 25px;
+  height: 25px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-faint));
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 0.57rem;
+  font-weight: 800;
+}
+
+.expense-person-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.expense-person-row input[type="text"] {
+  min-width: 0;
+  width: 100%;
+  padding-right: 35px;
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.expense-person-row input[readonly] {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface-faint) 76%, transparent);
+  color: var(--muted);
+}
+
+.expense-person-row .expense-owed-input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  justify-self: end;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.expense-person-unit {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  pointer-events: none;
+}
+
+.expense-person-result {
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  text-align: right;
+}
+
+.expense-person-result.is-auto::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 0.08em;
+}
+
+.expense-editor-status {
+  min-height: 20px;
+  padding: 7px 8px 0;
+  color: var(--muted);
+  font-size: 0.61rem;
+  text-align: right;
+}
+
+.expense-editor-status.is-complete {
+  color: var(--accent-2);
+}
+
+.expense-editor-status.is-invalid {
+  color: var(--danger);
+}
+
+.expense-allocation-choices {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  margin-bottom: 10px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--chrome-strong);
+}
+
+.expense-allocation-choices button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.61rem;
+  cursor: pointer;
+}
+
+.expense-allocation-choices button:hover,
+.expense-allocation-choices button:focus-visible {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.expense-allocation-choices button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-soft));
+  color: var(--text);
+  font-weight: 800;
+}
+
+.expense-outcome {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 35%, var(--border));
+  border-radius: 11px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 70%),
+    var(--surface-faint);
+}
+
+.expense-outcome-label {
+  margin-bottom: 4px;
   color: var(--muted);
   font-size: 0.58rem;
   font-weight: 700;
@@ -274,27 +717,86 @@ body.app-mode #expenseView {
   letter-spacing: 0.06em;
 }
 
-.expense-split-rows {
-  margin-bottom: 10px;
+.expense-outcome > strong {
+  display: block;
+  font-size: 0.76rem;
 }
 
-.expense-split-row {
-  min-height: 44px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--border);
+.expense-outcome-details {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.62rem;
 }
 
-.expense-split-name {
+.expense-outcome.is-ready {
+  border-color: color-mix(in srgb, var(--accent-2) 62%, var(--border));
+}
+
+.expense-disclosure {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-faint) 78%, transparent);
   overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 0.68rem;
-  white-space: nowrap;
 }
 
-.expense-split-row input {
-  min-width: 0;
-  font-family: var(--mono);
-  text-align: right;
+.expense-disclosure > summary {
+  position: relative;
+  min-height: 52px;
+  padding: 9px 42px 9px 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  list-style: none;
+}
+
+.expense-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.expense-disclosure > summary::after {
+  position: absolute;
+  right: 17px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  content: "";
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 120ms ease;
+}
+
+.expense-disclosure[open] > summary::after {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.expense-disclosure > summary strong,
+.expense-disclosure > summary small {
+  display: block;
+}
+
+.expense-disclosure > summary strong {
+  font-size: 0.7rem;
+}
+
+.expense-disclosure > summary small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.59rem;
+}
+
+.expense-disclosure[open] > summary {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.expense-disclosure-body,
+.expense-advanced-fields {
+  padding: 10px;
+}
+
+.expense-split-rows {
+  margin-bottom: 0;
 }
 
 .expense-settlement-list {
@@ -408,10 +910,58 @@ html.ui-narrow .expense-settlement-card {
   border-radius: 0;
 }
 
-html.ui-narrow .expense-split-heading,
-html.ui-narrow .expense-split-row {
-  grid-template-columns: minmax(95px, 1fr) minmax(74px, 0.7fr) minmax(74px, 0.7fr);
+html.ui-narrow .expense-dialog-card {
+  display: block;
+  overflow-y: auto;
+}
+
+html.ui-narrow .expense-dialog-card .dialog-actions {
+  margin: 14px -12px -12px;
+}
+
+html.ui-narrow .expense-receipt-composer {
+  padding: 12px;
+}
+
+html.ui-narrow .expense-value-row {
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+}
+
+html.ui-narrow .expense-editor-context {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html.ui-narrow .expense-flow-cards {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+html.ui-narrow .expense-flow-card {
+  min-height: 70px;
+}
+
+html.ui-narrow .expense-payer-mode {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+html.ui-narrow .expense-person-heading,
+html.ui-narrow .expense-person-row {
+  grid-template-columns: minmax(96px, 1fr) minmax(82px, 0.72fr) minmax(82px, 0.72fr);
   gap: 5px;
+}
+
+html.ui-narrow .expense-person-row {
+  padding-inline: 4px;
+}
+
+html.ui-narrow .expense-person-avatar {
+  display: none;
+}
+
+html.ui-narrow .expense-allocation-choices {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 html.ui-narrow .expense-dialog input,
@@ -421,6 +971,27 @@ html.ui-narrow .expense-inventory-dialog input {
   font-size: 16px;
 }
 
-html.ui-toolbar-compact .expense-topbar-controls .btn:nth-child(n + 3) {
-  display: none;
+html.ui-narrow .expense-amount-field input {
+  font-size: 1.8rem;
+}
+
+html.ui-narrow .expense-inventory-heading {
+  flex-wrap: wrap;
+}
+
+html.ui-narrow .expense-category-row {
+  grid-template-columns: minmax(0, 1fr) 42px;
+}
+
+html.ui-narrow .expense-category-row .expense-inventory-archived {
+  grid-column: 1 / -1;
+}
+
+html.ui-toolbar-compact .expense-topbar-controls {
+  gap: 2px;
+}
+
+html.ui-toolbar-compact .expense-topbar-controls .btn {
+  width: 32px;
+  height: 32px;
 }

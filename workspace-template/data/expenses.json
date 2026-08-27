@@ -1,5 +1,55 @@
 {
-  "categories": [],
+  "categories": [
+    {
+      "archived": false,
+      "color": "#22c55e",
+      "key": "groceries",
+      "name": "Groceries",
+      "source_refs": []
+    },
+    {
+      "archived": false,
+      "color": "#f97316",
+      "key": "food-drink",
+      "name": "Food & drink",
+      "source_refs": []
+    },
+    {
+      "archived": false,
+      "color": "#3b82f6",
+      "key": "transport",
+      "name": "Transport",
+      "source_refs": []
+    },
+    {
+      "archived": false,
+      "color": "#8b5cf6",
+      "key": "accommodation",
+      "name": "Accommodation",
+      "source_refs": []
+    },
+    {
+      "archived": false,
+      "color": "#ec4899",
+      "key": "activities",
+      "name": "Activities",
+      "source_refs": []
+    },
+    {
+      "archived": false,
+      "color": "#14b8a6",
+      "key": "household",
+      "name": "Household",
+      "source_refs": []
+    },
+    {
+      "archived": false,
+      "color": "#64748b",
+      "key": "other",
+      "name": "Other",
+      "source_refs": []
+    }
+  ],
   "expenses": [],
   "generated_at": "",
   "participants": [],

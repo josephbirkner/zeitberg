@@ -1,5 +1,5 @@
 {
-  "categories": 0,
+  "categories": 7,
   "currencies": [],
   "date_from": null,
   "date_to": null,
@@ -8,7 +8,7 @@
   "participants": 0,
   "path": "data/expenses.json",
   "schema_version": 1,
-  "sha": "69d9e67a08d2a23a4d049e43ac2fa9e778c014c4",
-  "size": 127,
+  "sha": "2e2ceebb0a271ee9909abdaa382aa2a362203d28",
+  "size": 1122,
   "transfers": 0
 }

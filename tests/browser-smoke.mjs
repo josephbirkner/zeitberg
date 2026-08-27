@@ -99,6 +99,19 @@ async function dialogSize(card) {
 }
 
 /**
+ * Verifies that one modal card contains its controls without creating a second horizontal scrolling surface.
+ * @param {import("playwright").Locator} card Dialog card locator.
+ * @returns {Promise<void>}
+ */
+async function assertNoHorizontalDialogOverflow(card) {
+    const size = await card.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+    }));
+    assert.ok(size.scrollWidth <= size.clientWidth, `Dialog overflowed by ${size.scrollWidth - size.clientWidth}px.`);
+}
+
+/**
  * Converts Chromium's precise V8 data into an Istanbul summary for browser-only controllers.
  * The result is reported separately from the 90% deterministic production-logic gate so difficult DOM code remains visible without mixing two incompatible execution environments.
  *
@@ -196,7 +209,12 @@ try {
     const browserErrors = [];
     desktop.on("pageerror", (error) => browserErrors.push(error.message));
     desktop.on("console", (message) => {
-        if (message.type() === "error") browserErrors.push(message.text());
+        if (message.type() !== "error") return;
+        const location = message.location();
+        const expectedMissingWorkspace = location.url.includes(
+            "/repos/example/unconfigured/contents/zeitberg.json",
+        );
+        if (!expectedMissingWorkspace) browserErrors.push(message.text());
     });
 
     await openComponent(desktop, baseUrl, "time");
@@ -207,8 +225,18 @@ try {
     await desktop.locator("#appZoomResetBtn").click();
     assert.equal(await desktop.locator("#appZoomLabel").textContent(), "100%");
 
+    await desktop.locator("#appHomeLink").click();
+    await desktop.locator("#loginSection:not([hidden])").waitFor();
+    assert.equal(await desktop.locator("#appSidebar").isVisible(), true);
+    await desktop.locator("#menuTodoBtn").click();
+    await desktop.locator("#todoView:not([hidden])").waitFor();
+    assert.match(desktop.url(), /\/todos\?/);
+    await desktop.locator("#menuWeekBtn").click();
+    await desktop.locator("#weekViewSection:not([hidden])").waitFor();
+
     await desktop.locator("#interfaceSettingsBtn").click();
     assert.equal(await desktop.locator("#interfaceDialog").evaluate((dialog) => dialog.open), true);
+    await assertNoHorizontalDialogOverflow(desktop.locator("#interfaceDialog .dialog-card"));
     assert.match(desktop.url(), /panel=settings/);
     await desktop.locator("#interfaceLanguage").selectOption("de");
     assert.equal(await desktop.locator("html").getAttribute("lang"), "de");
@@ -219,9 +247,14 @@ try {
 
     await desktop.locator("#workspaceSettingsBtn").click();
     assert.equal(await desktop.locator("#workspaceDialog").evaluate((dialog) => dialog.open), true);
+    await assertNoHorizontalDialogOverflow(desktop.locator("#workspaceDialog .dialog-card"));
+    assert.equal(await desktop.locator("#workspaceConfigForm").isVisible(), true);
+    assert.equal(await desktop.locator("#workspaceConfigName").inputValue(), "My workspace");
+    assert.equal(await desktop.locator("#workspaceConfigTimeEnabled").isChecked(), true);
     await desktop.locator("#workspaceDialogCloseBtn").click();
     await desktop.locator("#projectsBtn").click();
     assert.equal(await desktop.locator("#projectsDialog").evaluate((dialog) => dialog.open), true);
+    await assertNoHorizontalDialogOverflow(desktop.locator("#projectsDialog .dialog-card"));
     await desktop.locator("#projectsCancelBtn").click();
 
     await desktop.locator("#menuTodoBtn").click();
@@ -231,13 +264,92 @@ try {
     await desktop.locator("#todoOpenFilterBtn").click();
     await desktop.locator("#todoAddBtn").click();
     assert.equal(await desktop.locator("#todoDialog").evaluate((dialog) => dialog.open), true);
+    await assertNoHorizontalDialogOverflow(desktop.locator("#todoDialog .dialog-card"));
     await desktop.locator("#todoCancelBtn").click();
 
     await openComponent(desktop, baseUrl, "expenses");
     assert.equal(await desktop.locator("#expenseView").isVisible(), true);
     await desktop.locator("#expenseInventoryBtn").click();
     assert.equal(await desktop.locator("#expenseInventoryDialog").evaluate((dialog) => dialog.open), true);
-    await desktop.locator("#expenseInventoryCancelBtn").click();
+    await assertNoHorizontalDialogOverflow(desktop.locator("#expenseInventoryDialog .dialog-card"));
+    assert.equal(await desktop.locator("#expenseCategoryList .expense-category-row").count(), 7);
+    await desktop.locator("#expenseAddParticipantBtn").click();
+    await desktop.locator("#expenseAddParticipantBtn").click();
+    await desktop.locator("#expenseParticipantList .expense-inventory-name").nth(0).fill("Alex");
+    await desktop.locator("#expenseParticipantList .expense-inventory-name").nth(1).fill("Bea");
+    await desktop.locator("#expenseInventoryForm").evaluate((form) => form.requestSubmit());
+    await desktop.locator("#expenseInventoryDialog:not([open])").waitFor({ state: "attached" });
+
+    await desktop.locator("#expenseAddBtn").click();
+    assert.equal(await desktop.locator("#expenseDialog").evaluate((dialog) => dialog.open), true);
+    await desktop.waitForFunction(() => document.activeElement?.id === "expenseAmount");
+    assert.equal(await desktop.locator("#expenseDialog .dialog-title").count(), 1);
+    assert.equal(await desktop.locator("#expenseDialogMeta").count(), 0);
+    await assertNoHorizontalDialogOverflow(desktop.locator("#expenseDialog .dialog-card"));
+    assert.equal(await desktop.locator("#expensePayerPanel").evaluate((panel) => panel.hidden), true);
+    assert.equal(await desktop.locator("#expenseSplitPanel").evaluate((panel) => panel.hidden), true);
+    assert.equal(await desktop.locator("#expenseOutcome").evaluate((outcome) => outcome.hidden), true);
+    assert.equal(await desktop.locator("#expenseAdvancedDetails").evaluate((details) => details.open), false);
+    assert.equal(await desktop.locator("#expensePayer option").count(), 3);
+    assert.equal(await desktop.locator("#expenseSplitRows .expense-owed-input:checked").count(), 2);
+    assert.equal(await desktop.locator("#expenseCategory").inputValue(), "Other");
+    assert.equal(await desktop.locator("#expenseCategory").getAttribute("list"), "expenseCategoryOptions");
+    assert.equal(await desktop.locator("#expenseCategoryOptions option").count(), 7);
+    assert.equal(await desktop.locator("#expenseCurrency").inputValue(), "EUR");
+    const amountFontSize = await desktop.locator("#expenseAmount").evaluate(
+        (input) => Number.parseFloat(getComputedStyle(input).fontSize),
+    );
+    assert.ok(amountFontSize >= 30, `Amount typography was only ${amountFontSize}px.`);
+    assert.notEqual(await desktop.locator("#expenseDate").inputValue(), "");
+    await desktop.locator("#expensePayerSummaryBtn").click();
+    assert.equal(await desktop.locator("#expensePayerPanel").isVisible(), true);
+    await desktop.locator("#expensePayerPanelCloseBtn").click();
+    await desktop.locator("#expenseSplitSummaryBtn").click();
+    assert.equal(await desktop.locator("#expenseSplitPanel").isVisible(), true);
+    await desktop.locator("#expenseSplitPanelCloseBtn").click();
+    await desktop.locator("#expenseAmount").fill("invalid");
+    await desktop.locator("#expenseDescription").fill("Dinner");
+    await desktop.locator("#expenseForm").evaluate((form) => form.requestSubmit());
+    await desktop.locator("#expenseDialogError").waitFor({ state: "visible" });
+    assert.match(await desktop.locator("#expenseDialogError").textContent(), /Amount/);
+    assert.equal(await desktop.locator("#expenseDialog").evaluate((dialog) => dialog.open), true);
+    assert.equal(await desktop.locator("#expenseCategory").inputValue(), "Food & drink");
+    assert.match(await desktop.locator("#expenseCategoryHint").textContent(), /Suggested/);
+    await desktop.locator("#expenseDescription").fill("Mysterious item");
+    assert.equal(await desktop.locator("#expenseCategory").inputValue(), "Other");
+    assert.equal(await desktop.locator("#expenseCategoryHint").textContent(), "");
+    await desktop.locator("#expenseDescription").fill("Dinner");
+    await desktop.locator("#expenseAmount").fill("48.00");
+    assert.equal(await desktop.locator("#expenseOutcome").evaluate((outcome) => outcome.hidden), false);
+    await desktop.locator("#expenseCategory").fill("Unknown category");
+    await desktop.locator("#expenseForm").evaluate((form) => form.requestSubmit());
+    await desktop.locator("#expenseDialogError").waitFor({ state: "visible" });
+    assert.match(await desktop.locator("#expenseDialogError").textContent(), /existing category/i);
+    await desktop.locator("#expenseCategory").fill("Food & drink");
+    await desktop.locator("#expenseCurrency").fill("eur");
+    await desktop.locator("#expenseCurrency").blur();
+    assert.equal(await desktop.locator("#expenseCurrency").inputValue(), "EUR");
+    await desktop.locator("#expensePayerSummaryBtn").click();
+    await desktop.locator("#expensePayer").selectOption("__custom__");
+    assert.equal(await desktop.locator("#expensePayerSummary").textContent(), "Alex");
+    assert.match(await desktop.locator("#expensePayerRemaining").textContent(), /full.*48.*covered/i);
+    await desktop.locator("#expenseSplitSummaryBtn").click();
+    assert.equal(await desktop.locator("#expenseSplitPanel").isVisible(), true);
+    await desktop.locator('[data-allocation-type="exact"]').click();
+    const exactInputs = desktop.locator("#expenseSplitRows .expense-owed-input");
+    assert.equal(await exactInputs.count(), 2);
+    await exactInputs.nth(0).fill("20.00");
+    assert.equal(await exactInputs.nth(1).inputValue(), "28.00");
+    assert.equal(await exactInputs.nth(1).isEditable(), false);
+    assert.match(await desktop.locator("#expenseOutcomeSummary").textContent(), /Bea owes Alex.*28/);
+    await desktop.locator('[data-allocation-type="percentage"]').click();
+    const percentageInputs = desktop.locator("#expenseSplitRows .expense-owed-input");
+    assert.equal(await percentageInputs.nth(1).isEditable(), false);
+    await percentageInputs.nth(0).fill("35.00");
+    assert.equal(await percentageInputs.nth(1).inputValue(), "65.00");
+    await desktop.locator("#expenseForm").evaluate((form) => form.requestSubmit());
+    await desktop.locator("#expenseDialog:not([open])").waitFor({ state: "attached" });
+    assert.match(await desktop.locator("#expenseList").textContent(), /Dinner/);
 
     await openComponent(desktop, baseUrl, "time");
     await desktop.locator("#menuSearchBtn").click();
@@ -252,10 +364,41 @@ try {
     await desktop.goto(`${baseUrl}/index.html`, { waitUntil: "domcontentloaded" });
     await desktop.locator("#loginSection:not([hidden])").waitFor();
     assert.equal(await desktop.locator("#loginSection").isVisible(), true);
+
+    await desktop.route("https://api.github.com/**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === "/repos/example/unconfigured") {
+            await route.fulfill({ json: { default_branch: "main", full_name: "example/unconfigured", private: true } });
+            return;
+        }
+        if (url.pathname === "/user") {
+            await route.fulfill({ json: { login: "example" } });
+            return;
+        }
+        if (url.pathname === "/repos/example/unconfigured/contents/zeitberg.json") {
+            await route.fulfill({ json: { message: "Not Found" }, status: 404 });
+            return;
+        }
+        await route.fulfill({ json: { message: "Unexpected browser-smoke request" }, status: 500 });
+    });
+    await desktop.locator("#providerInput").selectOption("github");
+    await desktop.locator("#repositoryInput").fill("https://github.com/example/unconfigured");
+    await desktop.locator("#refInput").fill("main");
+    await desktop.locator("#tokenInput").fill("browser-smoke-token");
+    await desktop.locator("#loginForm").evaluate((form) => form.requestSubmit());
+    await desktop.locator("#workspaceDialog[open]").waitFor();
+    assert.equal(await desktop.locator("#workspaceConfigForm").isVisible(), true);
+    assert.notEqual(await desktop.locator("#workspaceConfigId").inputValue(), "");
+    assert.match(await desktop.locator("#workspaceConfigMeta").textContent(), /zeitberg\.json/);
+    assert.equal(await desktop.locator("#menuWeekBtn").isVisible(), false);
+    assert.equal(await desktop.locator("#menuTodoBtn").isVisible(), false);
+    assert.equal(await desktop.locator("#menuExpenseBtn").isVisible(), false);
+    await desktop.locator("#workspaceDialogCloseBtn").click();
+    await desktop.locator("#logoutBtn").click();
     assert.deepEqual(browserErrors, []);
     const desktopCoverage = await desktop.coverage.stopJSCoverage();
 
-    const narrow = await browser.newPage({ viewport: { width: 500, height: 800 } });
+    const narrow = await browser.newPage({ viewport: { width: 375, height: 667 } });
     await narrow.coverage.startJSCoverage({ resetOnNavigation: false });
     const narrowErrors = [];
     narrow.on("pageerror", (error) => narrowErrors.push(error.message));
@@ -281,6 +424,48 @@ try {
     assert.equal(workspaceDialog.width, workspaceDialog.viewportWidth);
     assert.equal(workspaceDialog.height, workspaceDialog.viewportHeight);
     await narrow.locator("#workspaceDialogCloseBtn").click();
+    await openComponent(narrow, baseUrl, "expenses");
+    await narrow.locator("#expenseAddBtn").click();
+    const expenseInventoryDialog = await dialogSize(narrow.locator("#expenseInventoryDialog .dialog-card"));
+    assert.equal(expenseInventoryDialog.width, expenseInventoryDialog.viewportWidth);
+    assert.equal(expenseInventoryDialog.height, expenseInventoryDialog.viewportHeight);
+    assert.equal(await narrow.locator("#expenseInventoryCategoriesSection").evaluate((section) => section.hidden), true);
+    assert.equal(await narrow.locator("#expenseParticipantList .expense-inventory-name").count(), 1);
+    await narrow.locator("#expenseParticipantList .expense-inventory-name").last().fill("Alex");
+    await narrow.locator("#expenseInventoryForm").evaluate((form) => form.requestSubmit());
+    await narrow.locator("#expenseInventoryDialog:not([open])").waitFor({ state: "attached" });
+    await narrow.locator("#expenseDialog[open]").waitFor();
+    const expenseDialog = await dialogSize(narrow.locator("#expenseDialog .dialog-card"));
+    assert.equal(expenseDialog.width, expenseDialog.viewportWidth);
+    assert.equal(expenseDialog.height, expenseDialog.viewportHeight);
+    assert.equal(await narrow.locator("#expenseInventoryBtn").isVisible(), true);
+    const flowCardHeight = await narrow.locator("#expensePayerSummaryBtn").evaluate(
+        (element) => element.getBoundingClientRect().height,
+    );
+    assert.ok(flowCardHeight >= 56, `Payer summary was compressed to ${flowCardHeight}px.`);
+    await narrow.locator("#expenseSplitSummaryBtn").click();
+    assert.equal(await narrow.locator("#expenseSplitPanel").isVisible(), true);
+    const splitPanelPosition = await narrow.locator("#expenseSplitPanel").evaluate((panel) => {
+        const panelRect = panel.getBoundingClientRect();
+        const actions = document.querySelector("#expenseForm .dialog-actions");
+        const actionRect = actions?.getBoundingClientRect();
+        return {
+            top: panelRect.top,
+            bottom: panelRect.bottom,
+            actionTop: actionRect?.top ?? window.innerHeight,
+        };
+    });
+    assert.ok(splitPanelPosition.top >= 0);
+    assert.ok(splitPanelPosition.bottom <= splitPanelPosition.actionTop + 1);
+    const expenseFormScroll = await narrow.locator("#expenseForm").evaluate((form) => ({
+        clientHeight: form.clientHeight,
+        scrollHeight: form.scrollHeight,
+        overflowY: getComputedStyle(form).overflowY,
+    }));
+    assert.ok(expenseFormScroll.scrollHeight > expenseFormScroll.clientHeight);
+    assert.equal(expenseFormScroll.overflowY, "auto");
+    await assertNoHorizontalDialogOverflow(narrow.locator("#expenseDialog .dialog-card"));
+    await narrow.locator("#expenseCancelBtn").click();
     assert.deepEqual(narrowErrors, []);
     const narrowCoverage = await narrow.coverage.stopJSCoverage();
 
