@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import coverageLibrary from "istanbul-lib-coverage";
 import { chromium } from "playwright";
 import v8ToIstanbul from "v8-to-istanbul";
+import { formatCapabilityLink } from "../routing.js";
 
 const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WORKSPACE_ID = "replace-with-a-unique-id";
@@ -381,12 +382,34 @@ try {
         }
         await route.fulfill({ json: { message: "Unexpected browser-smoke request" }, status: 500 });
     });
-    await desktop.locator("#providerInput").selectOption("github");
-    await desktop.locator("#repositoryInput").fill("https://github.com/example/unconfigured");
-    await desktop.locator("#refInput").fill("main");
-    await desktop.locator("#tokenInput").fill("browser-smoke-token");
-    await desktop.locator("#loginForm").evaluate((form) => form.requestSubmit());
+    const capabilityToken = "browser-smoke-capability-token";
+    const capabilityLink = formatCapabilityLink(
+        {
+            version: 1,
+            component: "expenses",
+            panel: "main",
+            workspace: {
+                provider: "github",
+                repositoryUrl: "https://github.com/example/unconfigured",
+                ref: "main",
+                workspacePath: "zeitberg.json",
+                expectedWorkspaceId: "",
+            },
+            state: {},
+        },
+        capabilityToken,
+        baseUrl,
+    );
+    await desktop.goto(capabilityLink, { waitUntil: "domcontentloaded" });
     await desktop.locator("#workspaceDialog[open]").waitFor();
+    assert.equal(new URL(desktop.url()).hash, "");
+    assert.equal(await desktop.locator("#capabilityImportDialog").count(), 0);
+    const storedCapabilityCredentials = await desktop.evaluate(() => ({
+        remembered: localStorage.getItem("zeitberg:workspace-credentials:local:v1"),
+        session: sessionStorage.getItem("zeitberg:workspace-credentials:session:v1"),
+    }));
+    assert.match(storedCapabilityCredentials.remembered || "", /browser-smoke-capability-token/);
+    assert.equal(storedCapabilityCredentials.session, null);
     assert.equal(await desktop.locator("#workspaceConfigForm").isVisible(), true);
     assert.notEqual(await desktop.locator("#workspaceConfigId").inputValue(), "");
     assert.match(await desktop.locator("#workspaceConfigMeta").textContent(), /zeitberg\.json/);

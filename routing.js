@@ -41,7 +41,6 @@ const PROVIDERS = new Set(["github", "gitlab", "codeberg", "forgejo", "custom", 
  * @property {number} version
  * @property {string} credential
  * @property {AppRoute} route
- * @property {boolean} requiresHostConfirmation
  */
 
 /**
@@ -594,12 +593,10 @@ export function parseCapabilityLink(value, basePath = "/") {
     if (formatAppRoute(route, basePath) !== formatAppRoute(publicRoute, basePath)) {
         throw new Error("The capability route does not match its public workspace locator.");
     }
-    const provider = route.workspace?.provider || "custom";
     return {
         version: CAPABILITY_VERSION,
         credential,
         route,
-        requiresHostConfirmation: !["github", "gitlab", "codeberg"].includes(provider),
     };
 }
 

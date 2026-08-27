@@ -81,6 +81,13 @@ test("the Zoidberg disclaimer uses a local image and identifies its template sou
     await access(new URL("../assets/why-not-zeitberg-2.png", import.meta.url));
 });
 
+test("capability recipients are not presented with a confirmation dialog", async () => {
+    const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+    assert.doesNotMatch(html, /id="capabilityImportDialog"/);
+    assert.doesNotMatch(html, /id="capabilityHostConfirm"/);
+    assert.doesNotMatch(html, /data-i18n="workspace\.importWarning"/);
+});
+
 test("zeitberg links advertise the local meme as their social preview", async () => {
     const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
     const imageUrl = "https://zeitberg.io/assets/why-not-zeitberg-2.png";

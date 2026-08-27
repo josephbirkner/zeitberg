@@ -968,13 +968,11 @@ body.is-entry-moving * {
   line-height: 1.4;
 }
 
-.workspace-share-dialog,
-.capability-import-dialog {
+.workspace-share-dialog {
   max-width: min(620px, calc(100vw - 24px));
 }
 
-.workspace-share-card,
-.capability-import-card {
+.workspace-share-card {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1008,21 +1006,6 @@ body.is-entry-moving * {
   margin: 0;
   color: var(--danger);
   font-weight: 700;
-}
-
-.workspace-host-confirm {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
-  border-radius: 8px;
-}
-
-.workspace-host-confirm input {
-  width: auto;
-  margin-top: 2px;
 }
 
 .projects-toolbar {

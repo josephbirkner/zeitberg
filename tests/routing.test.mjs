@@ -143,7 +143,6 @@ test("capability links round-trip one exact workspace and keep credentials out o
     assert.equal(link.includes(token), false);
     assert.equal(parsed.credential, token);
     assert.deepEqual(parsed.route, route);
-    assert.equal(parsed.requiresHostConfirmation, false);
 });
 
 test("capability links reject host confusion and scrub malformed bearer fragments", () => {
@@ -169,9 +168,9 @@ test("capability links reject host confusion and scrub malformed bearer fragment
     assert.equal(location.hash, "");
 });
 
-test("valid capability consumption scrubs history before returning the session credential", () => {
+test("valid capability consumption scrubs history before returning the credential", () => {
     const route = { version: 1, component: "time", panel: "main", workspace: githubWorkspace, state: {} };
-    const location = new URL(formatCapabilityLink(route, "session-only-token", "https://zeitberg.io"));
+    const location = new URL(formatCapabilityLink(route, "capability-token", "https://zeitberg.io"));
     let scrubbed = false;
     const browser = {
         history: {
@@ -187,11 +186,11 @@ test("valid capability consumption scrubs history before returning the session c
 
     assert.equal(scrubbed, true);
     assert.equal(location.hash, "");
-    assert.equal(consumed?.credential, "session-only-token");
+    assert.equal(consumed?.credential, "capability-token");
     assert.equal(consumed?.route.workspace?.repositoryUrl, githubWorkspace.repositoryUrl);
 });
 
-test("custom-host capability links require an additional host confirmation", () => {
+test("custom-host capability links decode without recipient-confirmation metadata", () => {
     const link = formatCapabilityLink(
         {
             version: 1,
@@ -210,7 +209,10 @@ test("custom-host capability links require an additional host confirmation", () 
         "https://zeitberg.io",
     );
 
-    assert.equal(parseCapabilityLink(link).requiresHostConfirmation, true);
+    const capability = parseCapabilityLink(link);
+    assert.equal(capability.credential, "custom-host-token");
+    assert.equal(capability.route.workspace?.provider, "custom");
+    assert.equal("requiresHostConfirmation" in capability, false);
 });
 
 test("local routes retain source mode without inventing repository coordinates", () => {

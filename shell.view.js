@@ -38,10 +38,6 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLButtonElement} appZoomOutBtn
  * @property {HTMLButtonElement} appZoomResetBtn
  * @property {HTMLElement} authStatusEl
- * @property {HTMLInputElement} capabilityHostConfirmInput
- * @property {HTMLButtonElement} capabilityImportCancelBtn
- * @property {HTMLButtonElement} capabilityImportOpenBtn
- * @property {HTMLInputElement} capabilityRememberInput
  * @property {HTMLButtonElement} createWorkspaceBtn
  * @property {HTMLElement} dataErrorEl
  * @property {HTMLButtonElement} editorBadgeEl
@@ -576,10 +572,6 @@ export class ShellView {
         this.elements.workspaceCopyLocatorBtn.disabled = isBusy;
         this.elements.workspaceShareTokenInput.disabled = isBusy || this.isLocalMode;
         this.elements.workspaceCopyCapabilityBtn.disabled = isBusy || this.isLocalMode;
-        this.elements.capabilityRememberInput.disabled = isBusy;
-        this.elements.capabilityHostConfirmInput.disabled = isBusy;
-        this.elements.capabilityImportCancelBtn.disabled = isBusy;
-        this.elements.capabilityImportOpenBtn.disabled = isBusy;
         this.elements.menuWeekBtn.disabled = isBusy;
         this.elements.menuTodoBtn.disabled = isBusy;
         this.elements.menuExpenseBtn.disabled = isBusy;

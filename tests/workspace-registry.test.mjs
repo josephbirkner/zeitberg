@@ -7,6 +7,7 @@ import {
     WorkspaceConnection,
     WorkspaceRegistry,
 } from "../config.js";
+import { WorkspaceController } from "../workspace.js";
 
 class MemoryStorage {
     constructor() {
@@ -154,6 +155,51 @@ test("ConfigService preserves refreshable OAuth grants without exposing them thr
     assert.equal(service.isWorkspaceCredentialRemembered(connection.id), true);
     assert.match(local.getItem("zeitberg:workspace-credentials:local:v1") || "", /oauth-v1/);
     assert.equal(JSON.stringify(connection.toObject()).includes("oauth-access"), false);
+});
+
+test("capability import remembers its credential and connects without recipient interaction", async (testContext) => {
+    const { local, session } = installBrowserStorage(testContext);
+    const service = new ConfigService();
+    const registry = new WorkspaceRegistry();
+    const route = {
+        version: 1,
+        component: "expenses",
+        panel: "main",
+        workspace: githubLocator("shared-expenses"),
+        state: {},
+    };
+    const runtime = {
+        activeWorkspaceConnection: null,
+        capabilityImport: { version: 1, credential: "shared-capability-token", route },
+        pendingRoute: null,
+        token: "",
+        workspaceRegistry: registry,
+    };
+    const connectedTokens = [];
+    const controller = Object.assign(Object.create(WorkspaceController.prototype), {
+        runtime,
+        configService: service,
+        activateWorkspaceConnection(connection, token) {
+            runtime.activeWorkspaceConnection = connection;
+            runtime.token = token;
+        },
+        async connectWithToken(token) {
+            connectedTokens.push(token);
+        },
+    });
+
+    const imported = await controller.importCapability();
+    const connection = registry.getActive();
+
+    assert.equal(imported, true);
+    assert.equal(connection?.repositoryUrl, route.workspace.repositoryUrl);
+    assert.equal(service.loadWorkspaceCredential(connection?.id || ""), "shared-capability-token");
+    assert.equal(service.isWorkspaceCredentialRemembered(connection?.id || ""), true);
+    assert.match(local.getItem("zeitberg:workspace-credentials:local:v1") || "", /shared-capability-token/);
+    assert.equal(session.getItem("zeitberg:workspace-credentials:session:v1"), null);
+    assert.equal(runtime.capabilityImport, null);
+    assert.equal(runtime.pendingRoute, route);
+    assert.deepEqual(connectedTokens, ["shared-capability-token"]);
 });
 
 test("single-workspace storage upgrades once into the registry", (testContext) => {

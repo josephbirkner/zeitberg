@@ -132,7 +132,7 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
 
 /**
  * @typedef {Object} WorkspaceElements
- * @description DOM owned by workspace connection, setup, creation, sharing, and capability-import flows.
+ * @description DOM owned by workspace connection, setup, creation, and sharing flows.
  * @property {HTMLElement} landingProviderStatusTextEl
  * @property {HTMLElement} loginErrorEl
  * @property {HTMLButtonElement} loginOAuthBtn
@@ -189,13 +189,6 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {HTMLInputElement} workspaceShareTokenInput
  * @property {HTMLButtonElement} workspaceCopyCapabilityBtn
  * @property {HTMLElement} workspaceShareErrorEl
- * @property {HTMLDialogElement} capabilityImportDialog
- * @property {HTMLElement} capabilityImportDetailsEl
- * @property {HTMLElement} capabilityHostConfirmWrap
- * @property {HTMLInputElement} capabilityHostConfirmInput
- * @property {HTMLElement} capabilityHostConfirmTextEl
- * @property {HTMLInputElement} capabilityRememberInput
- * @property {HTMLElement} capabilityImportErrorEl
  */
 
 /**
@@ -1548,74 +1541,26 @@ export class WorkspaceController {
     }
 
     /**
-     * Displays a scrubbed capability import for explicit recipient consent.
-     * No credential is persisted or sent while this dialog is open; custom provider hosts additionally require a dedicated trust checkbox.
-     * @returns {void}
+     * Imports a scrubbed capability without interrupting the recipient with a confirmation dialog.
+     * The validated locator enters the ordinary workspace registry, its bearer credential is remembered on this device, and the requested component route is restored through the shared connection pipeline.
+     * Responsibility for choosing a dedicated, appropriately scoped token remains with the person who creates and shares the capability link.
+     * @returns {Promise<boolean>} Whether a capability was available and handed to the connection pipeline.
      */
-    openCapabilityImportDialog() {
+    async importCapability() {
         const capability = this.runtime.capabilityImport;
         const locator = capability?.route.workspace || null;
-        if (!capability || !locator) return;
-        this.elements.capabilityImportDetailsEl.textContent = this.describeWorkspaceLocator(locator);
-        this.elements.capabilityRememberInput.checked = false;
-        this.elements.capabilityHostConfirmInput.checked = false;
-        setVisible(this.elements.capabilityHostConfirmWrap, capability.requiresHostConfirmation);
-        if (capability.requiresHostConfirmation) {
-            let host = locator.repositoryUrl;
-            try {
-                host = new URL(locator.repositoryUrl).host;
-            } catch {
-                // Locator validation already bounded the repository text.
-            }
-            this.elements.capabilityHostConfirmTextEl.textContent = this.locale.t("workspace.trustNamedHost", { host });
-        }
-        this.setError(this.elements.capabilityImportErrorEl, "");
-        if (!this.elements.capabilityImportDialog.open) this.elements.capabilityImportDialog.showModal();
-    }
-
-    /**
-     * Discards an imported bearer credential while retaining the public route as an independently authenticatable locator.
-     * @returns {void}
-     */
-    cancelCapabilityImport() {
+        if (!capability || !locator) return false;
+        const connection = this.runtime.workspaceRegistry.upsert(locator, {
+            expectedWorkspaceId: locator.expectedWorkspaceId,
+        });
+        this.runtime.workspaceRegistry.setActive(connection.id);
+        this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
+        this.configService.saveWorkspaceCredential(connection.id, capability.credential, true);
+        this.activateWorkspaceConnection(connection, capability.credential);
+        this.runtime.pendingRoute = capability.route;
         this.runtime.capabilityImport = null;
-        if (this.elements.capabilityImportDialog.open) this.elements.capabilityImportDialog.close();
-        this.showLoginScreen();
-        this.setError(this.elements.loginErrorEl, this.locale.t("workspace.notImported"));
-    }
-
-    /**
-     * Accepts a scrubbed capability, stores its credential in the explicitly selected tier, and only then starts provider access.
-     * The registry entry is bound to the capability's validated locator before component state is restored.
-     * @returns {Promise<void>}
-     */
-    async acceptCapabilityImport() {
-        const capability = this.runtime.capabilityImport;
-        const locator = capability?.route.workspace || null;
-        if (!capability || !locator) return;
-        if (capability.requiresHostConfirmation && !this.elements.capabilityHostConfirmInput.checked) {
-            this.setError(this.elements.capabilityImportErrorEl, this.locale.t("workspace.confirmHost"));
-            return;
-        }
-        try {
-            const connection = this.runtime.workspaceRegistry.upsert(locator, {
-                expectedWorkspaceId: locator.expectedWorkspaceId,
-            });
-            this.runtime.workspaceRegistry.setActive(connection.id);
-            this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
-            this.configService.saveWorkspaceCredential(
-                connection.id,
-                capability.credential,
-                this.elements.capabilityRememberInput.checked,
-            );
-            this.activateWorkspaceConnection(connection, capability.credential);
-            this.runtime.pendingRoute = capability.route;
-            this.runtime.capabilityImport = null;
-            this.elements.capabilityImportDialog.close();
-            await this.connectWithToken(this.runtime.token);
-        } catch (error) {
-            this.setError(this.elements.capabilityImportErrorEl, safeText(error));
-        }
+        await this.connectWithToken(this.runtime.token);
+        return true;
     }
 
     /**

@@ -408,16 +408,6 @@ class App {
         this.workspaceCopyCapabilityBtn = getRequiredElement("workspaceCopyCapabilityBtn", HTMLButtonElement);
         this.workspaceShareErrorEl = getRequiredElement("workspaceShareError", HTMLElement);
 
-        this.capabilityImportDialog = getRequiredElement("capabilityImportDialog", HTMLDialogElement);
-        this.capabilityImportDetailsEl = getRequiredElement("capabilityImportDetails", HTMLElement);
-        this.capabilityHostConfirmWrap = getRequiredElement("capabilityHostConfirmWrap", HTMLElement);
-        this.capabilityHostConfirmInput = getRequiredElement("capabilityHostConfirm", HTMLInputElement);
-        this.capabilityHostConfirmTextEl = getRequiredElement("capabilityHostConfirmText", HTMLElement);
-        this.capabilityRememberInput = getRequiredElement("capabilityRemember", HTMLInputElement);
-        this.capabilityImportErrorEl = getRequiredElement("capabilityImportError", HTMLElement);
-        this.capabilityImportCancelBtn = getRequiredElement("capabilityImportCancelBtn", HTMLButtonElement);
-        this.capabilityImportOpenBtn = getRequiredElement("capabilityImportOpenBtn", HTMLButtonElement);
-
         this.weekView = new WeekView({
             store: this.store,
             chunkCache: this.chunkCache,
@@ -818,13 +808,6 @@ class App {
                 workspaceShareTokenInput: this.workspaceShareTokenInput,
                 workspaceCopyCapabilityBtn: this.workspaceCopyCapabilityBtn,
                 workspaceShareErrorEl: this.workspaceShareErrorEl,
-                capabilityImportDialog: this.capabilityImportDialog,
-                capabilityImportDetailsEl: this.capabilityImportDetailsEl,
-                capabilityHostConfirmWrap: this.capabilityHostConfirmWrap,
-                capabilityHostConfirmInput: this.capabilityHostConfirmInput,
-                capabilityHostConfirmTextEl: this.capabilityHostConfirmTextEl,
-                capabilityRememberInput: this.capabilityRememberInput,
-                capabilityImportErrorEl: this.capabilityImportErrorEl,
             },
             onError: (element, message) => this.shell.setError(element, message),
             onToast: (message, timeout, tone) => this.shell.toast(message, timeout, tone),
@@ -883,10 +866,6 @@ class App {
                 appZoomOutBtn: this.appZoomOutBtn,
                 appZoomResetBtn: this.appZoomResetBtn,
                 authStatusEl: this.authStatusEl,
-                capabilityHostConfirmInput: this.capabilityHostConfirmInput,
-                capabilityImportCancelBtn: this.capabilityImportCancelBtn,
-                capabilityImportOpenBtn: this.capabilityImportOpenBtn,
-                capabilityRememberInput: this.capabilityRememberInput,
                 createWorkspaceBtn: this.createWorkspaceBtn,
                 dataErrorEl: this.dataErrorEl,
                 editorBadgeEl: this.editorBadgeEl,
@@ -1429,12 +1408,6 @@ class App {
         });
         this.workspaceCopyLocatorBtn.addEventListener("click", () => void this.workspaceController.copyActiveWorkspaceLink());
         this.workspaceCopyCapabilityBtn.addEventListener("click", () => void this.workspaceController.copyActiveCapabilityLink());
-        this.capabilityImportCancelBtn.addEventListener("click", () => this.workspaceController.cancelCapabilityImport());
-        this.capabilityImportOpenBtn.addEventListener("click", () => void this.workspaceController.acceptCapabilityImport());
-        this.capabilityImportDialog.addEventListener("cancel", (ev) => {
-            ev.preventDefault();
-            this.workspaceController.cancelCapabilityImport();
-        });
         this.menuWeekBtn.addEventListener("click", () => void this.navigateToTab("week"));
         this.menuTodoBtn.addEventListener("click", () => void this.navigateToTab("todos"));
         this.menuExpenseBtn.addEventListener("click", () => void this.navigateToTab("expenses"));
@@ -1494,8 +1467,12 @@ class App {
             return;
         }
         if (this.capabilityImport) {
-            this.shell.showLoginScreen();
-            this.workspaceController.openCapabilityImportDialog();
+            try {
+                await this.workspaceController.importCapability();
+            } catch (error) {
+                this.shell.showLoginScreen();
+                this.shell.setError(this.loginErrorEl, safeText(error));
+            }
             return;
         }
 
