@@ -96,6 +96,14 @@ class Handler(SimpleHTTPRequestHandler):
     app_entry_path = "/docs/"
     local_mode_enabled = True
 
+    def end_headers(self) -> None:
+        """Prevent a development reload from mixing static assets from different revisions."""
+        buffered_headers = getattr(self, "_headers_buffer", [])
+        has_cache_policy = any(header.lower().startswith(b"cache-control:") for header in buffered_headers)
+        if not has_cache_policy:
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def _select_workspace(self, requested_id: str = "") -> tuple[str, Path] | None:
         """Resolve a public workspace id to one server-authorized filesystem root."""
         workspace_id = requested_id.strip() or self.default_workspace_id

@@ -24,7 +24,7 @@ function readRepositoryFile(path) {
 test("the document loads modular stylesheets explicitly and in dependency order", async () => {
     const html = await readRepositoryFile("index.html");
     const linkedStylesheets = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/>/g)].map(
-        (match) => match[1],
+        (match) => match[1].split("?", 1)[0],
     );
     assert.deepEqual(linkedStylesheets, expectedStylesheets);
     await assert.rejects(access(new URL("style.css", repositoryRoot)), { code: "ENOENT" });
@@ -62,6 +62,7 @@ test("each stylesheet declares and retains its component ownership", async () =>
     assert.match(landing, /^\/\* Public landing page/);
     assert.match(landing, /\.landing-hero\s*\{/);
     assert.match(landing, /\.landing-landscape\s*\{/);
+    assert.match(landing, /\.landing-not-zoidberg\s*\{/);
     assert.match(landing, /body:not\(\.app-mode\)/);
     assert.doesNotMatch(landing, /\.landing-(?:eyebrow|badges)\b/);
     assert.doesNotMatch(landing, /\.week-grid\s*\{/);

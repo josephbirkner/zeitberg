@@ -27,6 +27,29 @@ export class ProviderApiError extends Error {
 }
 
 /**
+ * Describes a workspace bootstrap document that can be created or repaired by the application.
+ * Authentication, repository access, and transport failures deliberately remain ordinary provider errors; only a missing or syntactically invalid bootstrap file enters the workspace-setup flow.
+ */
+export class WorkspaceConfigurationError extends Error {
+    /**
+     * Creates a recoverable workspace-configuration diagnostic.
+     * @param {"missing" | "invalid_json"} reason Machine-readable setup reason.
+     * @param {string} path Repository-relative bootstrap path.
+     */
+    constructor(reason, path) {
+        const normalizedPath = String(path || "zeitberg.json");
+        const message =
+            reason === "missing"
+                ? `${normalizedPath} does not exist yet.`
+                : `${normalizedPath} is not valid JSON.`;
+        super(message);
+        this.name = "WorkspaceConfigurationError";
+        this.reason = reason;
+        this.path = normalizedPath;
+    }
+}
+
+/**
  * Encodes arbitrary UTF-8 repository text for APIs whose file endpoints require base64 content.
  * Chunking avoids exceeding JavaScript's argument limit when a future workspace document becomes large.
  * @param {string} value Plain repository file content.
@@ -127,6 +150,20 @@ function parseJsonDocument(raw, label) {
         return JSON.parse(raw);
     } catch {
         throw new Error(`Failed to parse ${label}`);
+    }
+}
+
+/**
+ * Parses the bootstrap document while preserving the distinction between repairable JSON syntax and unrelated repository failures.
+ * @param {string} raw Raw UTF-8 workspace configuration.
+ * @param {string} path Repository-relative bootstrap path used in setup diagnostics.
+ * @returns {Object}
+ */
+function parseWorkspaceDocument(raw, path) {
+    try {
+        return JSON.parse(raw);
+    } catch {
+        throw new WorkspaceConfigurationError("invalid_json", path);
     }
 }
 
@@ -314,6 +351,15 @@ export class DataSource {
     }
 
     /**
+     * Removes a previously loaded workspace model while retaining repository coordinates and save state.
+     * A failed bootstrap reload uses this before presenting setup so stale component paths cannot influence initialization writes.
+     * @returns {void}
+     */
+    clearWorkspace() {
+        this.workspace = null;
+    }
+
+    /**
      * Returns the active workspace or fails when the bootstrap document has not yet been loaded.
      * @returns {import("./model.js").Workspace}
      */
@@ -383,6 +429,17 @@ export class DataSource {
      * @returns {Promise<Object>}
      */
     async fetchWorkspace() {
+        throw new Error("Not implemented");
+    }
+
+    /**
+     * Checks whether one repository document already exists without interpreting its contents.
+     * Workspace setup uses this operation to seed only absent component resources and therefore never replace user data merely because a component was enabled.
+     * @param {string} repoPath Repository-relative document path.
+     * @returns {Promise<boolean>}
+     */
+    async repositoryFileExists(repoPath) {
+        void repoPath;
         throw new Error("Not implemented");
     }
 
@@ -810,7 +867,7 @@ export class GitHubDataSource extends DataSource {
     async fetchRaw(url) {
         const resp = await fetch(url, { headers: this.buildHeaders("application/vnd.github.raw"), cache: "no-store" });
         if (!resp.ok) {
-            throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
+            throw new ProviderApiError("GitHub", resp.status, await resp.text());
         }
         return await resp.text();
     }
@@ -867,8 +924,31 @@ export class GitHubDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchWorkspace() {
-        const raw = await this.fetchRaw(this.buildContentsUrl(this.getWorkspaceConfigPath()));
-        return parseJsonDocument(raw, "zeitberg.json");
+        const path = this.getWorkspaceConfigPath();
+        try {
+            const raw = await this.fetchRaw(this.buildContentsUrl(path));
+            return parseWorkspaceDocument(raw, path);
+        } catch (error) {
+            if (error instanceof ProviderApiError && error.status === 404) {
+                throw new WorkspaceConfigurationError("missing", path);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Checks for an existing GitHub repository document through the same authenticated raw-content endpoint used by ordinary reads.
+     * @param {string} repoPath Repository-relative document path.
+     * @returns {Promise<boolean>}
+     */
+    async repositoryFileExists(repoPath) {
+        try {
+            await this.fetchRaw(this.buildContentsUrl(repoPath));
+            return true;
+        } catch (error) {
+            if (error instanceof ProviderApiError && error.status === 404) return false;
+            throw error;
+        }
     }
 
     /**
@@ -1315,7 +1395,30 @@ class HostedFileDataSource extends DataSource {
      * @returns {Promise<Object>}
      */
     async fetchWorkspace() {
-        return parseJsonDocument(await this.fetchRepositoryFileText(this.getWorkspaceConfigPath()), "zeitberg.json");
+        const path = this.getWorkspaceConfigPath();
+        try {
+            return parseWorkspaceDocument(await this.fetchRepositoryFileText(path), path);
+        } catch (error) {
+            if (error instanceof ProviderApiError && error.status === 404) {
+                throw new WorkspaceConfigurationError("missing", path);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Checks for an existing hosted-provider document while retaining provider-specific authentication and error handling.
+     * @param {string} repoPath Repository-relative document path.
+     * @returns {Promise<boolean>}
+     */
+    async repositoryFileExists(repoPath) {
+        try {
+            await this.fetchRepositoryFileText(repoPath);
+            return true;
+        } catch (error) {
+            if (error instanceof ProviderApiError && error.status === 404) return false;
+            throw error;
+        }
     }
 
     /**
@@ -1555,7 +1658,7 @@ export class GitLabDataSource extends HostedFileDataSource {
 
 /**
  * Forgejo-family REST data source used by Codeberg and explicitly configured Forgejo hosts.
- * Its contents API commits one file at a time, so the entries manifest is deliberately written last and can never point at chunks that were not yet persisted.
+ * Its contents API commits one file at a time, so component integrity manifests are deliberately written after their documents and the workspace descriptor is exposed only after all seed files exist.
  */
 export class ForgejoDataSource extends HostedFileDataSource {
     /**
@@ -1595,12 +1698,18 @@ export class ForgejoDataSource extends HostedFileDataSource {
 
     /**
      * Fetches one contents record, optionally returning null when a new document does not exist.
+     * Forgejo normally reports an absent path with HTTP 404, but an entirely empty repository can instead answer HTTP 200 with an empty array. Since Git cannot contain an empty directory, that response cannot represent a file or directory and is safely normalized to the same missing-file result.
      * @param {string} repoPath Repository-relative path.
      * @param {boolean} [allowNotFound] Whether a missing path is expected.
      * @returns {Promise<any | null>}
      */
     async fetchFile(repoPath, allowNotFound = false) {
-        return await this.requestJson(this.buildContentsEndpoint(repoPath), { allowNotFound });
+        const payload = await this.requestJson(this.buildContentsEndpoint(repoPath), { allowNotFound });
+        if (Array.isArray(payload) && payload.length === 0) {
+            if (allowNotFound) return null;
+            throw new ProviderApiError(this.providerLabel, 404, `${repoPath} was not found.`);
+        }
+        return payload;
     }
 
     /**
@@ -1632,17 +1741,23 @@ export class ForgejoDataSource extends HostedFileDataSource {
 
     /**
      * Writes changed files through Forgejo's create/update contents API.
-     * Separate provider commits are unavoidable; ordering the manifest last preserves a recoverable repository state if a request fails midway.
+     * Separate provider commits are unavoidable; ordering enabled-component manifests after ordinary documents and zeitberg.json last preserves a recoverable repository state if a request fails midway.
      * @param {SaveFile[]} files Changed repository documents.
      * @param {string} message Commit message prefix.
      * @returns {Promise<SaveResult>}
      */
     async saveFiles(files, message) {
-        const manifestPath = this.workspace ? this.getEntriesManifestPath() : "";
+        const manifestPaths = new Set();
+        if (this.workspace?.hasComponent("time_tracking")) {
+            manifestPaths.add(this.getEntriesManifestPath());
+        }
+        if (this.workspace?.hasComponent("expenses")) {
+            manifestPaths.add(this.getExpensesManifestPath());
+        }
+        const workspacePath = this.getWorkspaceConfigPath();
         const prepared = this.prepareSaveFiles(files).sort((left, right) => {
-            if (left.path === manifestPath) return 1;
-            if (right.path === manifestPath) return -1;
-            return 0;
+            const rank = (path) => (path === workspacePath ? 2 : manifestPaths.has(path) ? 1 : 0);
+            return rank(left.path) - rank(right.path);
         });
         const updatedFiles = [];
         for (const file of prepared) {
@@ -1735,6 +1850,12 @@ export class CustomGitDataSource extends DataSource {
         if (this.delegate) this.delegate.setWorkspace(workspace);
     }
 
+    /** @returns {void} Clears the wrapper and detected provider workspace models together. */
+    clearWorkspace() {
+        super.clearWorkspace();
+        if (this.delegate) this.delegate.clearWorkspace();
+    }
+
     /**
      * Probes a public version endpoint without a credential, returning null for network/CORS failures.
      * @param {string} endpoint Origin-relative API endpoint.
@@ -1779,6 +1900,11 @@ export class CustomGitDataSource extends DataSource {
     /** @returns {Promise<Object>} Loads the custom provider's workspace bootstrap. */
     async fetchWorkspace() {
         return await (await this.ensureDelegate()).fetchWorkspace();
+    }
+
+    /** @param {string} repoPath @returns {Promise<boolean>} Checks a custom provider repository path through the detected implementation. */
+    async repositoryFileExists(repoPath) {
+        return await (await this.ensureDelegate()).repositoryFileExists(repoPath);
     }
 
     /** @returns {Promise<Object>} Loads the custom provider's entries manifest. */
@@ -1922,9 +2048,24 @@ export class LocalDataSource extends DataSource {
     async fetchWorkspace() {
         const resp = await fetch(this.buildLocalServerUrl("/workspace-config"), { cache: "no-store" });
         if (!resp.ok) {
+            if (resp.status === 404) {
+                throw new WorkspaceConfigurationError("missing", this.getWorkspaceConfigPath());
+            }
             throw new Error(`Local zeitberg.json not found (${resp.status}). Start server.py with --workspace PATH.`);
         }
-        return parseJsonDocument(await resp.text(), "zeitberg.json");
+        return parseWorkspaceDocument(await resp.text(), this.getWorkspaceConfigPath());
+    }
+
+    /**
+     * Checks a local workspace document without caching or exposing its filesystem location to the browser.
+     * @param {string} repoPath Repository-relative document path.
+     * @returns {Promise<boolean>}
+     */
+    async repositoryFileExists(repoPath) {
+        const resp = await fetch(this.buildWorkspaceUrl(repoPath), { cache: "no-store" });
+        if (resp.status === 404) return false;
+        if (!resp.ok) throw new Error(`Could not inspect local workspace file (${resp.status}).`);
+        return true;
     }
 
     /**

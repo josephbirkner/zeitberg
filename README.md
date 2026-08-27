@@ -55,14 +55,15 @@ No direct equivalent surfaced in our review. The closest projects each overlap w
 
 GitHub, GitLab.com, Codeberg, and compatible CORS-enabled GitLab/Forgejo servers use the same workspace and save pipeline. GitHub retains its PAT flow. GitLab and Codeberg accept provider tokens now; their Authorization Code + PKCE buttons become active when the deployment's public OAuth client ids are configured.
 
-1. Create a **private** repository for your data.
-2. Copy the contents of [`workspace-template`](./workspace-template) into it.
-3. In `zeitberg.json`, replace `workspace_id`, set the name and IANA timezone, then commit and push.
-4. Create an access token for that repository:
+1. Create a **private** repository for your data and initialize its default branch, for example with a README.
+2. Create an access token for that repository:
    - GitHub: a fine-grained PAT with `Contents: Read-only` to browse or `Contents: Read & write` to save.
    - GitLab: a PAT with API access, or the static PKCE flow when enabled on the deployment.
    - Codeberg/Forgejo: a repository-scoped token with repository read/write access. Forgejo OAuth grants are currently broader than scoped PATs, which the onboarding dialog states before authorization.
-5. Visit [zeitberg.io](https://zeitberg.io), select the provider, enter the repository URL, branch, and token, then open the workspace.
+3. Visit [zeitberg.io](https://zeitberg.io), select the provider, enter the repository URL, branch, and token, then open the workspace.
+4. If `zeitberg.json` is missing or invalid, Workspace settings opens a structured setup editor. Choose the shared name, timezone, projects path, and enabled components, then save. zeitberg creates only missing component documents and keeps existing repository data untouched.
+
+You may instead copy [`workspace-template`](./workspace-template) into the repository and edit `zeitberg.json` before connecting. Both onboarding paths use the same workspace model and canonical seed documents.
 
 Alternatively, choose **Create workspace** on the landing page. GitLab.com and Codeberg can create a private repository, initialize the checked-in [`workspace-template`](./workspace-template), validate its generated `zeitberg.json`, and open it without any zeitberg-operated backend. If a Forgejo-family server blocks browser cross-origin requests, connection preflight reports that limitation instead of treating it as malformed data.
 
@@ -187,7 +188,7 @@ The command runs every deterministic Node test under c8 and a headless Chromium 
 
 The measured first-party production scope is explicit in `package.json`: `appstate.js`, `cache.js`, `config.js`, `datasource.js`, `locale.js`, `model.js`, `oauth.js`, `routing.js`, `store.js`, and `utils.js`. This includes domain models, persistence and cache behavior, provider adapters, workspace switching, localization, routing, and shared utilities. Tests, generated or vendored assets, and one-off repository/import/build scripts are outside the production metric.
 
-The DOM composition entry points (`app.js`, `theme-init.js`, and the four `*.view.js` controllers) are excluded from the 90% Node/V8 gate because the application is served as unbundled browser modules under its production CSP. They are not hidden from measurement or automated validation: every coverage run launches the real static application in Chromium, records their separate line/function/branch execution in `coverage/browser-summary.json`, and checks local workspace initialization, component navigation, browser-history restoration, project/workspace/task/expense dialogs, and narrow full-screen layouts without credentials or private workspace data.
+The DOM composition and browser-controller modules (`app.js`, `theme-init.js`, the `*.view.js` controllers, `workspace.js`, and `workspace.loader.js`) are excluded from the 90% Node/V8 gate because the application is served as unbundled browser modules under its production CSP. They are not hidden from measurement or automated validation: every coverage run launches the real static application in Chromium, records their separate line/function/branch execution in `coverage/browser-summary.json`, and checks local workspace initialization, component navigation, browser-history restoration, project/workspace/task/expense dialogs, and narrow full-screen layouts without credentials or private workspace data.
 
 Repeat `--workspace` to test the multi-workspace switcher against several local repositories:
 
@@ -252,3 +253,11 @@ The code for this project was written using large language models with extensive
 The zeitberg mark and landing landscape are original hand-authored SVGs. The mark's iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitberg-mark.svg`](./assets/zeitberg-mark.svg) by `npm run build:icons`. Interface icons use [Google Material Symbols](https://github.com/google/material-design-icons) under the [Apache License 2.0](./icons/LICENSE). The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
 
 No generative or diffusion-based image model was used for the mark, landing landscape, or architecture graphic.
+
+<p align="center">
+  <a href="https://imgflip.com/memegenerator/Futurama-Zoidberg">
+    <img src="./assets/why-not-zeitberg-2.png" width="640" alt="Dr. Zoidberg asks: Want your time tracking, TODOs, and expenses in Git? Why not Zeitberg?" />
+  </a>
+</p>
+
+[`assets/why-not-zeitberg-2.png`](./assets/why-not-zeitberg-2.png) is a meme created from the [Futurama Zoidberg template on Imgflip](https://imgflip.com/memegenerator/Futurama-Zoidberg). The underlying Futurama and Dr. Zoidberg artwork is third-party material, remains the property of its respective rights holders, and is not covered by this repository's Apache License 2.0. zeitberg is an independent project and is not affiliated with Futurama or Dr. Zoidberg.

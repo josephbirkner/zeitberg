@@ -192,6 +192,24 @@ import {
  */
 
 /**
+ * Builds the starter category inventory used by a new or previously blank expense ledger.
+ * Keys and colors are deliberately language-neutral and stable so display names remain freely editable without breaking historical references.
+ * A fresh array is returned for every caller because workspace initialization and browser-side migration both pass these records into mutable serialization pipelines.
+ * @returns {ExpenseCategoryRaw[]}
+ */
+export function createDefaultExpenseCategories() {
+    return [
+        { key: "groceries", name: "Groceries", color: "#22c55e", archived: false, source_refs: [] },
+        { key: "food-drink", name: "Food & drink", color: "#f97316", archived: false, source_refs: [] },
+        { key: "transport", name: "Transport", color: "#3b82f6", archived: false, source_refs: [] },
+        { key: "accommodation", name: "Accommodation", color: "#8b5cf6", archived: false, source_refs: [] },
+        { key: "activities", name: "Activities", color: "#ec4899", archived: false, source_refs: [] },
+        { key: "household", name: "Household", color: "#14b8a6", archived: false, source_refs: [] },
+        { key: "other", name: "Other", color: "#64748b", archived: false, source_refs: [] },
+    ];
+}
+
+/**
  * @typedef {Object} ExpenseAmountRaw
  * @description One participant's exact integer-minor-unit contribution or allocation.
  * @property {string} participant_key
@@ -381,6 +399,46 @@ export class Workspace {
     }
 
     /**
+     * Creates a complete first-run workspace using the canonical repository layout shipped with zeitberg.
+     * The caller supplies identity and locale because those values belong to the connected repository and current user; component identifiers and paths remain stable defaults that the workspace editor may subsequently customize.
+     * @param {string} workspaceId Newly generated stable workspace identity.
+     * @param {string} name Human-readable workspace name.
+     * @param {string} timezone IANA timezone selected for date-oriented components.
+     * @returns {Workspace}
+     */
+    static createDefault(workspaceId, name, timezone) {
+        return Workspace.fromRaw({
+            $schema: "https://zeitberg.io/schema/workspace-v1.schema.json",
+            components: {
+                expenses: {
+                    paths: {
+                        document: "data/expenses.json",
+                        manifest: "data/index/expenses-manifest.json",
+                    },
+                    type: "expenses",
+                },
+                tasks: {
+                    paths: { document: "data/todos.json" },
+                    type: "todos",
+                },
+                time: {
+                    paths: {
+                        entries: "data/entries",
+                        manifest: "data/index/entries-manifest.json",
+                        week_requirements: "data/week-requirements.json",
+                    },
+                    type: "time_tracking",
+                },
+            },
+            name,
+            resources: { projects: "data/projects.json" },
+            schema_version: 1,
+            timezone,
+            workspace_id: workspaceId,
+        });
+    }
+
+    /**
      * Parses and validates a zeitberg.json payload.
      * Besides schema-version checks, this validates timezone support, stable identifiers, component uniqueness, and every repository-relative path before network or filesystem access occurs.
      * @param {unknown} raw Untrusted JSON payload returned by a data source.
@@ -413,6 +471,7 @@ export class Workspace {
             if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`zeitberg.json contains an invalid resource key: ${key}.`);
             resources[key] = normalizeRepositoryPath(value, `resources.${key}`);
         }
+        if (!resources.projects) throw new Error("zeitberg.json must define the shared projects resource.");
 
         if (!rawObj.components || typeof rawObj.components !== "object" || Array.isArray(rawObj.components)) {
             throw new Error("zeitberg.json components must be an object.");
@@ -443,6 +502,42 @@ export class Workspace {
                 paths[pathKey] = normalizeRepositoryPath(value, `components.${componentId}.paths.${pathKey}`);
             }
             components[componentId] = { paths, type };
+        }
+        if (!Object.keys(components).length) throw new Error("zeitberg.json must enable at least one component.");
+
+        /** @type {Object.<string, string[]>} */
+        const requiredPathsByType = {
+            expenses: ["document", "manifest"],
+            time_tracking: ["entries", "manifest", "week_requirements"],
+            todos: ["document"],
+        };
+        for (const [componentId, component] of Object.entries(components)) {
+            const requiredPaths = requiredPathsByType[component.type] || [];
+            for (const pathKey of requiredPaths) {
+                if (!component.paths[pathKey]) {
+                    throw new Error(`zeitberg.json component ${componentId} must define the ${pathKey} path.`);
+                }
+            }
+        }
+
+        const pathOwners = new Map();
+        for (const [key, path] of Object.entries(resources)) {
+            const owner = `resources.${key}`;
+            const existingOwner = pathOwners.get(path);
+            if (existingOwner) {
+                throw new Error(`zeitberg.json reuses ${path} for both ${existingOwner} and ${owner}.`);
+            }
+            pathOwners.set(path, owner);
+        }
+        for (const [componentId, component] of Object.entries(components)) {
+            for (const [pathKey, path] of Object.entries(component.paths)) {
+                const owner = `components.${componentId}.paths.${pathKey}`;
+                const existingOwner = pathOwners.get(path);
+                if (existingOwner) {
+                    throw new Error(`zeitberg.json reuses ${path} for both ${existingOwner} and ${owner}.`);
+                }
+                pathOwners.set(path, owner);
+            }
         }
 
         const schemaUrl = typeof rawObj.$schema === "string" ? rawObj.$schema.trim() : "";
@@ -2380,7 +2475,8 @@ export class ExpenseDocument {
     }
 
     /**
-     * Returns an empty but valid ledger for new workspace initialization.
+     * Returns an empty but valid transient ledger for reset and pre-load state.
+     * Persisted new workspaces use createDefaultExpenseCategories() so the first expense already has a useful taxonomy.
      * @param {string} [generatedAt] Optional generation timestamp.
      * @returns {ExpenseDocument}
      */
