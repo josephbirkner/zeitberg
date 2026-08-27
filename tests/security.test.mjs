@@ -31,8 +31,8 @@ test("OAuth client ids are explicit public deployment configuration", async () =
 test("the Zoidberg disclaimer uses a local image and identifies its template source", async () => {
     const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
     assert.match(html, /id="not-zoidberg"/);
-    assert.match(html, /src="\.\/assets\/why-not-zeitberg\.png"/);
+    assert.match(html, /src="\.\/assets\/why-not-zeitberg-2\.png"/);
     assert.match(html, /href="https:\/\/imgflip\.com\/memegenerator\/Futurama-Zoidberg"/);
     assert.doesNotMatch(html, /<img\b[^>]*\bsrc="https?:\/\//);
-    await access(new URL("../assets/why-not-zeitberg.png", import.meta.url));
+    await access(new URL("../assets/why-not-zeitberg-2.png", import.meta.url));
 });

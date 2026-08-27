@@ -255,8 +255,8 @@ No generative or diffusion-based image model was used for the mark, landing land
 
 <p align="center">
   <a href="https://imgflip.com/memegenerator/Futurama-Zoidberg">
-    <img src="./assets/why-not-zeitberg.png" width="640" alt="Dr. Zoidberg asks: Want your data in Git? Why not Zeitberg?" />
+    <img src="./assets/why-not-zeitberg-2.png" width="640" alt="Dr. Zoidberg asks: Want your time tracking, TODOs, and expenses in Git? Why not Zeitberg?" />
   </a>
 </p>
 
-[`assets/why-not-zeitberg.png`](./assets/why-not-zeitberg.png) is a meme created from the [Futurama Zoidberg template on Imgflip](https://imgflip.com/memegenerator/Futurama-Zoidberg). The underlying Futurama and Dr. Zoidberg artwork is third-party material, remains the property of its respective rights holders, and is not covered by this repository's Apache License 2.0. zeitberg is an independent project and is not affiliated with Futurama or Dr. Zoidberg.
+[`assets/why-not-zeitberg-2.png`](./assets/why-not-zeitberg-2.png) is a meme created from the [Futurama Zoidberg template on Imgflip](https://imgflip.com/memegenerator/Futurama-Zoidberg). The underlying Futurama and Dr. Zoidberg artwork is third-party material, remains the property of its respective rights holders, and is not covered by this repository's Apache License 2.0. zeitberg is an independent project and is not affiliated with Futurama or Dr. Zoidberg.
