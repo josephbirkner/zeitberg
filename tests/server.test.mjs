@@ -36,6 +36,7 @@ async function waitForServer(baseUrl, server) {
         if (server.exitCode !== null) throw new Error(`Development server exited with code ${server.exitCode}.`);
         try {
             const response = await fetch(`${baseUrl}/`, { redirect: "manual" });
+            await response.arrayBuffer();
             if (response.ok) return;
         } catch {
             // The listener may not have bound yet.
@@ -81,6 +82,7 @@ test("--no-local serves provider login and SPA routes without workspace APIs", a
         const applicationModule = await fetch(`${baseUrl}/app.js?v=test`, { redirect: "manual" });
         assert.equal(applicationModule.status, 200);
         assert.equal(applicationModule.headers.get("cache-control"), "no-store");
+        await applicationModule.arrayBuffer();
 
         const component = await fetch(`${baseUrl}/time`, { redirect: "manual" });
         assert.equal(component.status, 200);
@@ -91,9 +93,15 @@ test("--no-local serves provider login and SPA routes without workspace APIs", a
             redirect: "manual",
         });
         assert.equal(callback.status, 200);
+        await callback.arrayBuffer();
 
-        assert.equal((await fetch(`${baseUrl}/local-workspaces`)).status, 404);
-        assert.equal((await fetch(`${baseUrl}/save`, { method: "POST", body: "{}" })).status, 404);
+        const localWorkspaces = await fetch(`${baseUrl}/local-workspaces`);
+        assert.equal(localWorkspaces.status, 404);
+        await localWorkspaces.arrayBuffer();
+
+        const save = await fetch(`${baseUrl}/save`, { method: "POST", body: "{}" });
+        assert.equal(save.status, 404);
+        await save.arrayBuffer();
     } finally {
         await stopServer(server);
     }

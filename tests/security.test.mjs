@@ -80,3 +80,15 @@ test("the Zoidberg disclaimer uses a local image and identifies its template sou
     assert.doesNotMatch(html, /<img\b[^>]*\bsrc="https?:\/\//);
     await access(new URL("../assets/why-not-zeitberg-2.png", import.meta.url));
 });
+
+test("zeitberg links advertise the local meme as their social preview", async () => {
+    const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+    const imageUrl = "https://zeitberg.io/assets/why-not-zeitberg-2.png";
+    assert.match(html, /<link rel="canonical" href="https:\/\/zeitberg\.io\/" \/>/);
+    assert.match(html, /<meta property="og:type" content="website" \/>/);
+    assert.match(html, new RegExp(`<meta property="og:image" content="${imageUrl}" \\/>`));
+    assert.match(html, /<meta property="og:image:width" content="1073" \/>/);
+    assert.match(html, /<meta property="og:image:height" content="823" \/>/);
+    assert.match(html, /<meta name="twitter:card" content="summary_large_image" \/>/);
+    assert.match(html, new RegExp(`<meta name="twitter:image" content="${imageUrl}" \\/>`));
+});
