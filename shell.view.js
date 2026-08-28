@@ -64,6 +64,7 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLButtonElement} menuTodoBtn
  * @property {HTMLButtonElement} menuWeekBtn
  * @property {HTMLButtonElement} nextWeekBtn
+ * @property {HTMLButtonElement} openSharedWorkspaceBtn
  * @property {HTMLButtonElement} prevWeekBtn
  * @property {HTMLButtonElement} projectBindingCancelBtn
  * @property {HTMLButtonElement} projectBindingCloseBtn
@@ -107,6 +108,7 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLInputElement} workspaceConfigTodosEnabledInput
  * @property {HTMLButtonElement} workspaceCopyCapabilityBtn
  * @property {HTMLButtonElement} workspaceCopyLocatorBtn
+ * @property {HTMLInputElement} workspaceCapabilityLinkInput
  * @property {HTMLButtonElement} workspaceCreateBtn
  * @property {HTMLButtonElement} workspaceCreateCancelBtn
  * @property {HTMLButtonElement} workspaceCreateCloseBtn
@@ -118,16 +120,19 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLInputElement} workspaceCreateTimezoneInput
  * @property {HTMLInputElement} workspaceCreateTokenInput
  * @property {HTMLButtonElement} workspaceDialogCloseBtn
+ * @property {HTMLButtonElement} workspaceOpenCapabilityBtn
  * @property {HTMLButtonElement} workspaceOAuthBtn
  * @property {HTMLInputElement} workspacePathInput
  * @property {HTMLSelectElement} workspaceProviderInput
  * @property {HTMLInputElement} workspaceRefInput
  * @property {HTMLInputElement} workspaceRememberInput
  * @property {HTMLInputElement} workspaceRepositoryInput
+ * @property {HTMLButtonElement} workspaceScanCapabilityBtn
  * @property {HTMLButtonElement} workspaceSettingsBtn
  * @property {HTMLButtonElement} workspaceShareBtn
  * @property {HTMLButtonElement} workspaceShareCloseBtn
- * @property {HTMLInputElement} workspaceShareTokenInput
+ * @property {HTMLButtonElement} workspaceQrCloseBtn
+ * @property {HTMLInputElement} workspaceQrFileInput
  * @property {HTMLInputElement} workspaceTokenInput
  * @property {HTMLInputElement} zoomInput
  */
@@ -541,6 +546,7 @@ export class ShellView {
         this.elements.rememberInput.disabled = isBusy;
         this.elements.loginOAuthBtn.disabled = isBusy || this.elements.loginOAuthBtn.disabled;
         this.elements.createWorkspaceBtn.disabled = isBusy;
+        this.elements.openSharedWorkspaceBtn.disabled = isBusy;
         this.elements.workspaceDialogCloseBtn.disabled = isBusy;
         this.elements.workspaceConfigSaveBtn.disabled = isBusy;
         this.elements.workspaceConfigNameInput.disabled = isBusy;
@@ -570,8 +576,12 @@ export class ShellView {
         this.elements.workspaceShareBtn.disabled = isBusy || !this.runtime.workspace;
         this.elements.workspaceShareCloseBtn.disabled = isBusy;
         this.elements.workspaceCopyLocatorBtn.disabled = isBusy;
-        this.elements.workspaceShareTokenInput.disabled = isBusy || this.isLocalMode;
         this.elements.workspaceCopyCapabilityBtn.disabled = isBusy || this.isLocalMode;
+        this.elements.workspaceCapabilityLinkInput.disabled = isBusy;
+        this.elements.workspaceOpenCapabilityBtn.disabled = isBusy;
+        this.elements.workspaceScanCapabilityBtn.disabled = isBusy;
+        this.elements.workspaceQrCloseBtn.disabled = isBusy;
+        this.elements.workspaceQrFileInput.disabled = isBusy;
         this.elements.menuWeekBtn.disabled = isBusy;
         this.elements.menuTodoBtn.disabled = isBusy;
         this.elements.menuExpenseBtn.disabled = isBusy;

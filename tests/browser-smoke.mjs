@@ -12,6 +12,15 @@ import { formatCapabilityLink } from "../routing.js";
 
 const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WORKSPACE_ID = "replace-with-a-unique-id";
+const QR_DECODER_FIXTURE =
+    "iVBORw0KGgoAAAANSUhEUgAAAHsAAAB7AQMAAABuCW08AAAABlBMVEUAAAD///+l2Z/dAAAAAnRSTlP//8i138cAAAAJcEhZ" +
+    "cwAACxIAAAsSAdLdfvwAAAFqSURBVEiJ1dUxboQwEAXQQS7olgtY8jXc+UrLBfBygfWV6OYaSL4A7lxYTD6r3ayUIkyKKIqF" +
+    "BH4FjMczhuTLoP8MG1FkIwsNC3U6KNJGbgM7YTzrYLFRbKxrZBrVcO2JgpSfwIRZtYMepF29mdnGd+gngHyMbI/rnaATwNip" +
+    "dXzMRAcbWfLrhdrkc9LB7k1hs2HGrdNB4XVgSY8lJh1shLuba75TizpAvrFRl4BvGtGBiLkFvMklllkHm29jtZ3kvZekg/KI" +
+    "cVxQdK9Iz2Dv8Y518vbqXVIC5ZkdtmvgPCvBtynkWzBlMUkHm0d5ooEyVhl1IPzM+vSM9ByO8gm5LOsrUgVUO5G59XSlnJQg" +
+    "MNRC3vo1KqGiG+QeLJEpOsBAsIi0E6eER2djZdSxSzrA+YHjcxZ0Ng1KwMEW7AUVRE7UMDI+jkgp6qG6GZ2KeJWAcx1ZZ7N/" +
+    "bsMZHPmoR08QvRP0PfzKf+5P4AMSkGA7qFuRNgAAAABJRU5ErkJggg==";
+const QR_DECODER_RESULT = "https://zeitberg.io/expenses?fixture=1#zb-cap=local-decoder-check";
 const BROWSER_SOURCE_FILES = [
     "app.js",
     "expense.view.js",
@@ -110,6 +119,24 @@ async function assertNoHorizontalDialogOverflow(card) {
         scrollWidth: element.scrollWidth,
     }));
     assert.ok(size.scrollWidth <= size.clientWidth, `Dialog overflowed by ${size.scrollWidth - size.clientWidth}px.`);
+}
+
+/**
+ * Decodes a small generated fixture through the actual vendored worker inside the application CSP.
+ * This protects the QR image fallback against missing worker assets, import-map errors, and absent blob-image permissions that DOM-only tests cannot observe.
+ *
+ * @param {import("playwright").Page} page Loaded zeitberg page.
+ * @returns {Promise<void>}
+ */
+async function assertLocalQrDecoder(page) {
+    const decoded = await page.evaluate(async (encoded) => {
+        const { default: QrScanner } = await import("qr-scanner");
+        const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+        const image = new File([bytes], "capability.png", { type: "image/png" });
+        const result = await QrScanner.scanImage(image, { returnDetailedScanResult: true });
+        return result.data;
+    }, QR_DECODER_FIXTURE);
+    assert.equal(decoded, QR_DECODER_RESULT);
 }
 
 /**
@@ -219,6 +246,7 @@ try {
     });
 
     await openComponent(desktop, baseUrl, "time");
+    await assertLocalQrDecoder(desktop);
     assert.equal(await desktop.locator("#weekViewSection").isVisible(), true);
     assert.match(await desktop.title(), /zeitberg/);
     await desktop.locator("#appZoomInBtn").click();
@@ -270,6 +298,26 @@ try {
 
     await openComponent(desktop, baseUrl, "expenses");
     assert.equal(await desktop.locator("#expenseView").isVisible(), true);
+    assert.equal(await desktop.locator("#expenseAddBtn .expense-add-label").isVisible(), true);
+    const expenseActionStyle = await desktop.locator("#expenseAddBtn").evaluate((button) => {
+        const style = getComputedStyle(button);
+        const settle = document.querySelector("#expenseSettleBtn");
+        const settleStyle = settle ? getComputedStyle(settle) : null;
+        return {
+            background: style.backgroundColor,
+            settleBackground: settleStyle?.backgroundColor || "",
+            width: button.getBoundingClientRect().width,
+            settleWidth: settle?.getBoundingClientRect().width || 0,
+        };
+    });
+    assert.notEqual(expenseActionStyle.background, expenseActionStyle.settleBackground);
+    assert.ok(expenseActionStyle.width > expenseActionStyle.settleWidth);
+    const expenseActionChannels = (expenseActionStyle.background.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    assert.ok(
+        expenseActionChannels[1] > expenseActionChannels[0] &&
+            expenseActionChannels[1] > expenseActionChannels[2],
+        `Expense action was not green: ${expenseActionStyle.background}`,
+    );
     await desktop.locator("#expenseInventoryBtn").click();
     assert.equal(await desktop.locator("#expenseInventoryDialog").evaluate((dialog) => dialog.open), true);
     await assertNoHorizontalDialogOverflow(desktop.locator("#expenseInventoryDialog .dialog-card"));
@@ -400,6 +448,21 @@ try {
         capabilityToken,
         baseUrl,
     );
+    await desktop.locator("#openSharedWorkspaceBtn").click();
+    await desktop.locator("#workspaceDialog[open]").waitFor();
+    assert.equal(await desktop.locator("#workspaceAddSection").isVisible(), true);
+    assert.equal(await desktop.locator("#workspaceScanCapabilityBtn").isVisible(), true);
+    await desktop.locator("#workspaceCapabilityLink").fill(capabilityLink);
+    await desktop.locator("#workspaceCapabilityForm").evaluate((form) => form.requestSubmit());
+    await desktop.locator("#workspaceConfigForm:not([hidden])").waitFor();
+    assert.equal(await desktop.locator("#workspaceCapabilityLink").inputValue(), "");
+    const pastedCapabilityCredentials = await desktop.evaluate(() =>
+        localStorage.getItem("zeitberg:workspace-credentials:local:v1"),
+    );
+    assert.match(pastedCapabilityCredentials || "", /browser-smoke-capability-token/);
+    await desktop.locator("#workspaceDialogCloseBtn").click();
+    await desktop.locator("#logoutBtn").click();
+
     await desktop.goto(capabilityLink, { waitUntil: "domcontentloaded" });
     await desktop.locator("#workspaceDialog[open]").waitFor();
     assert.equal(new URL(desktop.url()).hash, "");
@@ -448,6 +511,12 @@ try {
     assert.equal(workspaceDialog.height, workspaceDialog.viewportHeight);
     await narrow.locator("#workspaceDialogCloseBtn").click();
     await openComponent(narrow, baseUrl, "expenses");
+    assert.equal(await narrow.locator("#expenseAddBtn .expense-add-label").isVisible(), false);
+    const compactExpenseActionWidths = await narrow.evaluate(() => ({
+        add: document.querySelector("#expenseAddBtn")?.getBoundingClientRect().width || 0,
+        inventory: document.querySelector("#expenseInventoryBtn")?.getBoundingClientRect().width || 0,
+    }));
+    assert.equal(compactExpenseActionWidths.add, compactExpenseActionWidths.inventory);
     await narrow.locator("#expenseAddBtn").click();
     const expenseInventoryDialog = await dialogSize(narrow.locator("#expenseInventoryDialog .dialog-card"));
     assert.equal(expenseInventoryDialog.width, expenseInventoryDialog.viewportWidth);

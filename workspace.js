@@ -3,6 +3,7 @@ import {
     inferHostedProvider,
     parseGitHubRepository,
 } from "./config.js";
+import { CapabilityScanner } from "./capability-scanner.js";
 import { createHostedDataSource, LocalDataSource } from "./datasource.js";
 import { createDefaultExpenseCategories, ExpenseDocument, ExpenseManifest, Workspace } from "./model.js";
 import { readOAuthClientId, refreshOAuthCredential, startOAuthAuthorization } from "./oauth.js";
@@ -10,6 +11,7 @@ import {
     formatAppRoute,
     formatCapabilityLink,
     normalizeWorkspaceRouteLocator,
+    parseCapabilityLink,
 } from "./routing.js";
 import { cloneJson, safeText, setVisible } from "./utils.js";
 
@@ -163,6 +165,16 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {HTMLInputElement} workspaceConfigExpensesManifestInput
  * @property {HTMLElement} workspaceConfigErrorEl
  * @property {HTMLButtonElement} workspaceConfigSaveBtn
+ * @property {HTMLElement} workspaceAddSectionEl
+ * @property {HTMLFormElement} workspaceCapabilityForm
+ * @property {HTMLInputElement} workspaceCapabilityLinkInput
+ * @property {HTMLElement} workspaceCapabilityErrorEl
+ * @property {HTMLButtonElement} workspaceScanCapabilityBtn
+ * @property {HTMLButtonElement} workspaceOpenCapabilityBtn
+ * @property {HTMLElement} workspaceQrScannerEl
+ * @property {HTMLVideoElement} workspaceQrVideoEl
+ * @property {HTMLInputElement} workspaceQrFileInput
+ * @property {HTMLButtonElement} workspaceQrCloseBtn
  * @property {HTMLFormElement} workspaceAddForm
  * @property {HTMLSelectElement} workspaceProviderInput
  * @property {HTMLInputElement} workspaceRepositoryInput
@@ -186,7 +198,6 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {HTMLDialogElement} workspaceShareDialog
  * @property {HTMLElement} workspaceShareDetailsEl
  * @property {HTMLButtonElement} workspaceCopyLocatorBtn
- * @property {HTMLInputElement} workspaceShareTokenInput
  * @property {HTMLButtonElement} workspaceCopyCapabilityBtn
  * @property {HTMLElement} workspaceShareErrorEl
  */
@@ -250,6 +261,28 @@ export class WorkspaceController {
         this.buildCurrentRoute = options.buildCurrentRoute;
         this.logout = options.onLogout;
         this.workspaceDialogOpenedByPush = false;
+        this.capabilityScanner = new CapabilityScanner({
+            elements: {
+                container: this.elements.workspaceQrScannerEl,
+                fileInput: this.elements.workspaceQrFileInput,
+                video: this.elements.workspaceQrVideoEl,
+            },
+            onResult: (value) => this.importCapabilityValue(value),
+            onError: (kind, error) => {
+                const key =
+                    kind === "unavailable"
+                        ? "workspace.qrUnavailable"
+                        : kind === "image"
+                          ? "workspace.qrImageError"
+                          : "workspace.qrCameraError";
+                const message =
+                    kind === "unavailable"
+                        ? this.locale.t(key)
+                        : this.locale.t(key, { error: this.locale.localizeError(error) });
+                this.setError(this.elements.workspaceCapabilityErrorEl, message);
+            },
+            onClearError: () => this.setError(this.elements.workspaceCapabilityErrorEl, ""),
+        });
     }
 
     /**
@@ -1036,7 +1069,7 @@ export class WorkspaceController {
      */
     renderWorkspaceRegistry() {
         this.elements.workspaceListEl.innerHTML = "";
-        this.elements.workspaceAddForm.hidden = this.isLocalMode || Boolean(this.runtime.workspaceSetup);
+        this.elements.workspaceAddSectionEl.hidden = this.isLocalMode || Boolean(this.runtime.workspaceSetup);
         this.elements.workspaceShareBtn.disabled = !this.runtime.workspace;
         this.renderWorkspaceConfiguration();
 
@@ -1136,14 +1169,17 @@ export class WorkspaceController {
      * @returns {void}
      */
     openWorkspaceSettings(historyMode = "push") {
-        if (!this.runtime.workspace && !this.runtime.workspaceSetup && !this.runtime.activeWorkspaceConnection) return;
+        const hasRoutableWorkspace = Boolean(
+            this.runtime.workspace || this.runtime.workspaceSetup || this.runtime.activeWorkspaceConnection,
+        );
         this.runtime.activeGlobalPanel = "workspaces";
-        this.workspaceDialogOpenedByPush = historyMode === "push";
+        this.workspaceDialogOpenedByPush = historyMode === "push" && hasRoutableWorkspace;
         this.elements.workspaceSettingsBtn.setAttribute("aria-current", "page");
         this.setError(this.elements.workspaceErrorEl, "");
+        this.setError(this.elements.workspaceCapabilityErrorEl, "");
         this.renderWorkspaceRegistry();
         if (!this.elements.workspaceDialog.open) this.elements.workspaceDialog.showModal();
-        if (historyMode === "push") this.writeCurrentRoute("push");
+        if (this.workspaceDialogOpenedByPush) this.writeCurrentRoute("push");
     }
 
     /**
@@ -1153,6 +1189,8 @@ export class WorkspaceController {
      * @returns {void}
      */
     closeWorkspaceSettings(historyMode = "back") {
+        this.closeCapabilityScanner();
+        this.elements.workspaceCapabilityLinkInput.value = "";
         const wasOpen = this.elements.workspaceDialog.open;
         if (wasOpen) this.elements.workspaceDialog.close();
         if (this.runtime.activeGlobalPanel === "workspaces") this.runtime.activeGlobalPanel = null;
@@ -1419,6 +1457,74 @@ export class WorkspaceController {
     }
 
     /**
+     * Handles submission of the compact capability-link form in Workspace settings.
+     * Pressing Enter and activating the Open link button both enter the same parser and connection pipeline used by QR results and startup capability URLs.
+     * @param {Event} event Capability form submission.
+     * @returns {Promise<void>}
+     */
+    async handleCapabilityLinkImport(event) {
+        event.preventDefault();
+        await this.importCapabilityValue(this.elements.workspaceCapabilityLinkInput.value);
+    }
+
+    /**
+     * Starts the embedded QR camera surface after an explicit user action.
+     * Any stale pasted bearer link is cleared first, while an unavailable camera leaves the local image-decoding fallback visible.
+     * @returns {Promise<void>}
+     */
+    async startCapabilityScanner() {
+        this.elements.workspaceCapabilityLinkInput.value = "";
+        await this.capabilityScanner.start();
+    }
+
+    /**
+     * Stops camera and worker activity and returns Workspace settings to its ordinary add form.
+     * @returns {void}
+     */
+    closeCapabilityScanner() {
+        this.capabilityScanner.close();
+    }
+
+    /**
+     * Decodes a QR image selected from the embedded fallback control.
+     * The decoded text is never rendered; it is handed directly to importCapabilityValue() and then removed with the file input value.
+     * @param {File | null} file User-selected image, or null after picker cancellation.
+     * @returns {Promise<void>}
+     */
+    async scanCapabilityImage(file) {
+        await this.capabilityScanner.scanFile(file);
+    }
+
+    /**
+     * Parses one pasted or scanned bearer link and imports it through the ordinary capability connection workflow.
+     * Raw link text is removed from the DOM before validation or network access, preventing the credential fragment from lingering in controls, screenshots, or later diagnostics.
+     * @param {unknown} value Candidate capability URL.
+     * @returns {Promise<boolean>} Whether a valid capability reached the workspace connection pipeline.
+     */
+    async importCapabilityValue(value) {
+        const candidate = String(value || "").trim();
+        this.elements.workspaceCapabilityLinkInput.value = "";
+        this.closeCapabilityScanner();
+        this.setError(this.elements.workspaceCapabilityErrorEl, "");
+        if (!candidate) {
+            this.setError(this.elements.workspaceCapabilityErrorEl, this.locale.t("workspace.capabilityRequired"));
+            return false;
+        }
+        if (this.weekView.saveInFlight || this.todoView.saveInFlight || this.expenseView.saveInFlight) {
+            this.setError(this.elements.workspaceCapabilityErrorEl, this.locale.t("toast.waitSaveSwitch"));
+            return false;
+        }
+        try {
+            this.runtime.capabilityImport = parseCapabilityLink(candidate, this.routeController.basePath);
+            return await this.importCapability();
+        } catch (error) {
+            this.runtime.capabilityImport = null;
+            this.setError(this.elements.workspaceCapabilityErrorEl, safeText(error));
+            return false;
+        }
+    }
+
+    /**
      * Removes one browser connection and both of its credential records without changing repository data.
      * Disconnecting the mounted workspace returns to login; every other connection remains registered and independently usable.
      * @param {string} connectionId Registry connection id.
@@ -1480,8 +1586,6 @@ export class WorkspaceController {
         if (!route.workspace) return;
         this.closeWorkspaceSettings("replace");
         this.elements.workspaceShareDetailsEl.textContent = this.describeWorkspaceLocator(route.workspace);
-        this.elements.workspaceShareTokenInput.value = "";
-        this.elements.workspaceShareTokenInput.disabled = route.workspace.provider === "local";
         this.elements.workspaceCopyCapabilityBtn.disabled = route.workspace.provider === "local";
         this.setError(
             this.elements.workspaceShareErrorEl,
@@ -1491,11 +1595,10 @@ export class WorkspaceController {
     }
 
     /**
-     * Closes the share dialog and clears any unsubmitted token from its input.
+     * Closes the share dialog and clears transient error feedback.
      * @returns {void}
      */
     closeWorkspaceShareDialog() {
-        this.elements.workspaceShareTokenInput.value = "";
         this.setError(this.elements.workspaceShareErrorEl, "");
         if (this.elements.workspaceShareDialog.open) this.elements.workspaceShareDialog.close();
     }
@@ -1518,14 +1621,20 @@ export class WorkspaceController {
     }
 
     /**
-     * Creates and copies a bearer-capability link after the owner explicitly supplies a dedicated token.
+     * Creates and copies a bearer-capability link with the active workspace credential already held by this browser.
+     * OAuth credentials are refreshed through the ordinary credential service before encoding, while local workspaces remain ineligible because they do not represent transferable repository authority.
      * Clipboard failure never falls back to a visible prompt, avoiding accidental on-screen disclosure of the encoded bearer payload.
      * @returns {Promise<void>}
      */
     async copyActiveCapabilityLink() {
         this.setError(this.elements.workspaceShareErrorEl, "");
-        const token = this.elements.workspaceShareTokenInput.value.trim();
         try {
+            const connection = this.runtime.activeWorkspaceConnection;
+            if (!connection || connection.provider === "local") {
+                throw new Error(this.locale.t("workspace.capabilityHostedOnly"));
+            }
+            const token = (await this.loadUsableWorkspaceCredential(connection)) || this.runtime.token;
+            if (!token) throw new Error(this.locale.t("workspace.capabilityCredentialMissing"));
             const link = formatCapabilityLink(
                 this.buildWorkspaceShareRoute(),
                 token,
@@ -1533,7 +1642,6 @@ export class WorkspaceController {
                 this.routeController.basePath,
             );
             await navigator.clipboard.writeText(link);
-            this.elements.workspaceShareTokenInput.value = "";
             this.toast(this.locale.t("workspace.capabilityCopied"), 4500, "success");
         } catch (error) {
             this.setError(this.elements.workspaceShareErrorEl, safeText(error));
@@ -1553,13 +1661,21 @@ export class WorkspaceController {
         const connection = this.runtime.workspaceRegistry.upsert(locator, {
             expectedWorkspaceId: locator.expectedWorkspaceId,
         });
-        this.runtime.workspaceRegistry.setActive(connection.id);
-        this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
         this.configService.saveWorkspaceCredential(connection.id, capability.credential, true);
+        this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
+        const connectionInfo = this.runtime.workspace
+            ? await this.preflightWorkspaceConnection(connection, capability.credential)
+            : null;
+        await Promise.all([
+            this.weekView.flushDraftWrites(),
+            this.todoView.flushDraftWrites(),
+            this.expenseView.flushDraftWrites(),
+        ]);
         this.activateWorkspaceConnection(connection, capability.credential);
         this.runtime.pendingRoute = capability.route;
         this.runtime.capabilityImport = null;
-        await this.connectWithToken(this.runtime.token);
+        this.closeWorkspaceSettings("none");
+        await this.connectWithToken(this.runtime.token, connectionInfo);
         return true;
     }
 
