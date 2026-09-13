@@ -10,7 +10,9 @@ test("the static application enforces first-party scripts and provider-aware con
     assert.match(csp, /script-src 'self'/);
     assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
     assert.match(csp, /connect-src 'self' https:/);
+    assert.match(csp, /img-src 'self' data: blob:/);
     assert.match(csp, /object-src 'none'/);
+    assert.match(csp, /worker-src 'self' blob:/);
 
     const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
     assert.ok(scripts.length >= 2);
@@ -86,6 +88,19 @@ test("capability recipients are not presented with a confirmation dialog", async
     assert.doesNotMatch(html, /id="capabilityImportDialog"/);
     assert.doesNotMatch(html, /id="capabilityHostConfirm"/);
     assert.doesNotMatch(html, /data-i18n="workspace\.importWarning"/);
+});
+
+test("capability sharing reuses browser credentials and QR decoding remains local", async () => {
+    const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+    assert.doesNotMatch(html, /id="workspaceShareToken"/);
+    assert.match(html, /id="workspaceCapabilityForm"/);
+    assert.match(html, /id="workspaceScanCapabilityBtn"/);
+    assert.match(html, /"qr-scanner": "\.\/vendor\/qr-scanner\/qr-scanner\.min\.js\?v=/);
+    await Promise.all([
+        access(new URL("../vendor/qr-scanner/qr-scanner.min.js", import.meta.url)),
+        access(new URL("../vendor/qr-scanner/qr-scanner-worker.min.js", import.meta.url)),
+        access(new URL("../vendor/qr-scanner/LICENSE", import.meta.url)),
+    ]);
 });
 
 test("zeitberg links advertise the local meme as their social preview", async () => {

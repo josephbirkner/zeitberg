@@ -29,6 +29,10 @@ jobs:
         run: |
           npm run build:icons
           git diff --exit-code -- apple-touch-icon.png assets/apple-touch-icon.png assets/zeitberg-icon-192.png assets/zeitberg-icon-512.png assets/zeitberg-maskable-512.png
+      - name: Verify vendored browser dependencies
+        run: |
+          npm run build:vendor
+          git diff --exit-code -- vendor/qr-scanner/qr-scanner.min.js vendor/qr-scanner/qr-scanner-worker.min.js vendor/qr-scanner/LICENSE
       - name: Run browser tests and enforce coverage
         run: npm run coverage
       - name: Type-check JavaScript

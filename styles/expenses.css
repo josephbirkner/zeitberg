@@ -26,6 +26,32 @@ body.app-mode #expenseView {
   place-items: center;
 }
 
+.expense-topbar-controls .expense-add-button {
+  width: auto;
+  min-width: 34px;
+  padding: 0 11px;
+  border-color: var(--accent-2);
+  background: var(--accent-2);
+  color: var(--bg);
+  grid-auto-flow: column;
+  gap: 6px;
+  font-weight: 800;
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--accent-2) 28%, transparent);
+}
+
+.expense-topbar-controls .expense-add-button:hover,
+.expense-topbar-controls .expense-add-button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent-2) 82%, var(--text));
+  background: color-mix(in srgb, var(--accent-2) 88%, var(--text));
+  color: var(--bg);
+}
+
+.expense-add-label {
+  font-size: 0.68rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .expense-view {
   min-height: 0;
   background: color-mix(in srgb, var(--bg) 88%, var(--text) 12%);
@@ -994,4 +1020,13 @@ html.ui-toolbar-compact .expense-topbar-controls {
 html.ui-toolbar-compact .expense-topbar-controls .btn {
   width: 32px;
   height: 32px;
+}
+
+html.ui-toolbar-compact .expense-topbar-controls .expense-add-button {
+  min-width: 32px;
+  padding: 0;
+}
+
+html.ui-toolbar-compact .expense-add-label {
+  display: none;
 }

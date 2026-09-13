@@ -7,6 +7,7 @@ import {
     WorkspaceConnection,
     WorkspaceRegistry,
 } from "../config.js";
+import { formatCapabilityLink, parseCapabilityLink } from "../routing.js";
 import { WorkspaceController } from "../workspace.js";
 
 class MemoryStorage {
@@ -173,12 +174,17 @@ test("capability import remembers its credential and connects without recipient 
         capabilityImport: { version: 1, credential: "shared-capability-token", route },
         pendingRoute: null,
         token: "",
+        workspace: null,
         workspaceRegistry: registry,
     };
     const connectedTokens = [];
     const controller = Object.assign(Object.create(WorkspaceController.prototype), {
         runtime,
         configService: service,
+        weekView: { flushDraftWrites: async () => {} },
+        todoView: { flushDraftWrites: async () => {} },
+        expenseView: { flushDraftWrites: async () => {} },
+        closeWorkspaceSettings() {},
         activateWorkspaceConnection(connection, token) {
             runtime.activeWorkspaceConnection = connection;
             runtime.token = token;
@@ -200,6 +206,109 @@ test("capability import remembers its credential and connects without recipient 
     assert.equal(runtime.capabilityImport, null);
     assert.equal(runtime.pendingRoute, route);
     assert.deepEqual(connectedTokens, ["shared-capability-token"]);
+});
+
+test("pasted capability links use the startup parser and are cleared before connection", async () => {
+    const route = {
+        version: 1,
+        component: "expenses",
+        panel: "main",
+        workspace: githubLocator("pasted-expenses"),
+        state: {},
+    };
+    const link = formatCapabilityLink(route, "pasted-capability-token", "https://zeitberg.io");
+    const runtime = { capabilityImport: null };
+    const capabilityInput = { value: link };
+    let importedCapability = null;
+    let scannerCloseCount = 0;
+    let errorText = "";
+    const controller = Object.assign(Object.create(WorkspaceController.prototype), {
+        runtime,
+        routeController: { basePath: "/" },
+        elements: {
+            workspaceCapabilityErrorEl: {},
+            workspaceCapabilityLinkInput: capabilityInput,
+        },
+        capabilityScanner: { close: () => (scannerCloseCount += 1) },
+        locale: { t: (key) => key },
+        setError(_element, message) {
+            errorText = String(message || "");
+        },
+        weekView: { saveInFlight: false },
+        todoView: { saveInFlight: false },
+        expenseView: { saveInFlight: false },
+        async importCapability() {
+            importedCapability = runtime.capabilityImport;
+            runtime.capabilityImport = null;
+            return true;
+        },
+    });
+
+    assert.equal(await controller.importCapabilityValue(link), true);
+    assert.equal(capabilityInput.value, "");
+    assert.equal(scannerCloseCount, 1);
+    assert.equal(errorText, "");
+    assert.equal(importedCapability?.credential, "pasted-capability-token");
+    assert.deepEqual(importedCapability?.route, route);
+});
+
+test("capability sharing reuses the active stored credential", async (testContext) => {
+    installBrowserStorage(testContext);
+    const service = new ConfigService();
+    const connection = WorkspaceConnection.fromLocator(githubLocator("shared-expenses"));
+    service.saveWorkspaceCredential(connection.id, "already-connected-token", true);
+    const route = {
+        version: 1,
+        component: "expenses",
+        panel: "main",
+        workspace: connection.toLocator(),
+        state: {},
+    };
+    let copiedLink = "";
+    let toastTone = "";
+    let errorText = "";
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: { location: { origin: "https://zeitberg.io" } },
+    });
+    Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { clipboard: { writeText: async (value) => (copiedLink = String(value)) } },
+    });
+    testContext.after(() => {
+        if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+        else delete globalThis.window;
+        if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+        else delete globalThis.navigator;
+    });
+
+    const controller = Object.assign(Object.create(WorkspaceController.prototype), {
+        runtime: { activeWorkspaceConnection: connection, token: "stale-runtime-token" },
+        configService: service,
+        routeController: { basePath: "/" },
+        elements: { workspaceShareErrorEl: {} },
+        locale: {
+            t: (key) => key,
+        },
+        setError(_element, message) {
+            errorText = String(message || "");
+        },
+        toast(_message, _timeout, tone) {
+            toastTone = String(tone || "");
+        },
+        buildWorkspaceShareRoute() {
+            return route;
+        },
+    });
+
+    await controller.copyActiveCapabilityLink();
+
+    assert.equal(errorText, "");
+    assert.equal(toastTone, "success");
+    assert.equal(parseCapabilityLink(copiedLink).credential, "already-connected-token");
+    assert.equal(copiedLink.includes("already-connected-token"), false);
 });
 
 test("single-workspace storage upgrades once into the registry", (testContext) => {
