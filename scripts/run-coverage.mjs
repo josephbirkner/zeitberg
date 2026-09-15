@@ -31,4 +31,8 @@ const unitTests = (await readdir(testDirectory))
 // the browser result remains visible in the same local/CI invocation.
 const coverageStatus = await run(process.execPath, [C8_BIN, process.execPath, "--test", ...unitTests]);
 const browserStatus = await run(process.execPath, [BROWSER_SMOKE]);
-if (coverageStatus !== 0 || browserStatus !== 0) process.exitCode = 1;
+const workTimeBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/work-time.browser.mjs", import.meta.url))]);
+const sessionBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/workspace-sessions.browser.mjs", import.meta.url))]);
+const demoBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/demo.browser.mjs", import.meta.url))]);
+const dialogBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/dialogs.browser.mjs", import.meta.url))]);
+if (coverageStatus !== 0 || browserStatus !== 0 || workTimeBrowserStatus !== 0 || sessionBrowserStatus !== 0 || demoBrowserStatus !== 0 || dialogBrowserStatus !== 0) process.exitCode = 1;

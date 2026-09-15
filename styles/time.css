@@ -277,7 +277,7 @@ body.app-mode #searchView > section:last-child .table-wrap {
   --visible-day-count: 7;
   display: grid;
   grid-template-columns: 56px repeat(var(--visible-day-count), minmax(0, 1fr));
-  grid-template-rows: 50px var(--timeline-height);
+  grid-template-rows: minmax(50px, auto) var(--timeline-height);
   width: 100%;
   isolation: isolate;
 }
@@ -299,6 +299,49 @@ body.app-mode #searchView > section:last-child .table-wrap {
   flex-direction: column;
   justify-content: center;
   gap: 2px;
+  min-width: 0;
+}
+
+.wg-work-status {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--muted);
+  font: 600 0.625rem/1.4 var(--sans);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.wg-work-status[data-status="pto"],
+.wg-work-status[data-status="holiday"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--chrome) 88%, #459780 12%);
+}
+
+.wg-work-status[data-status="flex"],
+.wg-work-status[data-status="mixed"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--chrome) 88%, #ae8541 12%);
+}
+
+.wg-work-status[data-status="sick"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--chrome) 88%, #b77691 12%);
+}
+
+.wg-work-status:hover,
+.wg-work-status:focus-visible {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .wg-week-summary {
@@ -313,6 +356,136 @@ body.app-mode #searchView > section:last-child .table-wrap {
   color: var(--text);
   font-size: 0.6875rem;
   font-weight: 800;
+  font-family: inherit;
+  min-height: 26px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.wg-week-number:hover,
+.wg-week-number:focus-visible {
+  border-color: var(--accent);
+}
+
+.week-date-dialog {
+  max-width: min(24rem, calc(100vw - 24px));
+}
+
+.week-date-dialog label {
+  display: grid;
+  gap: 6px;
+}
+
+.week-date-dialog input {
+  width: 100%;
+  min-width: 0;
+}
+
+.work-time-vacation {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.work-time-vacation h3,
+.work-time-vacation p {
+  margin: 0 0 8px;
+}
+
+.work-time-vacation h3 {
+  font-size: 0.875rem;
+}
+
+.work-time-vacation p,
+.work-time-vacation summary {
+  font-size: 0.75rem;
+}
+
+.work-time-vacation summary {
+  cursor: pointer;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.work-time-vacation-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.work-time-vacation-columns > div {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.work-time-vacation-columns dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.work-time-vacation-columns dd {
+  margin: 4px 0 0;
+  font-weight: 700;
+}
+
+.work-time-vacation-columns .is-negative dd {
+  color: var(--danger);
+}
+
+.work-time-vacation-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.work-time-vacation-booking {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.work-time-vacation-booking:hover,
+.work-time-vacation-booking:focus-visible {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.work-time-vacation-booking time {
+  font-weight: 700;
+}
+
+.work-time-vacation-status,
+.work-time-vacation-part,
+.work-time-vacation-comment {
+  color: var(--muted);
+}
+
+.work-time-vacation-status[data-status="planned"] {
+  color: var(--accent);
+}
+
+.work-time-vacation-part,
+.work-time-vacation-comment {
+  grid-column: 1 / -1;
 }
 
 .wg-week-tracked {
@@ -719,6 +892,157 @@ body.app-mode #searchView > section:last-child .table-wrap {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-faint);
+}
+
+#weekReqDialog {
+    width: min(1100px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+}
+
+#workTimeEditor {
+    min-width: 0;
+}
+
+.work-time-toolbar, .work-time-fields, .work-time-projects {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.work-time-fields > label {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
+.work-time-toolbar select {
+    width: auto;
+    max-width: 100%;
+}
+
+.work-time-table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.work-time-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.work-time-table th, .work-time-table td {
+    padding: 5px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+}
+
+.work-time-table select, .work-time-table input {
+    padding: 7px;
+    min-width: 0;
+}
+
+.work-time-table td:last-child {
+    width: 24%;
+}
+
+.work-time-table input[type="checkbox"], .work-time-projects input, .work-time-review-check input {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+}
+
+.work-time-projects label, .work-time-review-check {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.work-time-hours {
+    font-variant-numeric: tabular-nums;
+}
+
+.work-time-settings {
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+}
+
+.work-time-settings summary {
+    cursor: pointer;
+}
+
+.work-time-schedule {
+    display: grid;
+    grid-template-columns: minmax(145px, 2fr) repeat(7, minmax(50px, 1fr));
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.work-time-schedule input {
+    padding: 8px;
+}
+
+.work-time-error {
+    position: sticky;
+    bottom: 50px;
+    padding: 12px;
+    border: 1px solid #e96565;
+    background: var(--chrome-strong);
+    color: #e96565;
+    border-radius: 6px;
+    z-index: 1;
+}
+
+html.ui-narrow #weekReqDialog {
+    width: 100%;
+    max-width: 100%;
+}
+
+html.ui-narrow .work-time-schedule {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html.ui-narrow .work-time-table thead {
+    display: none;
+}
+
+html.ui-narrow .work-time-table tr {
+    display: grid;
+    grid-template-columns: 28px 1fr 1fr;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+html.ui-narrow .work-time-table td, html.ui-narrow .work-time-table th {
+    border: 0;
+    width: auto;
+}
+
+html.ui-narrow .work-time-table td:nth-child(4) {
+    grid-column: 2;
+}
+
+html.ui-narrow .work-time-table td:nth-child(6) {
+    grid-column: 2;
+}
+
+html.ui-narrow .work-time-table td:last-child {
+    grid-column: 2 / 4;
+}
+
+html.ui-narrow .work-time-table .work-time-hours::before {
+    content: attr(data-label) ": ";
+    color: var(--muted);
+}
+
+html.ui-narrow .work-time-half::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.75rem;
 }
 
 .week-requirements-row {

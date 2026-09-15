@@ -269,6 +269,9 @@ function stringParameter(params, key, maxLength = 512) {
 function parseViewState(component, panel, params) {
     /** @type {Object.<string, string | number | boolean | null>} */
     const state = {};
+    if (component === "todos" && booleanParameter(params, "all") === true) state.allWorkspaces = true;
+    const workspaceScope = stringParameter(params, "scope", 2048);
+    if (component === "time" && workspaceScope) state.workspaceScope = workspaceScope;
     const returnPanel = panel === "workspaces" || panel === "settings" ? stringParameter(params, "under", 32) : null;
     if (component === "time" && returnPanel === "search") state.returnPanel = "search";
     if (component === "time") {
@@ -449,6 +452,8 @@ export function formatAppRoute(route, basePath = "/") {
     }
 
     const state = route?.state || {};
+    if (component === "todos" && state.allWorkspaces === true) setStateParameter(params, "all", true);
+    if (component === "time") setStateParameter(params, "scope", state.workspaceScope);
     if ((panel === "workspaces" || panel === "settings") && component === "time" && state.returnPanel === "search") {
         params.set("under", "search");
     }
@@ -725,7 +730,14 @@ export class RouteController {
     write(route, mode = "replace") {
         if (this.replaceTimer) this.window.clearTimeout(this.replaceTimer);
         this.replaceTimer = 0;
-        const url = formatAppRoute(route, this.basePath);
+        let url = formatAppRoute(route, this.basePath);
+        // A playground stays disposable across view navigation and hard reloads.
+        const currentQuery = new URL(this.window.location.href).searchParams;
+        if (currentQuery.get("demo") === "1") {
+            url += `${url.includes("?") ? "&" : "?"}demo=1`;
+            const seed = currentQuery.get("demoSeed")?.slice(0, 128);
+            if (seed) url += `&demoSeed=${encodeURIComponent(seed)}`;
+        }
         if (mode === "push") this.window.history.pushState(null, "", url);
         else this.window.history.replaceState(null, "", url);
         return url;

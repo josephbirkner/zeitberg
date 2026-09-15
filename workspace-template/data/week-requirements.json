@@ -1,6 +1,5 @@
 {
-  "default_required_hours": 40,
   "generated_at": "",
-  "schema_version": 2,
-  "weeks": []
+  "schema_version": 3,
+  "employers": []
 }

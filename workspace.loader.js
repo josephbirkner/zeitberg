@@ -49,6 +49,7 @@ export function parseWeekChunkEntries(chunk, raw) {
  * @typedef {Object} WorkspaceLoaderOptions
  * @description Stores, views, services, and notifications used by repository hydration.
  * @property {WorkspaceLoaderRuntime} runtime
+ * @property {boolean} [activateRegistry] Whether this visible load may select the registry connection.
  * @property {boolean} isLocalMode
  * @property {import("./config.js").ConfigService} configService
  * @property {import("./appstate.js").AppState} state
@@ -80,6 +81,7 @@ export class WorkspaceLoader {
      * @param {WorkspaceLoaderOptions} options Loader dependencies supplied by the application composition root.
      */
     constructor(options) {
+        this.sessionOptions = options;
         this.runtime = options.runtime;
         this.isLocalMode = options.isLocalMode;
         this.configService = options.configService;
@@ -154,8 +156,8 @@ export class WorkspaceLoader {
                 displayName: workspace.name,
                 expectedWorkspaceId: workspace.workspace_id,
             });
-            this.runtime.workspaceRegistry.setActive(connection.id);
-            this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
+            if (this.sessionOptions.activateRegistry !== false) this.runtime.workspaceRegistry.setActive(connection.id);
+            if (this.sessionOptions.activateRegistry !== false) this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
             this.runtime.activeWorkspaceConnection = connection;
         }
         this.weekView.setDraftNamespace(this.workspaceController.buildDraftNamespace());
@@ -213,16 +215,12 @@ export class WorkspaceLoader {
         try {
             const raw = await this.runtime.dataSource.fetchWeekRequirements();
             const requirements = WeekRequirements.fromRaw(raw || {});
+            requirements.accounting?.validateProjects(this.store.getProjects().map((project) => project.key));
             this.store.setWeekRequirements(requirements);
             this.weekView.setWeekRequirements(requirements);
         } catch (err) {
-            const defaults = WeekRequirements.createDefault();
-            this.store.setWeekRequirements(defaults);
-            this.weekView.setWeekRequirements(defaults);
-            this.toast(
-                this.locale.t("toast.requirementsNotLoaded", { error: this.locale.localizeError(err) }),
-                5000,
-            );
+            // A malformed or inaccessible accounting document must never become an empty, saveable default.
+            throw new Error(this.locale.t("toast.requirementsNotLoaded", { error: this.locale.localizeError(err) }));
         }
     }
 

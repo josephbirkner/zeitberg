@@ -93,7 +93,9 @@ function isQuotaError(err) {
  * Used to reduce load times and avoid repeated network fetches.
  */
 export class ChunkCache {
-    constructor() {
+    /** @param {boolean} [persistent] False retains chunks only in memory, without opening or clearing IndexedDB. */
+    constructor(persistent = true) {
+        this.persistent = persistent;
         this.dbPromise = null;
         this.db = null;
         this.writesDisabled = false;
@@ -108,7 +110,7 @@ export class ChunkCache {
     async openDb() {
         if (this.db) return this.db;
         if (this.dbPromise) return await this.dbPromise;
-        if (typeof indexedDB === "undefined") return null;
+        if (!this.persistent || typeof indexedDB === "undefined") return null;
 
         this.dbPromise = new Promise((resolve) => {
             let req;
@@ -305,7 +307,7 @@ export class ChunkCache {
         this.memory.clear();
 
         try {
-            if (typeof indexedDB !== "undefined") indexedDB.deleteDatabase(CHUNK_CACHE.dbName);
+            if (this.persistent && typeof indexedDB !== "undefined") indexedDB.deleteDatabase(CHUNK_CACHE.dbName);
         } catch {
             // ignore
         }
@@ -317,10 +319,12 @@ export class ChunkCache {
  * Unlike the draft journal these records are never authoritative: callers may use them for ETag revalidation or temporary offline display, while provider data remains the source of truth.
  */
 export class RemoteCache {
+    /** @param {boolean} [persistent] False disables durable provider caches for disposable sessions. */
     /**
      * Initializes a lazy best-effort cache connection.
      */
-    constructor() {
+    constructor(persistent = true) {
+        this.persistent = persistent;
         this.dbPromise = null;
         this.db = null;
         this.writesDisabled = false;
@@ -333,7 +337,7 @@ export class RemoteCache {
     async openDb() {
         if (this.db) return this.db;
         if (this.dbPromise) return await this.dbPromise;
-        if (typeof indexedDB === "undefined") return null;
+        if (!this.persistent || typeof indexedDB === "undefined") return null;
         this.dbPromise = new Promise((resolve) => {
             let request;
             try {
@@ -434,7 +438,7 @@ export class RemoteCache {
         this.dbPromise = null;
         this.writesDisabled = false;
         try {
-            if (typeof indexedDB !== "undefined") indexedDB.deleteDatabase(REMOTE_CACHE.dbName);
+            if (this.persistent && typeof indexedDB !== "undefined") indexedDB.deleteDatabase(REMOTE_CACHE.dbName);
         } catch {
             // ignore
         }
@@ -449,8 +453,10 @@ export class DraftJournal {
     /**
      * Initializes the lazy IndexedDB connection used for durable week drafts.
      * No database is opened until the first read or write operation.
+     * @param {boolean} [persistent] False disables draft reads and writes for disposable sessions.
      */
-    constructor() {
+    constructor(persistent = true) {
+        this.persistent = persistent;
         this.dbPromise = null;
         this.db = null;
         this.writesDisabled = false;
@@ -464,7 +470,7 @@ export class DraftJournal {
     async openDb() {
         if (this.db) return this.db;
         if (this.dbPromise) return await this.dbPromise;
-        if (typeof indexedDB === "undefined") return null;
+        if (!this.persistent || typeof indexedDB === "undefined") return null;
 
         this.dbPromise = new Promise((resolve) => {
             /** @type {IDBOpenDBRequest} */

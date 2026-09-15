@@ -1,3 +1,4 @@
+import { bindSessionEvents } from "./session-binding.js";
 import {
     addIsoDays,
     cloneJson,
@@ -15,6 +16,7 @@ import {
     utcNowIso,
 } from "./utils.js";
 import { BALANCE_ACCUMULATION_START } from "./store.js";
+import { WorkTimeDialog } from "./work-time.view.js";
 
 const MIN_ENTRY_MINUTES = 15;
 const MIN_ENTRY_MS = MIN_ENTRY_MINUTES * 60 * 1000;
@@ -322,8 +324,6 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {HTMLButtonElement} elements.weekReqOkBtn
  * @property {HTMLElement} elements.weekReqMeta
  * @property {HTMLElement} elements.weekReqSummary
- * @property {HTMLInputElement} elements.weekReqHours
- * @property {HTMLTextAreaElement} elements.weekReqComment
  * @property {HTMLDialogElement} elements.entryDialog
  * @property {HTMLFormElement} elements.entryForm
  * @property {HTMLButtonElement} elements.entryCloseBtn
@@ -352,6 +352,7 @@ export class WeekView {
      * @param {WeekViewOptions} options
      */
     constructor(options) {
+        this.sessionOptions = options;
         this.store = options.store;
         this.chunkCache = options.chunkCache;
         this.draftJournal = options.draftJournal;
@@ -386,8 +387,7 @@ export class WeekView {
         this.weekReqOkBtn = options.elements.weekReqOkBtn;
         this.weekReqMetaEl = options.elements.weekReqMeta;
         this.weekReqSummaryEl = options.elements.weekReqSummary;
-        this.weekReqHoursInput = options.elements.weekReqHours;
-        this.weekReqCommentInput = options.elements.weekReqComment;
+        this.workTimeDialog = new WorkTimeDialog(this);
 
         this.entryDialog = options.elements.entryDialog;
         this.entryForm = options.elements.entryForm;
@@ -405,6 +405,8 @@ export class WeekView {
         this.onSearchDirty = options.onSearchDirty;
         this.onManifestUpdated = options.onManifestUpdated;
         this.onStateChange = options.onStateChange || (() => {});
+        /** @type {() => void} Reports applied edits, independently of navigation and save acknowledgements. */
+        this.onEdit = () => {};
 
         this.active = false;
         this.busy = false;
@@ -433,6 +435,7 @@ export class WeekView {
         this.draftWriteChain = Promise.resolve();
         this.draftWarningShown = false;
         this.saveInFlight = false;
+        this.lastSaveError = "";
         this.toastTimer = 0;
         this.nowTimer = 0;
         this.nowLineEl = null;
@@ -454,8 +457,8 @@ export class WeekView {
         const initialZoom = Number.parseFloat(this.zoomInput.value || "1");
         this.zoom = Number.isFinite(initialZoom) && initialZoom >= 1 ? initialZoom : 1;
 
-        this.bindEvents();
-        this.updateTopbarActions();
+        this.sessionBinding = bindSessionEvents(this, options);
+        if (options["bindEvents"] !== false) this.updateTopbarActions();
     }
 
     /**
@@ -829,6 +832,7 @@ export class WeekView {
      */
     setLatestWeekStart(latestWeekStart) {
         this.appState.setLatestWeekStart(latestWeekStart);
+        if (!this.active) return;
         this.latestWeekBtn.disabled =
             this.busy || Boolean(latestWeekStart && this.appState.weekStart === latestWeekStart);
     }
@@ -973,6 +977,61 @@ export class WeekView {
     }
 
     /**
+     * Opens a keyboard- and touch-accessible date picker from the week-number header.
+     * Native date validation runs before navigation; the existing week setter preserves zoom, drafts and route updates.
+     * The modal is created only on demand and removed on close, including cancellation with Escape.
+     * @returns {void}
+     */
+    openWeekDatePicker() {
+        if (!this.appState.weekStart || document.querySelector("dialog[open]")) return;
+        const dialog = document.createElement("dialog");
+        dialog.className = "dialog week-date-dialog";
+        dialog.setAttribute("aria-label", this.locale.t("week.chooseDate"));
+        const form = document.createElement("form");
+        form.className = "dialog-card";
+        const heading = document.createElement("h2");
+        heading.className = "dialog-title";
+        heading.textContent = this.locale.t("week.chooseDate");
+        const label = document.createElement("label");
+        label.textContent = this.locale.t("week.date");
+        const input = document.createElement("input");
+        input.type = "date";
+        input.required = true;
+        input.min = "1900-01-01";
+        input.max = "2199-12-31";
+        input.value = addIsoDays(this.appState.weekStart, this.focusedDayIndex);
+        label.append(input);
+        const actions = document.createElement("div");
+        actions.className = "dialog-actions row";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "btn btn-secondary";
+        cancel.textContent = this.locale.t("common.cancel");
+        cancel.addEventListener("click", () => dialog.close());
+        const go = document.createElement("button");
+        go.type = "submit";
+        go.className = "btn";
+        go.textContent = this.locale.t("week.goToDate");
+        actions.append(cancel, go);
+        form.append(heading, label, actions);
+        dialog.append(form);
+        form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            if (!input.reportValidity()) return;
+            const date = input.value;
+            dialog.close();
+            this.setWeekStart(isoWeekStart(date), isoWeekdayIndex(date));
+        });
+        dialog.addEventListener("close", () => {
+            dialog.remove();
+            this.weekScrollEl.querySelector("button.wg-week-number")?.focus({ preventScroll: true });
+        }, { once: true });
+        document.body.append(dialog);
+        dialog.showModal();
+        input.focus();
+    }
+
+    /**
      * Updates zoom state from the range input.
      * Part of the week view interaction flow.
      * @returns {void}
@@ -1072,7 +1131,7 @@ export class WeekView {
     handleZoomWheel(ev) {
         if (!this.active || !ev.ctrlKey) return;
         ev.preventDefault();
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         const boundedDelta = Math.max(-120, Math.min(120, ev.deltaY));
         const scale = Math.exp(-boundedDelta * 0.0025);
         this.setZoomLevel(this.zoom * scale, ev.clientY);
@@ -1096,7 +1155,7 @@ export class WeekView {
      * @returns {void}
      */
     handlePinchStart(ev) {
-        if (!this.active || ev.touches.length !== 2 || this.busy || this.saveInFlight) return;
+        if (!this.active || ev.touches.length !== 2 || this.busy) return;
         const distance = this.getTouchDistance(ev.touches);
         if (distance <= 0) return;
         if (ev.cancelable) ev.preventDefault();
@@ -1158,7 +1217,7 @@ export class WeekView {
      * @returns {void}
      */
     updateTopbarActions() {
-        const blocked = this.busy || this.saveInFlight;
+        const blocked = this.busy;
         const selectedEntry = this.selectedEntryId ? this.store.getEntryById(this.selectedEntryId) : null;
         const canSplit =
             Boolean(selectedEntry) &&
@@ -1606,6 +1665,60 @@ export class WeekView {
     }
 
     /**
+     * Builds a compact, accessible leave badge from this date's active employer accounts.
+     * Equal halves collapse to one label; differing employer schedules are never blended into a fictitious shared status.
+     * Unannotated zero-hour days display as off, while explicit leave remains visible without charging vacation.
+     * @param {string} date Calendar date in the workspace timezone.
+     * @returns {HTMLButtonElement | null} Dialog shortcut, or null when no account applies.
+     */
+    createDayWorkStatus(date) {
+        const accounts = this.store.getWeekRequirements().accounting?.employers.filter(
+            (account) => account.isActive(date) && date >= account.tracking_start,
+        ) || [];
+        if (!accounts.length) return null;
+        const rows = accounts.map((account) => {
+            const day = account.day(date);
+            const statuses = day.halves.map((status) => status === "work" && account.scheduledHours(date) === 0 ? "off" : status);
+            const labels = statuses.map((status) => this.locale.t(`workTime.short.${status}`));
+            const same = statuses[0] === statuses[1];
+            const text = same ? labels[0] : labels.map((label) => `½ ${label}`).join(" · ");
+            const detail = `${account.name}: ${this.locale.t("workTime.firstHalf")} — ${this.locale.t(`workTime.${statuses[0]}`)}; ${this.locale.t("workTime.secondHalf")} — ${this.locale.t(`workTime.${statuses[1]}`)}`;
+            return { text, tone: same ? statuses[0] : "mixed", detail: day.comment ? `${detail}\n${day.comment}` : detail };
+        });
+        const same = rows.every((row) => row.text === rows[0].text);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "wg-work-status";
+        button.dataset.status = same ? rows[0].tone : "mixed";
+        button.textContent = same ? rows[0].text : this.locale.t("workTime.employerCount", { count: this.locale.formatNumber(rows.length) });
+        button.title = `${rows.map((row) => row.detail).join("\n\n")}\n\n${this.locale.t("workTime.editDay")}`;
+        button.setAttribute("aria-label", `${date}: ${button.title}`);
+        button.setAttribute("aria-haspopup", "dialog");
+        button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.openWeekRequirementsDialog(date);
+        });
+        // Preserve native Enter/Space activation instead of invoking timeline entry shortcuts.
+        button.addEventListener("keydown", (event) => event.stopPropagation());
+        return button;
+    }
+
+    /**
+     * Refreshes header annotations after a requirements save without rebuilding entries or resetting scroll.
+     * Remeasuring also handles the first employer being created or the last applicable account disappearing.
+     * @returns {void}
+     */
+    updateDayWorkStatuses() {
+        if (!this.weekDom) return;
+        this.weekDom.dayHeaderEls.forEach((header, index) => {
+            header.querySelector(".wg-work-status")?.remove();
+            const badge = this.createDayWorkStatus(this.weekDom.days[index]);
+            if (badge) header.append(badge);
+        });
+        this.updateWeekScaleAndReposition(false);
+    }
+
+    /**
      * Rebuilds the week DOM from the store segment index.
      * Part of the week view interaction flow.
      * @returns {void}
@@ -1640,8 +1753,14 @@ export class WeekView {
 
         const timeHeader = document.createElement("div");
         timeHeader.className = "wg-header wg-week-summary";
-        const weekNumberEl = document.createElement("div");
+        const weekNumberEl = document.createElement("button");
+        weekNumberEl.type = "button";
         weekNumberEl.className = "wg-week-number";
+        weekNumberEl.title = this.locale.t("week.chooseDate");
+        weekNumberEl.setAttribute("aria-label", this.locale.t("week.chooseDate"));
+        weekNumberEl.setAttribute("aria-haspopup", "dialog");
+        weekNumberEl.addEventListener("click", () => this.openWeekDatePicker());
+        weekNumberEl.addEventListener("keydown", (event) => event.stopPropagation());
         const localizedWeek = this.locale.formatNumber(week, { minimumIntegerDigits: 2, useGrouping: false });
         weekNumberEl.textContent = this.locale.t("week.number", { week: localizedWeek });
         const trackedSeconds = this.store.getWeekTrackedSeconds(weekStart);
@@ -1691,9 +1810,12 @@ export class WeekView {
             dateEl.textContent = this.locale.formatDate(dayDate, this.timeContext.timeZone, {
                 day: "2-digit",
                 month: "2-digit",
+                year: "numeric",
             });
 
             header.append(headerTopEl, dateEl);
+            const workStatus = this.createDayWorkStatus(days[i]);
+            if (workStatus) header.append(workStatus);
             header.addEventListener("click", () => {
                 this.focusedDayIndex = i;
                 this.applyWeekFocusAndSelection();
@@ -1871,7 +1993,7 @@ export class WeekView {
                 el.addEventListener("dblclick", (ev) => {
                     ev.preventDefault();
                     ev.stopPropagation();
-                    if (this.editMode !== "normal" || this.busy || this.saveInFlight) return;
+                    if (this.editMode !== "normal" || this.busy) return;
                     this.selectRenderedSegment(dayIdx, seg.key);
                     this.openEntryDialog(Number(entry.id));
                 });
@@ -2173,7 +2295,7 @@ export class WeekView {
      * @returns {number | null}
      */
     createEntryAt(startMs, endMs) {
-        if (this.busy || this.saveInFlight) {
+        if (this.busy) {
             this.onToast(this.locale.t("toast.saving"));
             return null;
         }
@@ -2215,7 +2337,7 @@ export class WeekView {
      * @returns {void}
      */
     startEntryPointerEdit(ev, entryId, kind, sourceEntryEl) {
-        if (this.busy || this.saveInFlight || !this.weekDom?.metrics) return;
+        if (this.busy || !this.weekDom?.metrics) return;
         const entry = this.store.getEntryById(entryId);
         const bounds = this.timeContext.weekBoundsMs(this.appState.weekStart);
         if (!entry || !bounds || entry.weekStart !== this.appState.weekStart) return;
@@ -2334,7 +2456,7 @@ export class WeekView {
         };
         const isDoubleTap = isMatchingEntryDoubleTap(this.lastEntryTap, currentTap);
         this.lastEntryTap = isDoubleTap ? null : currentTap;
-        if (!isDoubleTap || this.editMode !== "normal" || this.busy || this.saveInFlight) return false;
+        if (!isDoubleTap || this.editMode !== "normal" || this.busy) return false;
 
         this.suppressEntryClickUntil = performance.now() + 500;
         const dayIdx = Number.parseInt(gesture.sourceEntryEl.dataset.dayIdx || "-1", 10);
@@ -3332,7 +3454,7 @@ export class WeekView {
      * @returns {void}
      */
     applyWeekEdit(params) {
-        if (this.saveInFlight) return this.onToast(this.locale.t("toast.saving"));
+        if (this.busy) return this.onToast(this.locale.t("toast.saving"));
         const before = this.store.snapshotWeekRaw(params.weekStart);
         const focusBefore = this.selectedEntryId;
         let after;
@@ -3361,6 +3483,7 @@ export class WeekView {
         this.redoStack.length = 0;
 
         this.refreshDirtyWeekState(params.weekStart);
+        this.onEdit();
         if (this.appState.weekStart === params.weekStart) {
             this.rebuildWeekView();
         }
@@ -3388,6 +3511,7 @@ export class WeekView {
         this.rememberCleanWeekBaseline(weekStart, this.store.snapshotWeekRaw(weekStart));
         this.store.applyWeekSnapshot(weekStart, rawEntries);
         this.refreshDirtyWeekState(weekStart);
+        this.onEdit();
         if (this.appState.weekStart !== weekStart) {
             this.setWeekStart(weekStart);
         } else {
@@ -3466,6 +3590,8 @@ export class WeekView {
      * @returns {void}
      */
     enqueueDraftOperation(operation, failureMessage) {
+        // Playground edits are intentionally ephemeral, not a failed browser-storage write.
+        if (this.draftJournal.persistent === false) return;
         this.draftWriteChain = this.draftWriteChain
             .catch(() => undefined)
             .then(async () => {
@@ -3665,24 +3791,27 @@ export class WeekView {
         }
 
         this.saveInFlight = true;
+        this.lastSaveError = "";
         this.onBusy(true);
         this.updateEditorBadge();
 
         const sortedWeeks = weekStarts.slice().sort((a, b) => a.localeCompare(b));
         try {
             await this.flushDraftWrites();
-            await this.saveWeeks(sortedWeeks);
+            const snapshots = new Map(sortedWeeks.map((ws) => [ws, cloneJson(this.store.snapshotWeekRaw(ws))]));
+            const saving = this.saveWeeks(sortedWeeks);
+            this.onBusy(false);
+            await saving;
             for (const ws of sortedWeeks) {
-                this.dirtyWeekStarts.delete(ws);
-                this.dirtyEntryIdsByWeek.delete(ws);
-                this.cleanWeekSnapshots.delete(ws);
-                this.cleanWeekShas.delete(ws);
-                this.queueDraftDelete(ws);
+                this.cleanWeekSnapshots.set(ws, snapshots.get(ws));
+                this.cleanWeekShas.set(ws, this.getManifestShaForWeek(ws));
+                this.refreshDirtyWeekState(ws);
             }
             await this.flushDraftWrites();
             if (this.appState.weekStart) this.rebuildWeekView();
             this.onToast(this.locale.t("toast.saved"), 2400, "success");
         } catch (err) {
+            this.lastSaveError = String(err);
             this.onToast(String(err), 5000);
         } finally {
             this.saveInFlight = false;
@@ -3933,6 +4062,10 @@ export class WeekView {
      * @returns {void}
      */
     renderWeekRequirementsSummary(summary) {
+        if (this.weekReqDialog.open) {
+            this.workTimeDialog.refreshSummary();
+            return;
+        }
         const accumulationDate = this.locale.formatDate(
             this.timeContext.dateFromLocalDayMinutes(BALANCE_ACCUMULATION_START, 0),
             this.timeContext.timeZone,
@@ -3960,17 +4093,11 @@ export class WeekView {
     }
 
     /**
-     * Opens the week requirements dialog for the active week.
-     * Lets the user set required hours and an optional note.
+     * Updates the week/date caption without reopening the requirements dialog or replacing its draft.
+     * @param {string} weekStart Monday represented by the dialog's daily editor.
      * @returns {void}
      */
-    openWeekRequirementsDialog() {
-        const weekStart = this.appState.weekStart;
-        if (!weekStart) {
-            this.onToast(this.locale.t("toast.noWeek"));
-            return;
-        }
-
+    updateWeekRequirementsMeta(weekStart) {
         const info = isoWeekInfo(weekStart);
         this.weekReqMetaEl.textContent = `${info.isoYear} • ${this.locale.t("week.number", {
             week: this.locale.formatNumber(info.week),
@@ -3978,17 +4105,41 @@ export class WeekView {
             this.timeContext.dateFromLocalDayMinutes(weekStart, 0),
             this.timeContext.timeZone,
         )}`;
-        this.renderWeekRequirementsSummary(this.getWeekSummaryData(weekStart));
-        this.weekReqHoursInput.value = this.formatRequiredHours(this.store.getWeekRequiredHours(weekStart));
-        this.weekReqCommentInput.value = this.store.getWeekComment(weekStart);
+    }
+
+    /**
+     * Opens the week requirements dialog for the active week.
+     * A header shortcut focuses that date's first half; the general shortcut retains the employer selector.
+     * @param {string} [date] Optional calendar date to reveal in the daily table.
+     * @returns {void}
+     */
+    openWeekRequirementsDialog(date = "") {
+        const weekStart = this.appState.weekStart;
+        if (!weekStart) {
+            this.onToast(this.locale.t("toast.noWeek"));
+            return;
+        }
+
+        this.updateWeekRequirementsMeta(weekStart);
+        if (date) {
+            const accounts = this.store.getWeekRequirements().accounting?.employers.filter(
+                (account) => account.isActive(date) && date >= account.tracking_start,
+            ) || [];
+            if (!accounts.some((account) => account.id === this.workTimeDialog.selectedId)) {
+                this.workTimeDialog.selectedId = accounts[0]?.id || "";
+            }
+        }
+        this.workTimeDialog.open(weekStart);
 
         if (!this.weekReqDialog.open) {
             this.weekReqDialog.showModal();
         }
         queueMicrotask(() => {
             try {
-                this.weekReqHoursInput.focus();
-                this.weekReqHoursInput.select();
+                const dayRow = Array.from(this.workTimeDialog.root.querySelectorAll("tr[data-date]"))
+                    .find((row) => /** @type {HTMLElement} */ (row).dataset.date === date);
+                const target = dayRow?.querySelector("select") || this.workTimeDialog.root.querySelector("select");
+                target?.focus();
             } catch {
                 // ignore
             }
@@ -4001,6 +4152,7 @@ export class WeekView {
      * @returns {void}
      */
     closeWeekRequirementsDialog() {
+        if (this.workTimeDialog.saving) return;
         if (this.weekReqDialog.open) {
             this.weekReqDialog.close();
         }
@@ -4021,42 +4173,7 @@ export class WeekView {
      */
     async handleWeekRequirementsSubmit(ev) {
         ev.preventDefault();
-        if (this.saveInFlight) {
-            this.onToast(this.locale.t("toast.saving"));
-            return;
-        }
-
-        const weekStart = this.appState.weekStart;
-        if (!weekStart) {
-            this.closeWeekRequirementsDialog();
-            return;
-        }
-
-        const requiredHours = Number.parseFloat(this.weekReqHoursInput.value || "");
-        if (!Number.isFinite(requiredHours) || requiredHours < 0 || requiredHours > 168) {
-            this.onToast(this.locale.t("toast.requirementRange"));
-            return;
-        }
-
-        const comment = this.weekReqCommentInput.value.trim();
-        const nowIso = utcNowIso();
-        const nextWeekRequirements = this.store.getWeekRequirements().withUpdatedWeek(weekStart, requiredHours, comment, nowIso);
-        const fileContent = nextWeekRequirements.toJson();
-        const info = isoWeekInfo(weekStart);
-        const message = `Update week requirements (${info.isoYear}-W${String(info.week).padStart(2, "0")})`;
-
-        this.onBusy(true);
-        try {
-            await this.dataSource.saveFiles([{ path: this.dataSource.getWeekRequirementsPath(), content: fileContent }], message);
-            this.store.setWeekRequirements(nextWeekRequirements);
-            this.updateWeekSummary(weekStart);
-            this.closeWeekRequirementsDialog();
-            this.onToast(this.locale.t("toast.requirementsSaved"), 2400, "success");
-        } catch (err) {
-            this.onToast(String(err), 5000);
-        } finally {
-            this.onBusy(false);
-        }
+        await this.workTimeDialog.save();
     }
 
     /**
@@ -4526,7 +4643,7 @@ export class WeekView {
     deleteEntryById(entryId) {
         const id = Number(entryId);
         if (!Number.isFinite(id)) return false;
-        if (this.busy || this.saveInFlight) {
+        if (this.busy) {
             this.onToast(this.locale.t("toast.saving"));
             return false;
         }

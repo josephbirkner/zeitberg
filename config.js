@@ -439,7 +439,13 @@ export class WorkspaceRegistry {
  * Keeps persistence concerns out of the main app controller.
  */
 export class ConfigService {
-    constructor() {
+    /**
+     * Accepts isolated storage areas for disposable sessions; normal sessions use browser storage.
+     * @param {{local: Storage, session: Storage} | null} [storage] Optional storage implementation.
+     */
+    constructor(storage = null) {
+        this.localStorage = storage?.local || localStorage;
+        this.sessionStorage = storage?.session || sessionStorage;
         this.storageKeys = { ...STORAGE_KEYS };
     }
 
@@ -449,7 +455,7 @@ export class ConfigService {
      * @returns {"auto" | "en" | "de"}
      */
     loadLocale() {
-        const locale = String(localStorage.getItem(this.storageKeys.locale) || "").trim().toLowerCase();
+        const locale = String(this.localStorage.getItem(this.storageKeys.locale) || "").trim().toLowerCase();
         return locale === "en" || locale === "de" ? locale : "auto";
     }
 
@@ -462,11 +468,11 @@ export class ConfigService {
     saveLocale(locale) {
         const normalized = String(locale || "").trim().toLowerCase();
         if (normalized === "auto") {
-            localStorage.removeItem(this.storageKeys.locale);
+            this.localStorage.removeItem(this.storageKeys.locale);
             return;
         }
         if (normalized !== "en" && normalized !== "de") throw new Error("Unsupported interface language.");
-        localStorage.setItem(this.storageKeys.locale, normalized);
+        this.localStorage.setItem(this.storageKeys.locale, normalized);
     }
 
     /**
@@ -511,16 +517,16 @@ export class ConfigService {
      */
     loadWorkspaceRegistry(fallbackConfig = DEFAULT_CONFIG) {
         try {
-            const raw = localStorage.getItem(this.storageKeys.workspaceRegistry);
+            const raw = this.localStorage.getItem(this.storageKeys.workspaceRegistry);
             if (raw !== null) return WorkspaceRegistry.fromRaw(JSON.parse(raw));
         } catch {
             return new WorkspaceRegistry();
         }
 
         const hasSingleWorkspaceState =
-            localStorage.getItem(this.storageKeys.config) !== null ||
-            localStorage.getItem(this.storageKeys.token) !== null ||
-            sessionStorage.getItem(this.storageKeys.token) !== null;
+            this.localStorage.getItem(this.storageKeys.config) !== null ||
+            this.localStorage.getItem(this.storageKeys.token) !== null ||
+            this.sessionStorage.getItem(this.storageKeys.token) !== null;
         if (!hasSingleWorkspaceState) return new WorkspaceRegistry();
 
         const config = { ...DEFAULT_CONFIG, ...fallbackConfig };
@@ -548,7 +554,7 @@ export class ConfigService {
      * @returns {void}
      */
     saveWorkspaceRegistry(registry) {
-        localStorage.setItem(this.storageKeys.workspaceRegistry, JSON.stringify(registry.toObject()));
+        this.localStorage.setItem(this.storageKeys.workspaceRegistry, JSON.stringify(registry.toObject()));
     }
 
     /**
@@ -613,8 +619,8 @@ export class ConfigService {
     loadWorkspaceCredentialRecord(connectionId) {
         const id = String(connectionId || "");
         if (!id) return null;
-        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
-        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        const sessionCredentials = this.readCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
+        const rememberedCredentials = this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials);
         return this.parseWorkspaceCredential(sessionCredentials[id] || rememberedCredentials[id] || "");
     }
 
@@ -639,16 +645,16 @@ export class ConfigService {
         const id = String(connectionId || "");
         if (!id) throw new Error("A workspace connection id is required to store a credential.");
         const value = String(credential || "");
-        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
-        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        const sessionCredentials = this.readCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
+        const rememberedCredentials = this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials);
         delete sessionCredentials[id];
         delete rememberedCredentials[id];
         if (value) {
             if (remember) rememberedCredentials[id] = value;
             else sessionCredentials[id] = value;
         }
-        this.writeCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
-        this.writeCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
+        this.writeCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
+        this.writeCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
     }
 
     /**
@@ -669,7 +675,7 @@ export class ConfigService {
      * @returns {boolean}
      */
     isWorkspaceCredentialRemembered(connectionId) {
-        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        const rememberedCredentials = this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials);
         return Boolean(rememberedCredentials[String(connectionId || "")]);
     }
 
@@ -681,12 +687,12 @@ export class ConfigService {
     clearWorkspaceCredential(connectionId) {
         const id = String(connectionId || "");
         if (!id) return;
-        const sessionCredentials = this.readCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
-        const rememberedCredentials = this.readCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials);
+        const sessionCredentials = this.readCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
+        const rememberedCredentials = this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials);
         delete sessionCredentials[id];
         delete rememberedCredentials[id];
-        this.writeCredentialMap(sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
-        this.writeCredentialMap(localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
+        this.writeCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
+        this.writeCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
     }
 
     /**
@@ -696,7 +702,7 @@ export class ConfigService {
      */
     loadConfig() {
         try {
-            const raw = localStorage.getItem(this.storageKeys.config);
+            const raw = this.localStorage.getItem(this.storageKeys.config);
             if (!raw) {
                 return { ...DEFAULT_CONFIG };
             }
@@ -713,7 +719,7 @@ export class ConfigService {
      * @returns {void}
      */
     saveConfig(config) {
-        localStorage.setItem(this.storageKeys.config, JSON.stringify(config));
+        this.localStorage.setItem(this.storageKeys.config, JSON.stringify(config));
     }
 
     /**
@@ -724,36 +730,36 @@ export class ConfigService {
     loadToken() {
         const remembered = this.isTokenRemembered();
         if (remembered) {
-            return localStorage.getItem(this.storageKeys.token) || "";
+            return this.localStorage.getItem(this.storageKeys.token) || "";
         }
-        return sessionStorage.getItem(this.storageKeys.token) || "";
+        return this.sessionStorage.getItem(this.storageKeys.token) || "";
     }
 
     /**
-     * Stores the token in either localStorage or sessionStorage.
+     * Stores the token in the configured remembered or session storage area.
      * Keeps storage logic separated from the UI.
      * @param {string} token
      * @param {boolean} remember
      * @returns {void}
      */
     saveToken(token, remember) {
-        localStorage.setItem(this.storageKeys.tokenRemembered, remember ? "1" : "0");
+        this.localStorage.setItem(this.storageKeys.tokenRemembered, remember ? "1" : "0");
         if (remember) {
-            localStorage.setItem(this.storageKeys.token, token);
-            sessionStorage.removeItem(this.storageKeys.token);
+            this.localStorage.setItem(this.storageKeys.token, token);
+            this.sessionStorage.removeItem(this.storageKeys.token);
         } else {
-            sessionStorage.setItem(this.storageKeys.token, token);
-            localStorage.removeItem(this.storageKeys.token);
+            this.sessionStorage.setItem(this.storageKeys.token, token);
+            this.localStorage.removeItem(this.storageKeys.token);
         }
     }
 
     /**
-     * Returns true when the token is stored in localStorage.
+     * Returns true when the token is stored in the remembered storage area.
      * Keeps storage logic separated from the UI.
      * @returns {boolean}
      */
     isTokenRemembered() {
-        return localStorage.getItem(this.storageKeys.tokenRemembered) === "1";
+        return this.localStorage.getItem(this.storageKeys.tokenRemembered) === "1";
     }
 
     /**
@@ -762,12 +768,12 @@ export class ConfigService {
      * @returns {void}
      */
     clearSaved() {
-        localStorage.removeItem(this.storageKeys.config);
-        localStorage.removeItem(this.storageKeys.token);
-        localStorage.removeItem(this.storageKeys.tokenRemembered);
-        localStorage.removeItem(this.storageKeys.workspaceRegistry);
-        localStorage.removeItem(this.storageKeys.rememberedWorkspaceCredentials);
-        sessionStorage.removeItem(this.storageKeys.token);
-        sessionStorage.removeItem(this.storageKeys.sessionWorkspaceCredentials);
+        this.localStorage.removeItem(this.storageKeys.config);
+        this.localStorage.removeItem(this.storageKeys.token);
+        this.localStorage.removeItem(this.storageKeys.tokenRemembered);
+        this.localStorage.removeItem(this.storageKeys.workspaceRegistry);
+        this.localStorage.removeItem(this.storageKeys.rememberedWorkspaceCredentials);
+        this.sessionStorage.removeItem(this.storageKeys.token);
+        this.sessionStorage.removeItem(this.storageKeys.sessionWorkspaceCredentials);
     }
 }

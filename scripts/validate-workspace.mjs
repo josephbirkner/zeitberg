@@ -134,7 +134,7 @@ async function validateWorkspace(options) {
             readJson(resolveWorkspaceFile(root, weekRequirementsPath)),
             readJson(resolveWorkspaceFile(root, manifestPath)),
         ]);
-        WeekRequirements.fromRaw(requirementsRaw);
+        WeekRequirements.fromRaw(requirementsRaw).accounting?.validateProjects(projectList.list().map((project) => project.key));
         const manifest = Manifest.fromRaw(manifestRaw, entriesDirectory);
         if (manifest.timezone !== workspace.timezone) {
             throw new Error(`Manifest timezone ${manifest.timezone} does not match workspace timezone ${workspace.timezone}.`);

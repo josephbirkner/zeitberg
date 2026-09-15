@@ -1,4 +1,7 @@
 import { AppState } from "./appstate.js";
+import { DemoDataSource, MemoryStorage } from "./demo.js";
+import { showBuildInfo } from "./version.js";
+import { WorkspaceSessions } from "./workspace.sessions.js";
 import { ChunkCache, DraftJournal, RemoteCache } from "./cache.js";
 import {
     ConfigService,
@@ -42,15 +45,17 @@ import {
  * Main application controller.
  * Coordinates data loading, UI wiring, and view lifecycle.
  */
-class App {
+export class App {
     /**
      * Initializes state, data sources, and UI element references.
      * Does not perform network requests until start() is called.
      */
     constructor() {
         this.routeController = new RouteController(window, getApplicationBasePath(document));
-        const oauthCallbackRequested = new URL(window.location.href).searchParams.has("oauth_provider");
-        if (!oauthCallbackRequested) this.routeController.restoreStaticRoute();
+        this.isDemoMode = new URL(window.location.href).searchParams.get("demo") === "1";
+        const oauthCallbackRequested = !this.isDemoMode && new URL(window.location.href).searchParams.has("oauth_provider");
+        if (!oauthCallbackRequested && !this.isDemoMode) this.routeController.restoreStaticRoute();
+        this.isDemoMode = new URL(window.location.href).searchParams.get("demo") === "1";
         /** @type {Promise<import("./oauth.js").OAuthCallbackResult | null>} */
         this.oauthCallbackPromise = oauthCallbackRequested
             ? consumeOAuthCallback(window, this.routeController.basePath)
@@ -60,17 +65,19 @@ class App {
         this.capabilityImport = null;
         this.capabilityImportStartupError = "";
         try {
-            this.capabilityImport = consumeCapabilityLink(window, this.routeController.basePath);
+            if (!this.isDemoMode) this.capabilityImport = consumeCapabilityLink(window, this.routeController.basePath);
         } catch (error) {
             this.capabilityImportStartupError = safeText(error);
         }
         this.initialRoute = this.capabilityImport?.route || this.routeController.read();
+        if (this.isDemoMode) {
+            this.initialRoute = { ...this.initialRoute, component: this.initialRoute.component || "time", panel: "main", workspace: { provider: "local", repositoryUrl: "", ref: "", workspacePath: "zeitberg.json", expectedWorkspaceId: "zeitberg-demo" } };
+        }
         /** @type {import("./routing.js").AppRoute | null} */
         this.pendingRoute = this.initialRoute.component ? this.initialRoute : null;
         this.routeRestoreInProgress = false;
         this.activeGlobalPanel = null;
-        this.workspaceDialogOpenedByPush = false;
-        this.configService = new ConfigService();
+        this.configService = new ConfigService(this.isDemoMode ? { local: new MemoryStorage(), session: new MemoryStorage() } : null);
         this.localePreference = this.configService.loadLocale();
         this.browserLanguages = Array.isArray(navigator.languages)
             ? navigator.languages
@@ -132,9 +139,9 @@ class App {
         this.store = new EntryStore(this.timeContext);
         this.todoStore = new TodoStore(this.store);
         this.expenseStore = new ExpenseStore(this.store);
-        this.chunkCache = new ChunkCache();
-        this.draftJournal = new DraftJournal();
-        this.remoteCache = new RemoteCache();
+        this.chunkCache = new ChunkCache(!this.isDemoMode);
+        this.draftJournal = new DraftJournal(!this.isDemoMode);
+        this.remoteCache = new RemoteCache(!this.isDemoMode);
         /** @type {import("./model.js").Workspace | null} */
         this.workspace = null;
         /** @type {{reason: "missing" | "invalid_json" | "invalid", path: string, detail: string, raw: Object | null} | null} */
@@ -142,7 +149,9 @@ class App {
         /** @type {Object | null} */
         this.workspaceConfigBaseRaw = null;
 
-        this.dataSource = this.isLocalMode
+        this.dataSource = this.isDemoMode
+            ? new DemoDataSource(this.config, new Date(), new URL(window.location.href).searchParams.get("demoSeed")?.slice(0, 128) || undefined)
+            : this.isLocalMode
             ? new LocalDataSource(this.config)
             : createHostedDataSource(this.config, this.token);
 
@@ -234,8 +243,6 @@ class App {
         this.weekReqOkBtn = getRequiredElement("weekReqOkBtn", HTMLButtonElement);
         this.weekReqMeta = getRequiredElement("weekReqMeta", HTMLElement);
         this.weekReqSummary = getRequiredElement("weekReqSummary", HTMLElement);
-        this.weekReqHours = getRequiredElement("weekReqHours", HTMLInputElement);
-        this.weekReqComment = getRequiredElement("weekReqComment", HTMLTextAreaElement);
 
         this.searchViewEl = getRequiredElement("searchView", HTMLElement);
         this.searchFiltersPanelEl = getRequiredElement("searchFiltersPanel", HTMLDetailsElement);
@@ -457,8 +464,6 @@ class App {
                 weekReqOkBtn: this.weekReqOkBtn,
                 weekReqMeta: this.weekReqMeta,
                 weekReqSummary: this.weekReqSummary,
-                weekReqHours: this.weekReqHours,
-                weekReqComment: this.weekReqComment,
                 entryDialog: this.entryDialog,
                 entryForm: this.entryForm,
                 entryCloseBtn: this.entryCloseBtn,
@@ -942,8 +947,6 @@ class App {
                 weekReqBtn: this.weekReqBtn,
                 weekReqCancelBtn: this.weekReqCancelBtn,
                 weekReqCloseBtn: this.weekReqCloseBtn,
-                weekReqComment: this.weekReqComment,
-                weekReqHours: this.weekReqHours,
                 weekReqOkBtn: this.weekReqOkBtn,
                 workspaceConfigExpensesEnabledInput: this.workspaceConfigExpensesEnabledInput,
                 workspaceConfigIdInput: this.workspaceConfigIdInput,
@@ -988,6 +991,7 @@ class App {
             onWriteRoute: (mode) => this.writeCurrentRoute(mode),
         });
         this.shell.initializeAppearance();
+        this.sessions = new WorkspaceSessions(this);
         this.applyLocale(this.localePreference, false);
     }
 
@@ -1039,7 +1043,7 @@ class App {
                 component: "todos",
                 panel: globalPanel || "main",
                 workspace: this.workspaceController.getCurrentWorkspaceRouteLocator(),
-                state: this.todoView.getRouteState(),
+                state: { ...this.todoView.getRouteState(), allWorkspaces: this.sessions.todos.enabled },
             };
         }
         if (this.state.activeTab === "expenses") {
@@ -1139,6 +1143,7 @@ class App {
      * @returns {void}
      */
     applyLoadedRoute(route) {
+        if (route.component === "todos") this.sessions.todos.enabled = route.state.allWorkspaces === true;
         const normalized = this.normalizeLoadedRoute(route);
         this.routeRestoreInProgress = true;
         const tab = this.tabForRoute(normalized);
@@ -1148,6 +1153,7 @@ class App {
             if (tab === "search") this.searchView.restoreRouteState(normalized.state);
         } else if (normalized.component === "todos") {
             this.todoView.restoreRouteState(normalized.state);
+            this.sessions.todos.selectedKey = JSON.stringify([this.activeWorkspaceConnection?.id, this.todoView.selectedTodoId]);
         } else if (normalized.component === "expenses") {
             this.expenseView.restoreRouteState(normalized.state);
         }
@@ -1201,6 +1207,14 @@ class App {
      * @returns {Promise<void>}
      */
     async handleRouteNavigation(route) {
+        if (this.isDemoMode !== (new URL(window.location.href).searchParams.get("demo") === "1")) {
+            // Back/Forward across the playground boundary must rebuild isolated services.
+            window.location.reload();
+            return;
+        }
+        if (this.isDemoMode) {
+            route = { ...route, component: route.component || "time", workspace: this.initialRoute.workspace };
+        }
         if (!route.component) {
             this.pendingRoute = null;
             this.shell.showLoginScreen();
@@ -1335,6 +1349,18 @@ class App {
      * @returns {Promise<void>}
      */
     async start() {
+        showBuildInfo(getRequiredElement("buildInfo", HTMLAnchorElement));
+        document.body.classList.toggle("demo-mode", this.isDemoMode);
+        getRequiredElement("demoLink", HTMLAnchorElement).href = `${this.routeController.basePath}time?demo=1`;
+        setVisible(getRequiredElement("demoNotice", HTMLElement), this.isDemoMode);
+        getRequiredElement("demoReset", HTMLButtonElement).addEventListener("click", () => {
+            this.sessions.reset();
+            window.location.reload();
+        });
+        getRequiredElement("demoExit", HTMLButtonElement).addEventListener("click", () => {
+            this.sessions.reset();
+            window.location.assign(this.routeController.basePath);
+        });
         const initialProvider = this.activeWorkspaceConnection?.provider || this.initialRoute.workspace?.provider || this.config.provider || "github";
         const initialRepository =
             this.activeWorkspaceConnection?.repositoryUrl ||
@@ -1387,6 +1413,10 @@ class App {
         });
         this.appHomeLink.addEventListener("click", (event) => {
             event.preventDefault();
+            if (this.isDemoMode) {
+                getRequiredElement("demoExit", HTMLButtonElement).click();
+                return;
+            }
             this.pendingRoute = null;
             this.workspaceController.closeWorkspaceSettings("none");
             this.shell.closeInterfaceSettings("none");
@@ -1483,6 +1513,15 @@ class App {
         setVisible(this.topbarEl, false);
         setVisible(this.loadingSection, false);
 
+        if (this.isDemoMode) {
+            this.activeWorkspaceConnection = this.workspaceRegistry.upsert(this.initialRoute.workspace, { displayName: "Alex’s playground", expectedWorkspaceId: "zeitberg-demo" });
+            this.workspaceRegistry.setActive(this.activeWorkspaceConnection.id);
+            this.workspaceController.openWorkspaceSettings = () => this.shell.toast(this.locale.t("demo.noRepository"));
+            this.shell.setAuthStatus(this.locale.t("demo.title"));
+            setVisible(this.projectsBtn, true);
+            await this.reloadData();
+            return;
+        }
         if (this.oauthCallbackRequested) {
             this.shell.showLoadingScreen(this.locale.t("loading.completeAuthorization"));
             try {
@@ -1564,10 +1603,10 @@ class App {
         const resumable = this.hasResumableWorkspace();
         const hasWorkspace = Boolean(this.workspace);
         const showUnresolvedApps = resumable && !hasWorkspace && !this.workspaceSetup;
-        setVisible(this.menuWeekBtn, hasWorkspace ? this.workspace.hasComponent("time_tracking") : showUnresolvedApps);
-        setVisible(this.menuSearchBtn, hasWorkspace ? this.workspace.hasComponent("time_tracking") : showUnresolvedApps);
-        setVisible(this.menuTodoBtn, hasWorkspace ? this.workspace.hasComponent("todos") : showUnresolvedApps);
-        setVisible(this.menuExpenseBtn, hasWorkspace ? this.workspace.hasComponent("expenses") : showUnresolvedApps);
+        setVisible(this.menuWeekBtn, Boolean(this.sessions?.available("week").length) || (hasWorkspace ? this.workspace.hasComponent("time_tracking") : showUnresolvedApps));
+        setVisible(this.menuSearchBtn, Boolean(this.sessions?.available("search").length) || (hasWorkspace ? this.workspace.hasComponent("time_tracking") : showUnresolvedApps));
+        setVisible(this.menuTodoBtn, Boolean(this.sessions?.available("todos").length) || (hasWorkspace ? this.workspace.hasComponent("todos") : showUnresolvedApps));
+        setVisible(this.menuExpenseBtn, Boolean(this.sessions?.available("expenses").length) || (hasWorkspace ? this.workspace.hasComponent("expenses") : showUnresolvedApps));
         setVisible(this.projectsBtn, Boolean(this.workspace?.resources.projects));
         setVisible(this.reloadDataBtn, resumable && !this.workspaceSetup);
         setVisible(this.logoutBtn, !this.isLocalMode && resumable);
@@ -1581,9 +1620,9 @@ class App {
      */
     async navigateToTab(tab) {
         if (this.workspaceSetup) return;
-        this.state.setActiveTab(tab);
         if (this.workspace) {
             if (this.appSection.hidden) {
+                this.state.setActiveTab(tab);
                 this.shell.showApplicationScreen();
                 this.writeCurrentRoute("push");
             } else {
@@ -1592,6 +1631,8 @@ class App {
             if (tab === "search") queueMicrotask(() => this.searchInput.focus());
             return;
         }
+
+        this.state.setActiveTab(tab);
 
         const connection = this.activeWorkspaceConnection || this.workspaceRegistry.getActive();
         if (!connection) {
@@ -1691,6 +1732,10 @@ class App {
      * @returns {void}
      */
     saveActiveView() {
+        if (this.sessions.current) {
+            void this.sessions.saveAll();
+            return;
+        }
         if (this.state.activeTab === "todos") {
             void this.todoView.saveNow();
             return;
@@ -1779,6 +1824,7 @@ class App {
      * @returns {void}
      */
     handleClearSaved() {
+        this.sessions.reset();
         this.configService.clearSaved();
         this.chunkCache.clearAll();
         this.remoteCache.clearAll();
@@ -1873,6 +1919,7 @@ class App {
                 this.weekView.reset();
                 this.searchView.reset();
             }
+            void this.sessions.loaded();
             const requestedRoute = this.pendingRoute;
             if (!requestedRoute && !this.workspace?.hasComponent("time_tracking")) {
                 this.state.setActiveTab(this.workspace?.hasComponent("todos") ? "todos" : "expenses");
@@ -1958,6 +2005,7 @@ class App {
      * @returns {void}
      */
     logout(clearCredential = true) {
+        this.sessions.reset();
         if (clearCredential && this.activeWorkspaceConnection) {
             this.configService.clearWorkspaceCredential(this.activeWorkspaceConnection.id);
         }

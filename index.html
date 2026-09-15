@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-AnaX65QBlUQfXsnLjoaEaOx/J1KLQk083M+j+mQyP3k='; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-tFqeJ4zenzSPccqE3uHDJ3Mt5mniXk4LCzNQ+PNctI4='; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
     />
     <meta name="theme-color" content="#17191f" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -36,15 +36,15 @@
     <meta name="twitter:image:alt" content="Why not zeitberg? Dr. Zoidberg presents the zeitberg logo." />
     <link rel="canonical" href="https://zeitberg.io/" />
     <title data-i18n="document.title">zeitberg — time, tasks, expenses → Git</title>
-    <script src="./theme-init.js?v=1.2.2"></script>
+    <script src="./theme-init.js?v=1.3.0"></script>
     <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
-    <link rel="stylesheet" href="./styles/common.css?v=1.2.2" />
-    <link rel="stylesheet" href="./styles/time.css?v=1.2.2" />
-    <link rel="stylesheet" href="./styles/todos.css?v=1.2.2" />
-    <link rel="stylesheet" href="./styles/expenses.css?v=1.2.2" />
-    <link rel="stylesheet" href="./styles/landing.css?v=1.2.2" />
+    <link rel="stylesheet" href="./styles/common.css?v=1.3.0" />
+    <link rel="stylesheet" href="./styles/time.css?v=1.3.0" />
+    <link rel="stylesheet" href="./styles/todos.css?v=1.3.0" />
+    <link rel="stylesheet" href="./styles/expenses.css?v=1.3.0" />
+    <link rel="stylesheet" href="./styles/landing.css?v=1.3.0" />
   </head>
   <body>
     <aside id="appSidebar" class="app-sidebar" data-i18n-aria-label="nav.application" aria-label="Application navigation" hidden>
@@ -102,7 +102,20 @@
       </div>
     </aside>
 
-    <header id="topbar" class="topbar" hidden>
+    <header id="topbar" class="application-header" hidden>
+      <div id="demoNotice" class="demo-notice" hidden>
+        <span data-i18n="demo.notice">Playground · fictional data · changes disappear on reload</span>
+        <button id="demoReset" type="button" data-i18n="demo.reset">Reset</button>
+        <button id="demoExit" type="button" data-i18n="demo.exit">Exit demo</button>
+      </div>
+      <div class="document-workspace-header">
+        <div class="document-workspace-title">
+          <h1><span id="documentWorkspaceName"></span><span class="workspace-title-chevron" aria-hidden="true" hidden></span></h1>
+          <select id="documentWorkspaces" class="document-workspace-select" data-i18n-aria-label="workspaceSessions.workspace" aria-label="Workspace" hidden></select>
+        </div>
+        <button id="workspaceAvailability" class="workspace-availability" type="button" hidden></button>
+      </div>
+      <div class="topbar">
       <label id="globalSearch" class="global-search" title="Search time entries (Ctrl+K)">
         <svg class="app-icon global-search-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#search"></use></svg>
         <input id="searchInput" type="search" placeholder="Search time entries…" autocomplete="off" aria-label="Search time entries" />
@@ -201,6 +214,7 @@
         aria-live="polite"
         hidden
       ></button>
+      </div>
     </header>
 
     <main>
@@ -240,6 +254,7 @@
               </p>
             </div>
             <div id="connect" class="landing-connect-card">
+              <a id="demoLink" class="landing-button landing-button-primary demo-link" href="./time?demo=1" data-i18n="demo.try">Try the playground — no account needed</a>
               <form id="loginForm" class="landing-login" autocomplete="off">
                 <div class="landing-login-head">
                   <strong class="landing-login-title" data-i18n="landing.openWorkspace">Open workspace</strong>
@@ -395,6 +410,7 @@
             <div>
               <img src="./assets/zeitberg-mark.svg" alt="" />
               <strong>zeitberg</strong>
+              <a id="buildInfo" class="build-info"></a>
             </div>
             <p data-i18n="landing.aiDisclosure">The code for this project was written using large language models with extensive human supervision.</p>
             <p data-i18n="landing.markAttribution">The zeitberg mark and landscape are original hand-authored SVGs. No image model was used.</p>
@@ -439,6 +455,10 @@
             <details id="searchFiltersPanel" class="search-filters-panel" open>
               <summary data-i18n="search.filters">Filters</summary>
               <div class="filters grid">
+                <label>
+                  <span data-i18n="workspaceSessions.workspace">Workspace</span>
+                  <select id="searchWorkspace"></select>
+                </label>
                 <label>
                   <span data-i18n="search.project">Project</span>
                   <select id="projectSelect"></select>
@@ -491,11 +511,11 @@
     <pre id="dataError" class="error error-toast" hidden></pre>
     <div id="repoLabel" class="data-badge" aria-live="polite"></div>
 
-    <dialog id="interfaceDialog" class="dialog interface-dialog">
+    <dialog id="interfaceDialog" class="dialog interface-dialog" aria-labelledby="interfaceDialogHeading">
       <div class="dialog-card interface-dialog-card">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="settings.title">Interface</div>
+            <div id="interfaceDialogHeading" class="dialog-title" data-i18n="settings.title">Interface</div>
             <div class="dialog-meta muted" data-i18n="settings.meta">Preferences are stored in this browser independently of your workspaces.</div>
           </div>
           <button id="interfaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
@@ -505,7 +525,7 @@
 
         <label class="interface-language-setting">
           <span data-i18n="settings.language">Language</span>
-          <select id="interfaceLanguage">
+          <select id="interfaceLanguage" autofocus>
             <option value="auto" data-i18n="settings.languageAutomatic">Automatic (browser)</option>
             <option value="en" data-i18n="settings.languageEnglish">English</option>
             <option value="de" data-i18n="settings.languageGerman">Deutsch</option>
@@ -514,11 +534,11 @@
       </div>
     </dialog>
 
-    <dialog id="workspaceDialog" class="dialog workspace-dialog">
+    <dialog id="workspaceDialog" class="dialog workspace-dialog" aria-labelledby="workspaceDialogHeading">
       <div class="dialog-card workspace-dialog-card">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="workspace.title">Workspaces</div>
+            <div id="workspaceDialogHeading" class="dialog-title" data-i18n="workspace.title">Workspaces</div>
             <div class="dialog-meta muted" data-i18n="workspace.meta">Connections are stored in this browser. Credentials remain separate from workspace metadata.</div>
           </div>
           <button id="workspaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
@@ -712,11 +732,11 @@
       </div>
     </dialog>
 
-    <dialog id="workspaceCreateDialog" class="dialog workspace-create-dialog">
+    <dialog id="workspaceCreateDialog" class="dialog workspace-create-dialog" aria-labelledby="workspaceCreateDialogHeading">
       <form id="workspaceCreateForm" class="dialog-card workspace-create-card">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="workspace.createTitle">Create private workspace</div>
+            <div id="workspaceCreateDialogHeading" class="dialog-title" data-i18n="workspace.createTitle">Create private workspace</div>
             <div class="dialog-meta muted" data-i18n="workspace.createMeta">Create and initialize a repository without a zeitberg backend.</div>
           </div>
           <button id="workspaceCreateCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
@@ -755,19 +775,19 @@
         <p id="workspaceCreateProviderNote" class="muted"></p>
         <pre id="workspaceCreateError" class="error" hidden></pre>
         <div class="row dialog-actions">
-          <button id="workspaceCreateCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
-          <span class="topbar-spacer"></span>
           <button id="workspaceCreateOAuthBtn" class="btn btn-secondary" type="button" data-i18n="workspace.authorizeOAuth">Authorize with OAuth</button>
+          <span class="topbar-spacer"></span>
+          <button id="workspaceCreateCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
           <button class="btn" type="submit" data-i18n="workspace.createWithToken">Create with token</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="workspaceShareDialog" class="dialog workspace-share-dialog">
+    <dialog id="workspaceShareDialog" class="dialog workspace-share-dialog" aria-labelledby="workspaceShareDialogHeading">
       <div class="dialog-card workspace-share-card">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="workspace.shareTitle">Share workspace</div>
+            <div id="workspaceShareDialogHeading" class="dialog-title" data-i18n="workspace.shareTitle">Share workspace</div>
             <div id="workspaceShareDetails" class="dialog-meta muted"></div>
           </div>
           <button id="workspaceShareCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
@@ -795,10 +815,10 @@
       </div>
     </dialog>
 
-    <dialog id="entryDialog" class="dialog">
+    <dialog id="entryDialog" class="dialog" aria-labelledby="entryDialogHeading">
       <form id="entryForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
-          <div class="dialog-title" data-i18n="entry.dialogTitle">Edit entry</div>
+          <div id="entryDialogHeading" class="dialog-title" data-i18n="entry.dialogTitle">Edit entry</div>
           <button id="entryCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
@@ -818,13 +838,16 @@
         </div>
 
         <div class="row dialog-actions">
-          <button id="entryDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n="common.delete">Delete</button>
-          <button id="entrySaveBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
+          <button id="entryDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n-aria-label="common.delete" aria-label="Delete">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#delete"></use></svg>
+            <span data-i18n="common.delete">Delete</span>
+          </button>
           <button id="entryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="entrySaveBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
-    <dialog id="todoDialog" class="dialog">
+    <dialog id="todoDialog" class="dialog" aria-labelledby="todoDialogTitle">
       <form id="todoForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
           <div id="todoDialogTitle" class="dialog-title" data-i18n="todo.editTitle">Edit task</div>
@@ -832,15 +855,12 @@
         </div>
 
         <div id="todoDialogMeta" class="dialog-meta muted"></div>
+        <div id="todoDialogError" class="error dialog-inline-error" role="alert" hidden></div>
 
         <div class="grid dialog-grid todo-dialog-grid">
           <label class="col-span-2">
             <span data-i18n="todo.title">Title</span>
             <input id="todoContent" type="text" autocomplete="off" required />
-          </label>
-          <label class="col-span-2">
-            <span data-i18n="entry.description">Description</span>
-            <textarea id="todoDescription" rows="4"></textarea>
           </label>
           <label class="col-span-2">
             <span data-i18n="entry.assignment">Project / section</span>
@@ -852,14 +872,6 @@
             <input id="todoDueDate" type="date" />
           </label>
           <label>
-            <span data-i18n="todo.dueTime">Due time</span>
-            <input id="todoDueTime" type="time" />
-          </label>
-          <label class="col-span-2">
-            <span data-i18n="todo.recurrence">Recurrence</span>
-            <input id="todoRecurrence" type="text" data-i18n-placeholder="todo.recurrencePlaceholder" placeholder="e.g. every Friday or every! 2 weeks" autocomplete="off" />
-          </label>
-          <label>
             <span data-i18n="todo.priority">Priority</span>
             <select id="todoPriority">
               <option value="1" data-i18n="todo.priorityNormal">Normal</option>
@@ -868,23 +880,41 @@
               <option value="4" data-i18n="todo.priorityUrgent">Urgent</option>
             </select>
           </label>
-          <label>
-            <span data-i18n="todo.labels">Labels (comma-separated)</span>
-            <input id="todoLabels" type="text" autocomplete="off" />
-          </label>
         </div>
 
+        <details id="todoDetails" class="dialog-disclosure">
+          <summary data-i18n="todo.moreDetails">Description, recurrence &amp; labels</summary>
+          <div class="grid dialog-grid">
+            <label class="col-span-2">
+              <span data-i18n="entry.description">Description</span>
+              <textarea id="todoDescription" rows="3"></textarea>
+            </label>
+            <label>
+              <span data-i18n="todo.dueTime">Due time</span>
+              <input id="todoDueTime" type="time" />
+            </label>
+            <label>
+              <span data-i18n="todo.labels">Labels (comma-separated)</span>
+              <input id="todoLabels" type="text" autocomplete="off" />
+            </label>
+            <label class="col-span-2">
+              <span data-i18n="todo.recurrence">Recurrence</span>
+              <input id="todoRecurrence" type="text" data-i18n-placeholder="todo.recurrencePlaceholder" placeholder="e.g. every Friday or every! 2 weeks" autocomplete="off" />
+            </label>
+          </div>
+        </details>
+
         <div class="row dialog-actions">
-          <button class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="todoCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
-    <dialog id="todoConflictDialog" class="dialog todo-conflict-dialog">
+    <dialog id="todoConflictDialog" class="dialog todo-conflict-dialog" aria-labelledby="todoConflictDialogHeading">
       <div class="dialog-card todo-conflict-card">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="todo.conflictsTitle">Resolve task conflicts</div>
+            <div id="todoConflictDialogHeading" class="dialog-title" data-i18n="todo.conflictsTitle">Resolve task conflicts</div>
             <div class="dialog-meta muted" data-i18n="todo.conflictsMeta">Both this browser and GitHub changed these tasks. Choose one version for each task before saving.</div>
           </div>
           <button id="todoConflictCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
@@ -892,7 +922,7 @@
         <div id="todoConflictList" class="todo-conflict-list"></div>
       </div>
     </dialog>
-    <dialog id="expenseDialog" class="dialog expense-dialog">
+    <dialog id="expenseDialog" class="dialog expense-dialog" aria-labelledby="expenseDialogTitle">
       <form id="expenseForm" method="dialog" class="dialog-card expense-dialog-card" novalidate>
         <div class="dialog-head expense-dialog-head">
           <div id="expenseDialogTitle" class="dialog-title" data-i18n="expenses.editTitle">Edit expense</div>
@@ -1036,18 +1066,21 @@
         </details>
 
         <div class="row dialog-actions">
-          <button id="expenseDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n="common.delete">Delete</button>
+          <button id="expenseDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n-aria-label="common.delete" aria-label="Delete">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#delete"></use></svg>
+            <span data-i18n="common.delete">Delete</span>
+          </button>
           <button id="expenseCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
-          <button id="expenseSubmitBtn" class="btn" type="submit" data-i18n="expenses.saveAction">Save changes</button>
+          <button id="expenseSubmitBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="expenseSettlementDialog" class="dialog expense-settlement-dialog">
+    <dialog id="expenseSettlementDialog" class="dialog expense-settlement-dialog" aria-labelledby="expenseSettlementDialogHeading">
       <div class="dialog-card expense-settlement-card">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="expenses.settle">Settle balances</div>
+            <div id="expenseSettlementDialogHeading" class="dialog-title" data-i18n="expenses.settle">Settle balances</div>
             <div class="dialog-meta muted" data-i18n="expenses.settleMeta">Suggested payments are calculated independently per currency.</div>
           </div>
           <button id="expenseSettlementCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
@@ -1056,7 +1089,7 @@
       </div>
     </dialog>
 
-    <dialog id="expenseInventoryDialog" class="dialog expense-inventory-dialog">
+    <dialog id="expenseInventoryDialog" class="dialog expense-inventory-dialog" aria-labelledby="expenseInventoryTitle">
       <form id="expenseInventoryForm" method="dialog" class="dialog-card expense-inventory-card" novalidate>
         <div class="dialog-head">
           <div>
@@ -1081,15 +1114,15 @@
           <div id="expenseCategoryList" class="expense-inventory-list"></div>
         </section>
         <div class="row dialog-actions">
-          <button id="expenseInventorySubmitBtn" class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="expenseInventoryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="expenseInventorySubmitBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
-    <dialog id="projectsDialog" class="dialog">
+    <dialog id="projectsDialog" class="dialog" aria-labelledby="projectsDialogHeading">
       <form id="projectsForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
-          <div class="dialog-title" data-i18n="projects.title">Projects</div>
+          <div id="projectsDialogHeading" class="dialog-title" data-i18n="projects.title">Projects</div>
           <button id="projectsCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
@@ -1101,51 +1134,42 @@
         <div id="projectsList" class="projects-list"></div>
 
         <div class="row dialog-actions">
-          <button id="projectsOkBtn" class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="projectsCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="projectsOkBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
-    <dialog id="projectBindingDialog" class="dialog project-binding-dialog">
+    <dialog id="projectBindingDialog" class="dialog project-binding-dialog" aria-labelledby="projectBindingDialogHeading">
       <form id="projectBindingForm" method="dialog" class="dialog-card project-binding-card">
         <div class="dialog-head">
           <div>
-            <div class="dialog-title" data-i18n="projects.bindingPreviewTitle">GitHub project migration</div>
+            <div id="projectBindingDialogHeading" class="dialog-title" data-i18n="projects.bindingPreviewTitle">GitHub project migration</div>
             <div class="dialog-meta muted" data-i18n="projects.bindingPreviewMeta">Review local task handling. Upstream issues are never deleted; new issues are created only by a later manual task save.</div>
           </div>
           <button id="projectBindingCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
         <div id="projectBindingList" class="project-binding-list"></div>
         <div class="row dialog-actions">
-          <button class="btn" type="submit" data-i18n="common.continue">Continue</button>
           <button id="projectBindingCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button class="btn" type="submit" data-i18n="common.continue">Continue</button>
         </div>
       </form>
     </dialog>
-    <dialog id="weekReqDialog" class="dialog">
+    <dialog id="weekReqDialog" class="dialog" aria-labelledby="weekReqDialogHeading">
       <form id="weekReqForm" method="dialog" class="dialog-card">
         <div class="dialog-head">
-          <div class="dialog-title" data-i18n="requirements.title">Week requirements</div>
+          <div id="weekReqDialogHeading" class="dialog-title" data-i18n="requirements.title">Week requirements</div>
           <button id="weekReqCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
 
         <div id="weekReqMeta" class="dialog-meta muted"></div>
         <div id="weekReqSummary" class="week-requirements-summary" aria-live="polite"></div>
 
-        <div class="grid dialog-grid">
-          <label>
-            <span data-i18n="requirements.requiredHours">Required hours</span>
-            <input id="weekReqHours" type="number" min="0" max="168" step="0.25" />
-          </label>
-          <label class="col-span-2">
-            <span data-i18n="requirements.comment">Comment (optional)</span>
-            <textarea id="weekReqComment" rows="3" data-i18n-placeholder="requirements.commentPlaceholder" placeholder="Vacation, sick, holiday…"></textarea>
-          </label>
-        </div>
+        <div id="workTimeEditor"></div>
 
         <div class="row dialog-actions">
-          <button id="weekReqOkBtn" class="btn" type="submit" data-i18n="common.ok">OK</button>
           <button id="weekReqCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="weekReqOkBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
@@ -1153,29 +1177,38 @@
     <script type="importmap">
       {
         "imports": {
-          "./appstate.js": "./appstate.js?v=1.2.2",
-          "./cache.js": "./cache.js?v=1.2.2",
-          "./capability-scanner.js": "./capability-scanner.js?v=1.2.2",
-          "./config.js": "./config.js?v=1.2.2",
-          "./datasource.js": "./datasource.js?v=1.2.2",
-          "./expense.view.js": "./expense.view.js?v=1.2.2",
-          "./locale.js": "./locale.js?v=1.2.2",
-          "./model.js": "./model.js?v=1.2.2",
-          "./oauth.js": "./oauth.js?v=1.2.2",
-          "./project.view.js": "./project.view.js?v=1.2.2",
-          "./routing.js": "./routing.js?v=1.2.2",
-          "./search.view.js": "./search.view.js?v=1.2.2",
-          "./shell.view.js": "./shell.view.js?v=1.2.2",
-          "./store.js": "./store.js?v=1.2.2",
-          "./todo.view.js": "./todo.view.js?v=1.2.2",
-          "./utils.js": "./utils.js?v=1.2.2",
-          "./week.view.js": "./week.view.js?v=1.2.2",
-          "./workspace.js": "./workspace.js?v=1.2.2",
-          "./workspace.loader.js": "./workspace.loader.js?v=1.2.2",
-          "qr-scanner": "./vendor/qr-scanner/qr-scanner.min.js?v=1.2.2"
+          "./appstate.js": "./appstate.js?v=1.3.0",
+          "./autosave.js": "./autosave.js?v=1.3.0",
+          "./build-info.js": "./build-info.js?v=1.3.0",
+          "./version.js": "./version.js?v=1.3.0",
+          "./demo.js": "./demo.js?v=1.3.0",
+          "./work-time.js": "./work-time.js?v=1.3.0",
+          "./work-time.view.js": "./work-time.view.js?v=1.3.0",
+          "./cache.js": "./cache.js?v=1.3.0",
+          "./capability-scanner.js": "./capability-scanner.js?v=1.3.0",
+          "./config.js": "./config.js?v=1.3.0",
+          "./datasource.js": "./datasource.js?v=1.3.0",
+          "./expense.view.js": "./expense.view.js?v=1.3.0",
+          "./locale.js": "./locale.js?v=1.3.0",
+          "./model.js": "./model.js?v=1.3.0",
+          "./oauth.js": "./oauth.js?v=1.3.0",
+          "./project.view.js": "./project.view.js?v=1.3.0",
+          "./routing.js": "./routing.js?v=1.3.0",
+          "./search.view.js": "./search.view.js?v=1.3.0",
+          "./shell.view.js": "./shell.view.js?v=1.3.0",
+          "./store.js": "./store.js?v=1.3.0",
+          "./todo.view.js": "./todo.view.js?v=1.3.0",
+          "./utils.js": "./utils.js?v=1.3.0",
+          "./week.view.js": "./week.view.js?v=1.3.0",
+          "./workspace.js": "./workspace.js?v=1.3.0",
+          "./workspace.loader.js": "./workspace.loader.js?v=1.3.0",
+          "./workspace.sessions.js": "./workspace.sessions.js?v=1.3.0",
+          "./workspace.todos.js": "./workspace.todos.js?v=1.3.0",
+          "./session-binding.js": "./session-binding.js?v=1.3.0",
+          "qr-scanner": "./vendor/qr-scanner/qr-scanner.min.js?v=1.3.0"
         }
       }
     </script>
-    <script type="module" src="./app.js?v=1.2.2"></script>
+    <script type="module" src="./app.js?v=1.3.0"></script>
   </body>
 </html>

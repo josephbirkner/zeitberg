@@ -293,13 +293,6 @@ body.app-mode #expenseView {
   margin-bottom: 0;
 }
 
-.dialog-inline-error {
-  margin: 8px 0 12px;
-  padding: 9px 11px;
-  overflow: visible;
-  font-size: 0.68rem;
-}
-
 .expense-receipt-composer {
   display: block;
   margin-top: 9px;
@@ -928,7 +921,7 @@ html.ui-narrow .expense-row-actions {
 html.ui-narrow .expense-dialog-card,
 html.ui-narrow .expense-inventory-card,
 html.ui-narrow .expense-settlement-card {
-  width: 100vw;
+  width: 100%;
   max-width: none;
   height: 100dvh;
   max-height: none;
@@ -936,26 +929,17 @@ html.ui-narrow .expense-settlement-card {
   border-radius: 0;
 }
 
-html.ui-narrow .expense-dialog-card {
-  display: block;
-  overflow-y: auto;
-}
-
-html.ui-narrow .expense-dialog-card .dialog-actions {
-  margin: 14px -12px -12px;
-}
-
 html.ui-narrow .expense-receipt-composer {
   padding: 12px;
 }
 
 html.ui-narrow .expense-value-row {
-  grid-template-columns: minmax(0, 1fr) 88px;
+  grid-template-columns: minmax(0, 1fr) 100px;
   gap: 8px;
 }
 
 html.ui-narrow .expense-editor-context {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
 }
 
 html.ui-narrow .expense-flow-cards {
@@ -974,12 +958,28 @@ html.ui-narrow .expense-payer-mode {
 
 html.ui-narrow .expense-person-heading,
 html.ui-narrow .expense-person-row {
-  grid-template-columns: minmax(96px, 1fr) minmax(82px, 0.72fr) minmax(82px, 0.72fr);
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 0.85fr);
   gap: 5px;
 }
 
+/* Put the calculated result below the editable value, not in a third cramped column. */
+html.ui-narrow .expense-person-heading > :last-child {
+  display: none;
+}
+
+html.ui-narrow .expense-person-result {
+  grid-column: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+html.ui-narrow .expense-person-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 html.ui-narrow .expense-person-row {
-  padding-inline: 4px;
+  padding: 10px 4px;
 }
 
 html.ui-narrow .expense-person-avatar {
@@ -988,6 +988,10 @@ html.ui-narrow .expense-person-avatar {
 
 html.ui-narrow .expense-allocation-choices {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html.ui-narrow .expense-allocation-choices button {
+  min-height: 44px;
 }
 
 html.ui-narrow .expense-dialog input,
@@ -1019,7 +1023,7 @@ html.ui-toolbar-compact .expense-topbar-controls {
 
 html.ui-toolbar-compact .expense-topbar-controls .btn {
   width: 32px;
-  height: 32px;
+  height: 34px;
 }
 
 html.ui-toolbar-compact .expense-topbar-controls .expense-add-button {

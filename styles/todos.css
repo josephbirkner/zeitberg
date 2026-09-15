@@ -8,8 +8,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: min(60vh, 520px);
-  overflow: auto;
 }
 
 .todo-conflict-row {
@@ -435,3 +433,4 @@ html.ui-compact .todo-row {
 :root[data-theme="light"] .todo-dialog-issue-link {
   color: #315e9d;
 }
+.combined-workspace-heading { margin: .6rem .4rem .3rem; font-size: .85rem; opacity: .75; }

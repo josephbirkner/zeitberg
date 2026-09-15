@@ -95,8 +95,6 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLButtonElement} weekReqBtn
  * @property {HTMLButtonElement} weekReqCancelBtn
  * @property {HTMLButtonElement} weekReqCloseBtn
- * @property {HTMLTextAreaElement} weekReqComment
- * @property {HTMLInputElement} weekReqHours
  * @property {HTMLButtonElement} weekReqOkBtn
  * @property {HTMLInputElement} workspaceConfigExpensesEnabledInput
  * @property {HTMLInputElement} workspaceConfigIdInput
@@ -628,8 +626,6 @@ export class ShellView {
         this.elements.weekReqCloseBtn.disabled = isBusy;
         this.elements.weekReqCancelBtn.disabled = isBusy;
         this.elements.weekReqOkBtn.disabled = isBusy;
-        this.elements.weekReqHours.disabled = isBusy;
-        this.elements.weekReqComment.disabled = isBusy;
         this.weekView.setBusy(isBusy);
         this.todoView.setBusy(isBusy);
         this.expenseView.setBusy(isBusy);

@@ -1,3 +1,4 @@
+import { bindSessionEvents } from "./session-binding.js";
 import { cloneJson, createMaterialIcon, hhmmToMinutes, setVisible, utcNowIso } from "./utils.js";
 import { Recurrence } from "./model.js";
 import { buildGitHubIssueUrl, ProviderApiError } from "./datasource.js";
@@ -312,6 +313,7 @@ export class TodoView {
      * @param {TodoViewOptions} options
      */
     constructor(options) {
+        this.sessionOptions = options;
         this.store = options.store;
         this.projectStore = options.projectStore;
         this.dataSource = options.dataSource;
@@ -325,6 +327,8 @@ export class TodoView {
         this.onSaved = options.onSaved;
         this.onStatsChanged = options.onStatsChanged;
         this.onStateChange = options.onStateChange || (() => {});
+        /** @type {() => void} Reports applied edits, independently of navigation and save acknowledgements. */
+        this.onEdit = () => {};
 
         this.viewEl = options.elements.todoView;
         this.listEl = options.elements.todoList;
@@ -356,6 +360,7 @@ export class TodoView {
         this.active = false;
         this.busy = false;
         this.saveInFlight = false;
+        this.lastSaveError = "";
         this.selectedTodoId = null;
         this.editingTodoId = null;
         this.searchQuery = "";
@@ -379,10 +384,12 @@ export class TodoView {
         /** @type {Map<string, {local: import("./model.js").TodoRaw | undefined, remote: import("./model.js").TodoRaw | undefined}>} */
         this.conflicts = new Map();
 
-        this.bindEvents();
-        this.populateProjectControls({ projectKey: null, sectionKey: null });
-        this.updateFilterButtons();
-        this.updateSaveState();
+        this.sessionBinding = bindSessionEvents(this, options);
+        if (options["bindEvents"] !== false) {
+            this.populateProjectControls({ projectKey: null, sectionKey: null });
+            this.updateFilterButtons();
+            this.updateSaveState();
+        }
     }
 
     /**
@@ -446,6 +453,7 @@ export class TodoView {
             this.closeDialog();
         });
         this.form.addEventListener("submit", (event) => this.handleDialogSubmit(event));
+        this.form.addEventListener("input", () => this.showDialogError(""));
         this.dialog.addEventListener("keydown", (event) => {
             if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                 event.preventDefault();
@@ -594,7 +602,7 @@ export class TodoView {
 
     /**
      * Synchronizes the two independent TODO filter toggles with their accessible pressed state.
-     * The clock limits results to dated tasks due today or earlier; the checkmark hides completed tasks.
+     * The clock prefers tasks due today or earlier, with a contextual project fallback; the checkmark hides completed tasks.
      * @returns {void}
      */
     updateFilterButtons() {
@@ -825,23 +833,38 @@ export class TodoView {
 
     /**
      * Returns TODOs matching the active status, project, and free-text filters in deterministic display order.
+     * A specific project's empty current view falls back without changing the user's filters.
      * @returns {import("./model.js").Todo[]}
      */
     getVisibleTodos() {
+        return this.getFilteredTodos().todos;
+    }
+
+    /**
+     * Derives the visible tasks and contextual fallback cue from one snapshot of the active filters.
+     * Only the current-date restriction may relax, and only for a specific project with matching non-due tasks.
+     * All Projects (including CombinedTodos) and unassigned tasks retain strict current filtering.
+     * @returns {{todos: import("./model.js").Todo[], showingNonDue: boolean}}
+     */
+    getFilteredTodos() {
         const projectFilter = this.projectFilterKey;
         const query = this.searchQuery.trim().toLowerCase();
         const today = this.timeContext.formatDate(new Date());
-        const result = this.store.getTodos().filter((todo) => {
+        const candidates = this.store.getTodos().filter((todo) => {
             if (todo.archived) return false;
-            const completed = todo.isCompleted();
-            const due = dueDateKey(todo.due);
-            if (this.openOnly && completed) return false;
-            if (this.currentOnly && (!due || due > today)) return false;
+            if (this.openOnly && todo.isCompleted()) return false;
             if (projectFilter !== "*" && (todo.projectKey || "") !== projectFilter) return false;
             const assignmentText = this.projectStore.getAssignmentLabel(todo.projectKey, todo.sectionKey).toLowerCase();
             if (query && !`${todo.searchHaystack} ${assignmentText}`.includes(query)) return false;
             return true;
         });
+        let result = this.currentOnly ? candidates.filter((todo) => {
+            const due = dueDateKey(todo.due);
+            return due && due <= today;
+        }) : candidates;
+        const showingNonDue = this.currentOnly && Boolean(projectFilter) && projectFilter !== "*" &&
+            result.length === 0 && candidates.length > 0;
+        if (showingNonDue) result = candidates;
 
         result.sort((left, right) => {
             if (left.isCompleted() !== right.isCompleted()) return left.isCompleted() ? 1 : -1;
@@ -855,7 +878,7 @@ export class TodoView {
             if (sectionOrder !== 0) return sectionOrder;
             return left.order - right.order || left.content.localeCompare(right.content);
         });
-        return result;
+        return { todos: result, showingNonDue };
     }
 
     /**
@@ -863,11 +886,18 @@ export class TodoView {
      * @returns {void}
      */
     render() {
-        const visible = this.getVisibleTodos();
+        const { todos: visible, showingNonDue } = this.getFilteredTodos();
         if (!visible.some((todo) => todo.id === this.selectedTodoId)) {
             this.selectedTodoId = visible[0]?.id || null;
         }
         this.listEl.innerHTML = "";
+        if (showingNonDue) {
+            const cue = document.createElement("div");
+            cue.className = "todo-empty todo-non-due-fallback";
+            cue.setAttribute("role", "status");
+            cue.textContent = this.locale.t("todo.nonDueFallback");
+            this.listEl.append(cue);
+        }
         if (!visible.length) {
             const empty = document.createElement("div");
             empty.className = "todo-empty";
@@ -1372,10 +1402,10 @@ export class TodoView {
      * @returns {void}
      */
     openCreateDialog(selectedAssignment = undefined) {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         this.editingTodoId = null;
         this.dialogTitleEl.textContent = this.locale.t("todo.addTitle");
-        this.dialogMetaEl.textContent = this.locale.t("todo.newTask");
+        this.dialogMetaEl.textContent = "";
         this.contentInput.value = "";
         this.descriptionInput.value = "";
         const defaultAssignment = selectedAssignment || {
@@ -1392,6 +1422,7 @@ export class TodoView {
         this.originalDueFields = { date: "", time: "" };
         this.originalRecurrence = null;
         this.originalRecurrenceText = "";
+        this.syncDialogDetails();
         if (!this.dialog.open) this.dialog.showModal();
         queueMicrotask(() => this.contentInput.focus());
     }
@@ -1402,7 +1433,7 @@ export class TodoView {
      * @returns {void}
      */
     openEditDialog(todo) {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         this.editingTodoId = todo.id;
         this.dialogTitleEl.textContent = this.locale.t("todo.editTitle");
         const hierarchy = todo.parent_id ? ` • ${this.locale.t("todo.subtask")}` : "";
@@ -1440,11 +1471,43 @@ export class TodoView {
         this.recurrenceInput.value = this.originalRecurrenceText;
         this.prioritySelect.value = String(todo.priority);
         this.labelsInput.value = todo.labels.join(", ");
+        this.syncDialogDetails();
         if (!this.dialog.open) this.dialog.showModal();
         queueMicrotask(() => {
             this.contentInput.focus();
             this.contentInput.select();
         });
+    }
+
+    /**
+     * Reveals optional fields when editing a task that already uses them, and collapses
+     * them for a new task. All values remain in the form regardless of disclosure state.
+     * @returns {void}
+     */
+    syncDialogDetails() {
+        this.showDialogError("");
+        const details = this.dialog.querySelector("details");
+        if (details) details.open = Boolean(this.descriptionInput.value || this.dueTimeInput.value
+            || this.recurrenceInput.value || this.labelsInput.value);
+    }
+
+    /**
+     * Keeps validation in the modal's top layer, revealing optional fields before focusing
+     * them. Passing an empty message clears the previous error as the user corrects input.
+     * @param {unknown} error Validation error or an empty string to dismiss it.
+     * @param {HTMLInputElement | null} [control] Input needing attention, when known.
+     * @returns {void}
+     */
+    showDialogError(error, control = null) {
+        const surface = this.dialog.querySelector("#todoDialogError");
+        if (!(surface instanceof HTMLElement)) return;
+        surface.textContent = error instanceof Error ? error.message : String(error || "");
+        surface.hidden = !surface.textContent;
+        const disclosure = control?.closest("details");
+        if (disclosure) disclosure.open = true;
+        if (!surface.hidden) surface.scrollIntoView({ block: "nearest" });
+        control?.focus({ preventScroll: true });
+        control?.scrollIntoView({ block: "center" });
     }
 
     /**
@@ -1624,22 +1687,18 @@ export class TodoView {
      */
     handleDialogSubmit(event) {
         event.preventDefault();
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         let details;
         try {
             details = this.collectDetails();
         } catch (error) {
-            this.onToast(error instanceof Error ? error.message : String(error));
-            if (!this.projectStore.findAssignmentByLabel(this.assignmentInput.value)) {
-                this.assignmentInput.focus();
-            } else {
-                this.recurrenceInput.focus();
-            }
+            const invalidAssignment = this.assignmentInput.value.trim()
+                && !this.projectStore.findAssignmentByLabel(this.assignmentInput.value);
+            this.showDialogError(error, invalidAssignment ? this.assignmentInput : this.recurrenceInput);
             return;
         }
         if (!details.content) {
-            this.onToast(this.locale.t("toast.todoTitle"));
-            this.contentInput.focus();
+            this.showDialogError(this.locale.t("toast.todoTitle"), this.contentInput);
             return;
         }
         const editingId = this.editingTodoId;
@@ -1670,14 +1729,15 @@ export class TodoView {
      * @returns {boolean}
      */
     applyMutation(label, mutation, selectionAfter = this.selectedTodoId) {
-        if (this.busy || this.saveInFlight) return false;
+        if (this.busy) return false;
         const before = this.store.snapshotRaw();
         const selectionBefore = this.selectedTodoId;
         try {
             mutation();
         } catch (error) {
             this.store.applySnapshot(before);
-            this.onToast(String(error));
+            if (this.dialog?.open) this.showDialogError(error);
+            else this.onToast(String(error));
             return false;
         }
         const after = this.store.snapshotRaw();
@@ -1735,7 +1795,7 @@ export class TodoView {
      * @returns {void}
      */
     undo() {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         const action = this.undoStack.pop();
         if (!action) return;
         this.store.applySnapshot(action.before);
@@ -1751,7 +1811,7 @@ export class TodoView {
      * @returns {void}
      */
     redo() {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         const action = this.redoStack.pop();
         if (!action) return;
         this.store.applySnapshot(action.after);
@@ -1764,9 +1824,10 @@ export class TodoView {
 
     /**
      * Compares current tasks with the last persisted snapshot and queues the matching IndexedDB draft operation.
+     * @param {boolean} [edited] False when acknowledging a saved snapshot rather than applying an edit.
      * @returns {void}
      */
-    refreshDirtyState() {
+    refreshDirtyState(edited = true) {
         this.dirty =
             !todoSnapshotsEqual(this.cleanSnapshot, this.store.snapshotRaw()) ||
             this.hasPendingGitHubSynchronization();
@@ -1776,6 +1837,7 @@ export class TodoView {
             this.queueDraftDelete();
         }
         this.updateSaveState();
+        if (edited) this.onEdit();
     }
 
     /**
@@ -1842,6 +1904,8 @@ export class TodoView {
      * @returns {void}
      */
     enqueueDraftOperation(operation, failureMessage) {
+        // Playground edits are intentionally ephemeral, not a failed browser-storage write.
+        if (this.draftJournal.persistent === false) return;
         this.draftWriteChain = this.draftWriteChain
             .catch(() => undefined)
             .then(async () => {
@@ -2141,20 +2205,23 @@ export class TodoView {
             return;
         }
         this.saveInFlight = true;
+        this.lastSaveError = "";
         this.onBusy(true);
         this.updateSaveState();
         try {
             await this.flushDraftWrites();
             await this.synchronizeGitHubIssues();
             const content = this.store.serialize(utcNowIso());
+            const snapshot = cloneJson(this.store.snapshotRaw());
+            this.onBusy(false);
             await this.dataSource.saveFiles([{ path: this.dataSource.getTodosPath(), content }], "Update TODOs");
-            this.cleanSnapshot = cloneJson(this.store.snapshotRaw());
-            this.dirty = false;
-            this.queueDraftDelete();
+            this.cleanSnapshot = snapshot;
+            this.refreshDirtyState(false);
             await this.flushDraftWrites();
             this.onSaved();
             this.onToast(this.locale.t("toast.todoSaved"), 2400, "success");
         } catch (error) {
+            this.lastSaveError = String(error);
             this.onToast(String(error), 5000);
         } finally {
             this.saveInFlight = false;
