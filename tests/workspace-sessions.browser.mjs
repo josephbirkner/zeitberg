@@ -253,7 +253,13 @@ try {
     await page.locator("#dataError").waitFor({ state: "hidden" });
     await page.screenshot({ path: path.join(temporary, "workspace-title-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
-    assert.equal((await page.locator("#editorBadge").boundingBox()).height, (await page.locator("#expenseAddBtn").boundingBox()).height);
+    // Resize classes update on the next animation frame. Measure the settled layout
+    // atomically; sequential reads can straddle that update and hide a real mismatch.
+    await page.waitForFunction(() => document.documentElement.classList.contains("ui-toolbar-compact"));
+    const compactHeights = await page.evaluate(() => ["editorBadge", "expenseAddBtn"].map(
+        (id) => document.getElementById(id).getBoundingClientRect().height,
+    ));
+    assert.deepEqual(compactHeights, [34, 34]);
     await page.screenshot({ path: path.join(temporary, "multi-workspace-narrow.png"), fullPage: true });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     assert.ok(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1));
