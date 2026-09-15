@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-tFqeJ4zenzSPccqE3uHDJ3Mt5mniXk4LCzNQ+PNctI4='; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-lE6VmTWbnFyNS894kynIHpu6TxNPa4m+zwq6tsr6KL0='; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
     />
     <meta name="theme-color" content="#17191f" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -36,15 +36,15 @@
     <meta name="twitter:image:alt" content="Why not zeitberg? Dr. Zoidberg presents the zeitberg logo." />
     <link rel="canonical" href="https://zeitberg.io/" />
     <title data-i18n="document.title">zeitberg — time, tasks, expenses → Git</title>
-    <script src="./theme-init.js?v=1.3.0"></script>
+    <script src="./theme-init.js?v=1.3.1"></script>
     <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
-    <link rel="stylesheet" href="./styles/common.css?v=1.3.0" />
-    <link rel="stylesheet" href="./styles/time.css?v=1.3.0" />
-    <link rel="stylesheet" href="./styles/todos.css?v=1.3.0" />
-    <link rel="stylesheet" href="./styles/expenses.css?v=1.3.0" />
-    <link rel="stylesheet" href="./styles/landing.css?v=1.3.0" />
+    <link rel="stylesheet" href="./styles/common.css?v=1.3.1" />
+    <link rel="stylesheet" href="./styles/time.css?v=1.3.1" />
+    <link rel="stylesheet" href="./styles/todos.css?v=1.3.1" />
+    <link rel="stylesheet" href="./styles/expenses.css?v=1.3.1" />
+    <link rel="stylesheet" href="./styles/landing.css?v=1.3.1" />
   </head>
   <body>
     <aside id="appSidebar" class="app-sidebar" data-i18n-aria-label="nav.application" aria-label="Application navigation" hidden>
@@ -254,7 +254,7 @@
               </p>
             </div>
             <div id="connect" class="landing-connect-card">
-              <a id="demoLink" class="landing-button landing-button-primary demo-link" href="./time?demo=1" data-i18n="demo.try">Try the playground — no account needed</a>
+              <a id="demoLink" class="landing-button landing-button-primary demo-link" href="./time?demo=1" data-i18n="demo.try">Try the playground!</a>
               <form id="loginForm" class="landing-login" autocomplete="off">
                 <div class="landing-login-head">
                   <strong class="landing-login-title" data-i18n="landing.openWorkspace">Open workspace</strong>
@@ -412,8 +412,6 @@
               <strong>zeitberg</strong>
               <a id="buildInfo" class="build-info"></a>
             </div>
-            <p data-i18n="landing.aiDisclosure">The code for this project was written using large language models with extensive human supervision.</p>
-            <p data-i18n="landing.markAttribution">The zeitberg mark and landscape are original hand-authored SVGs. No image model was used.</p>
           </footer>
         </div>
       </section>
@@ -548,96 +546,6 @@
 
         <div id="workspaceList" class="workspace-list" role="list"></div>
 
-        <form id="workspaceConfigForm" class="workspace-config-form" hidden>
-          <div class="workspace-section-heading">
-            <strong data-i18n="workspace.configure">Configure zeitberg.json</strong>
-            <span id="workspaceConfigMeta" class="muted" data-i18n="workspace.configureMeta">Choose the shared workspace identity and the component documents this repository provides.</span>
-          </div>
-          <div class="grid dialog-grid workspace-config-grid">
-            <label>
-              <span data-i18n="workspace.workspaceName">Workspace name</span>
-              <input id="workspaceConfigName" type="text" required />
-            </label>
-            <label>
-              <span data-i18n="workspace.workspaceId">Workspace ID</span>
-              <input id="workspaceConfigId" type="text" spellcheck="false" readonly required />
-            </label>
-            <label>
-              <span data-i18n="workspace.timezone">Timezone</span>
-              <input id="workspaceConfigTimezone" type="text" spellcheck="false" required />
-            </label>
-            <label>
-              <span data-i18n="workspace.projectsPath">Projects path</span>
-              <input id="workspaceConfigProjectsPath" type="text" spellcheck="false" required />
-            </label>
-          </div>
-
-          <div class="workspace-component-list">
-            <fieldset class="workspace-component">
-              <legend>
-                <label>
-                  <input id="workspaceConfigTimeEnabled" type="checkbox" />
-                  <span data-i18n="workspace.timeComponent">Time tracking</span>
-                </label>
-              </legend>
-              <div id="workspaceConfigTimeFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="time">
-                <label>
-                  <span data-i18n="workspace.entriesPath">Week entries directory</span>
-                  <input id="workspaceConfigTimeEntries" type="text" spellcheck="false" required />
-                </label>
-                <label>
-                  <span data-i18n="workspace.entriesManifestPath">Entries manifest path</span>
-                  <input id="workspaceConfigTimeManifest" type="text" spellcheck="false" required />
-                </label>
-                <label class="col-span-2">
-                  <span data-i18n="workspace.requirementsPath">Week requirements path</span>
-                  <input id="workspaceConfigTimeRequirements" type="text" spellcheck="false" required />
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset class="workspace-component">
-              <legend>
-                <label>
-                  <input id="workspaceConfigTodosEnabled" type="checkbox" />
-                  <span data-i18n="workspace.todosComponent">Tasks</span>
-                </label>
-              </legend>
-              <div id="workspaceConfigTodosFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="todos">
-                <label class="col-span-2">
-                  <span data-i18n="workspace.todosPath">Tasks document path</span>
-                  <input id="workspaceConfigTodosDocument" type="text" spellcheck="false" required />
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset class="workspace-component">
-              <legend>
-                <label>
-                  <input id="workspaceConfigExpensesEnabled" type="checkbox" />
-                  <span data-i18n="workspace.expensesComponent">Expenses</span>
-                </label>
-              </legend>
-              <div id="workspaceConfigExpensesFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="expenses">
-                <label>
-                  <span data-i18n="workspace.expensesPath">Expenses document path</span>
-                  <input id="workspaceConfigExpensesDocument" type="text" spellcheck="false" required />
-                </label>
-                <label>
-                  <span data-i18n="workspace.expensesManifestPath">Expenses manifest path</span>
-                  <input id="workspaceConfigExpensesManifest" type="text" spellcheck="false" required />
-                </label>
-              </div>
-            </fieldset>
-          </div>
-
-          <pre id="workspaceConfigError" class="error" hidden></pre>
-          <div class="row dialog-actions workspace-config-actions">
-            <span id="workspaceConfigSaveNote" class="muted" data-i18n="workspace.initializeMissing">Missing documents are initialized; existing data is kept unchanged.</span>
-            <span class="topbar-spacer"></span>
-            <button id="workspaceConfigSaveBtn" class="btn" type="submit" data-i18n="workspace.saveConfiguration">Save configuration</button>
-          </div>
-        </form>
 
         <div id="workspaceAddSection" class="workspace-add-section">
           <div class="workspace-section-heading">
@@ -730,6 +638,105 @@
           </form>
         </div>
       </div>
+    </dialog>
+
+    <dialog id="workspaceEditDialog" class="dialog workspace-dialog" aria-labelledby="workspaceEditHeading">
+        <form id="workspaceConfigForm" class="dialog-card workspace-config-form">
+          <div class="dialog-head">
+            <div>
+              <div id="workspaceEditHeading" class="dialog-title" data-i18n="workspace.edit">Edit workspace</div>
+              <div id="workspaceConfigMeta" class="dialog-meta muted" data-i18n="workspace.configureMeta">Choose the shared workspace identity and the component documents this repository provides.</div>
+            </div>
+            <button id="workspaceEditCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
+              <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+            </button>
+          </div>
+          <div class="grid dialog-grid workspace-config-grid">
+            <label>
+              <span data-i18n="workspace.workspaceName">Workspace name</span>
+              <input id="workspaceConfigName" type="text" required />
+            </label>
+            <label>
+              <span data-i18n="workspace.workspaceId">Workspace ID</span>
+              <input id="workspaceConfigId" type="text" spellcheck="false" readonly required />
+            </label>
+            <label>
+              <span data-i18n="workspace.timezone">Timezone</span>
+              <input id="workspaceConfigTimezone" type="text" spellcheck="false" required />
+            </label>
+            <label>
+              <span data-i18n="workspace.projectsPath">Projects path</span>
+              <input id="workspaceConfigProjectsPath" type="text" spellcheck="false" required />
+            </label>
+          </div>
+
+          <div class="workspace-component-list">
+            <fieldset class="workspace-component">
+              <legend>
+                <label>
+                  <input id="workspaceConfigTimeEnabled" type="checkbox" />
+                  <span data-i18n="workspace.timeComponent">Time tracking</span>
+                </label>
+              </legend>
+              <div id="workspaceConfigTimeFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="time">
+                <label>
+                  <span data-i18n="workspace.entriesPath">Week entries directory</span>
+                  <input id="workspaceConfigTimeEntries" type="text" spellcheck="false" required />
+                </label>
+                <label>
+                  <span data-i18n="workspace.entriesManifestPath">Entries manifest path</span>
+                  <input id="workspaceConfigTimeManifest" type="text" spellcheck="false" required />
+                </label>
+                <label class="col-span-2">
+                  <span data-i18n="workspace.requirementsPath">Week requirements path</span>
+                  <input id="workspaceConfigTimeRequirements" type="text" spellcheck="false" required />
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="workspace-component">
+              <legend>
+                <label>
+                  <input id="workspaceConfigTodosEnabled" type="checkbox" />
+                  <span data-i18n="workspace.todosComponent">Tasks</span>
+                </label>
+              </legend>
+              <div id="workspaceConfigTodosFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="todos">
+                <label class="col-span-2">
+                  <span data-i18n="workspace.todosPath">Tasks document path</span>
+                  <input id="workspaceConfigTodosDocument" type="text" spellcheck="false" required />
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="workspace-component">
+              <legend>
+                <label>
+                  <input id="workspaceConfigExpensesEnabled" type="checkbox" />
+                  <span data-i18n="workspace.expensesComponent">Expenses</span>
+                </label>
+              </legend>
+              <div id="workspaceConfigExpensesFields" class="grid dialog-grid workspace-component-grid" data-workspace-component-fields="expenses">
+                <label>
+                  <span data-i18n="workspace.expensesPath">Expenses document path</span>
+                  <input id="workspaceConfigExpensesDocument" type="text" spellcheck="false" required />
+                </label>
+                <label>
+                  <span data-i18n="workspace.expensesManifestPath">Expenses manifest path</span>
+                  <input id="workspaceConfigExpensesManifest" type="text" spellcheck="false" required />
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <pre id="workspaceConfigError" class="error" role="alert" hidden></pre>
+          <div class="row dialog-actions workspace-config-actions">
+            <span id="workspaceConfigSaveNote" class="muted" data-i18n="workspace.initializeMissing">Missing documents are initialized; existing data is kept unchanged.</span>
+            <span class="topbar-spacer"></span>
+            <button id="workspaceEditCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+            <button id="workspaceConfigSaveBtn" class="btn" type="submit" data-i18n="workspace.saveConfiguration">Save configuration</button>
+          </div>
+        </form>
     </dialog>
 
     <dialog id="workspaceCreateDialog" class="dialog workspace-create-dialog" aria-labelledby="workspaceCreateDialogHeading">
@@ -1177,38 +1184,38 @@
     <script type="importmap">
       {
         "imports": {
-          "./appstate.js": "./appstate.js?v=1.3.0",
-          "./autosave.js": "./autosave.js?v=1.3.0",
-          "./build-info.js": "./build-info.js?v=1.3.0",
-          "./version.js": "./version.js?v=1.3.0",
-          "./demo.js": "./demo.js?v=1.3.0",
-          "./work-time.js": "./work-time.js?v=1.3.0",
-          "./work-time.view.js": "./work-time.view.js?v=1.3.0",
-          "./cache.js": "./cache.js?v=1.3.0",
-          "./capability-scanner.js": "./capability-scanner.js?v=1.3.0",
-          "./config.js": "./config.js?v=1.3.0",
-          "./datasource.js": "./datasource.js?v=1.3.0",
-          "./expense.view.js": "./expense.view.js?v=1.3.0",
-          "./locale.js": "./locale.js?v=1.3.0",
-          "./model.js": "./model.js?v=1.3.0",
-          "./oauth.js": "./oauth.js?v=1.3.0",
-          "./project.view.js": "./project.view.js?v=1.3.0",
-          "./routing.js": "./routing.js?v=1.3.0",
-          "./search.view.js": "./search.view.js?v=1.3.0",
-          "./shell.view.js": "./shell.view.js?v=1.3.0",
-          "./store.js": "./store.js?v=1.3.0",
-          "./todo.view.js": "./todo.view.js?v=1.3.0",
-          "./utils.js": "./utils.js?v=1.3.0",
-          "./week.view.js": "./week.view.js?v=1.3.0",
-          "./workspace.js": "./workspace.js?v=1.3.0",
-          "./workspace.loader.js": "./workspace.loader.js?v=1.3.0",
-          "./workspace.sessions.js": "./workspace.sessions.js?v=1.3.0",
-          "./workspace.todos.js": "./workspace.todos.js?v=1.3.0",
-          "./session-binding.js": "./session-binding.js?v=1.3.0",
-          "qr-scanner": "./vendor/qr-scanner/qr-scanner.min.js?v=1.3.0"
+          "./appstate.js": "./appstate.js?v=1.3.1",
+          "./autosave.js": "./autosave.js?v=1.3.1",
+          "./build-info.js": "./build-info.js?v=1.3.1",
+          "./version.js": "./version.js?v=1.3.1",
+          "./demo.js": "./demo.js?v=1.3.1",
+          "./work-time.js": "./work-time.js?v=1.3.1",
+          "./work-time.view.js": "./work-time.view.js?v=1.3.1",
+          "./cache.js": "./cache.js?v=1.3.1",
+          "./capability-scanner.js": "./capability-scanner.js?v=1.3.1",
+          "./config.js": "./config.js?v=1.3.1",
+          "./datasource.js": "./datasource.js?v=1.3.1",
+          "./expense.view.js": "./expense.view.js?v=1.3.1",
+          "./locale.js": "./locale.js?v=1.3.1",
+          "./model.js": "./model.js?v=1.3.1",
+          "./oauth.js": "./oauth.js?v=1.3.1",
+          "./project.view.js": "./project.view.js?v=1.3.1",
+          "./routing.js": "./routing.js?v=1.3.1",
+          "./search.view.js": "./search.view.js?v=1.3.1",
+          "./shell.view.js": "./shell.view.js?v=1.3.1",
+          "./store.js": "./store.js?v=1.3.1",
+          "./todo.view.js": "./todo.view.js?v=1.3.1",
+          "./utils.js": "./utils.js?v=1.3.1",
+          "./week.view.js": "./week.view.js?v=1.3.1",
+          "./workspace.js": "./workspace.js?v=1.3.1",
+          "./workspace.loader.js": "./workspace.loader.js?v=1.3.1",
+          "./workspace.sessions.js": "./workspace.sessions.js?v=1.3.1",
+          "./workspace.todos.js": "./workspace.todos.js?v=1.3.1",
+          "./session-binding.js": "./session-binding.js?v=1.3.1",
+          "qr-scanner": "./vendor/qr-scanner/qr-scanner.min.js?v=1.3.1"
         }
       }
     </script>
-    <script type="module" src="./app.js?v=1.3.0"></script>
+    <script type="module" src="./app.js?v=1.3.1"></script>
   </body>
 </html>

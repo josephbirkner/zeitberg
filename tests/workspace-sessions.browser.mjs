@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, cp, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { chromium } from "playwright";
+import { chromium, webkit, devices } from "playwright";
 import net from "node:net";
 import { EntryStore, TodoStore, ExpenseStore } from "../store.js";
 import { Manifest, ProjectList, ExpenseDocument } from "../model.js";
@@ -63,7 +63,7 @@ try {
         try { if ((await fetch(`http://127.0.0.1:${port}/local-workspaces`)).ok) break; } catch { /* Starting. */ }
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    browser = await chromium.launch({ headless: true });
+    browser = await (process.argv.includes("--webkit") ? webkit : chromium).launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, locale: "en-US" });
     await page.clock.install();
     const errors = [];
@@ -136,6 +136,7 @@ try {
     assert.ok(JSON.parse(await readFile(path.join(directories[1], "data/todos.json"), "utf8")).todos.some((todo) => todo.content === "Beta task"));
     await page.reload();
     await page.locator('#documentWorkspaces option', { hasText: "Beta" }).waitFor({ state: "attached" });
+    await page.locator(".todo-row", { hasText: "Beta task" }).waitFor();
     assert.equal(await page.locator("#documentWorkspaces").inputValue(), "");
     assert.equal(await page.locator("#documentWorkspaceName").textContent(), "All workspaces");
     assert.match(await page.locator("#todoList").textContent(), /Newer than saved snapshot/);
@@ -363,6 +364,71 @@ try {
     await page.clock.fastForward(120000);
     assert.equal(emptyWrites, 0);
     assert.equal(await warnsOnExit(), false);
+    assert.deepEqual(errors, []);
+    // Expense-only repositories must retain a visible, tappable title picker on phones.
+    // Mutate only these disposable fixtures after the full-module scenarios finish.
+    for (const directory of directories) {
+        const file = path.join(directory, "zeitberg.json");
+        const raw = JSON.parse(await readFile(file, "utf8"));
+        raw.components = Object.fromEntries(Object.entries(raw.components).filter(([, component]) => component.type === "expenses"));
+        await writeFile(file, JSON.stringify(raw));
+    }
+    const phone = await browser.newPage({ ...devices["iPhone 16 Pro"], locale: "de-DE" });
+    phone.on("pageerror", (error) => errors.push(error.message));
+    await phone.goto(`http://127.0.0.1:${port}/expenses?source=local&workspace=alpha`);
+    await phone.locator('#documentWorkspaces option', { hasText: "Beta" }).waitFor({ state: "attached" });
+    const picker = phone.locator("#documentWorkspaces");
+    await picker.waitFor({ state: "visible" });
+    assert.equal(await picker.evaluate((element) => getComputedStyle(element).opacity), "1");
+    assert.equal(await picker.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element;
+    }), true, "The workspace title is directly tappable");
+    await picker.tap();
+    await picker.selectOption({ label: "Beta" });
+    await phone.waitForURL(/workspace=beta/);
+    assert.equal(await phone.locator("#documentWorkspaceName").textContent(), "Beta");
+    const betaId = await picker.inputValue();
+    await phone.screenshot({ path: path.join(temporary, "iphone-expense-workspaces.png") });
+    await picker.selectOption({ label: "Alpha" });
+    await phone.waitForURL(/workspace=alpha/);
+    await phone.locator("#workspaceSettingsBtn").tap();
+    const betaRow = phone.locator(".workspace-row", { hasText: "Beta" });
+    await betaRow.locator('[data-workspace-action="edit"]').tap();
+    await phone.locator("#workspaceEditDialog[open]").waitFor();
+    assert.equal(await phone.locator("#workspaceConfigName").inputValue(), "Beta");
+    await phone.locator("#workspaceConfigName").fill("Canceled mobile edit");
+    await phone.locator("#workspaceEditCancelBtn").tap();
+    assert.equal(await phone.locator("#workspaceDialog").isVisible(), true);
+    await phone.locator(".workspace-row", { hasText: "Beta" }).locator('[data-workspace-action="edit"]').tap();
+    assert.equal(await phone.locator("#workspaceConfigName").inputValue(), "Beta");
+    await phone.locator("#workspaceConfigName").fill("Beta updated");
+    await phone.route("**/save", (route) => route.fulfill({ status: 503, body: "Configuration save unavailable" }));
+    await phone.locator("#workspaceConfigSaveBtn").tap();
+    await phone.locator("#workspaceConfigError:not([hidden])").waitFor();
+    assert.equal(await phone.locator("#workspaceEditDialog").isVisible(), true);
+    await phone.unroute("**/save");
+    await phone.locator("#workspaceConfigSaveBtn").tap();
+    await phone.locator("#workspaceEditDialog").waitFor({ state: "hidden" });
+    await phone.waitForFunction(() => document.getElementById("documentWorkspaceName").textContent === "Beta updated");
+    assert.equal(JSON.parse(await readFile(path.join(directories[1], "zeitberg.json"), "utf8")).name, "Beta updated");
+    // Simulate a secondary repository that failed hydration: its picker option must not vanish.
+    let failedHydration = false;
+    await phone.route("**/workspace-config?*", (route) => {
+        if (new URL(route.request().url()).searchParams.get("workspace") !== "beta") return route.continue();
+        failedHydration = true;
+        return route.fulfill({ status: 503, body: "Unavailable fixture" });
+    });
+    await phone.goto(`http://127.0.0.1:${port}/expenses?source=local&workspace=alpha`);
+    await phone.locator('#documentWorkspaces option', { hasText: "Beta" }).waitFor({ state: "attached" });
+    await phone.waitForFunction(() => document.getElementById("workspaceAvailability").title.includes("503"));
+    assert.equal(failedHydration, true);
+    assert.equal(await picker.isVisible(), true);
+    await phone.unroute("**/workspace-config?*");
+    await picker.selectOption(betaId);
+    await phone.waitForURL(/workspace=beta/);
+    assert.equal(await phone.locator("#documentWorkspaceName").textContent(), "Beta updated");
+    await phone.close();
     assert.deepEqual(errors, []);
     console.log(`Multi-workspace browser tests passed: ${temporary}`);
 } finally {

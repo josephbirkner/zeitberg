@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
-import { chromium, webkit } from "playwright";
+import { chromium, webkit, devices } from "playwright";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const output = await mkdtemp(path.join(tmpdir(), "zeitberg-dialogs-"));
@@ -55,6 +55,13 @@ async function inspectDialog(page, selector, name) {
     assert.deepEqual(metrics.clipped, [], `${name}: clipped controls`);
     assert.equal(metrics.named, true, `${name}: accessible name`);
     assert.equal(metrics.actionsVisible, true, `${name}: reachable sticky actions`);
+    if (selector === "#expenseDialog") {
+        const date = await page.locator("#expenseDate").boundingBox();
+        const category = await page.locator("#expenseCategory").boundingBox();
+        const separate = date.x + date.width <= category.x + 1 || date.y + date.height <= category.y + 1;
+        assert.ok(separate, `${name}: date and category must not overlap`);
+        assert.ok(Math.abs(date.height - category.height) < 1, `${name}: matching date/category heights`);
+    }
     for (const cross of metrics.crosses) {
         assert.ok(cross.width >= 44 && cross.height >= 44, `${name}: close touch target`);
         assert.ok(Math.abs(cross.dx) < 1 && Math.abs(cross.dy) < 1, `${name}: centered cross`);
@@ -164,12 +171,31 @@ try {
     await page.locator("#appSection:not([hidden])").waitFor();
     for (const width of [1280, 320]) {
         await page.setViewportSize({ width, height: 640 });
-        for (const id of ["workspaceDialog", "workspaceCreateDialog", "workspaceShareDialog", "todoConflictDialog", "projectBindingDialog", "expenseSettlementDialog"]) {
+        for (const id of ["workspaceDialog", "workspaceEditDialog", "workspaceCreateDialog", "workspaceShareDialog", "todoConflictDialog", "projectBindingDialog", "expenseSettlementDialog"]) {
             await page.locator(`#${id}`).evaluate((dialog) => dialog.showModal());
             await inspectDialog(page, `#${id}`, `${id}-${width}`);
             await page.keyboard.press("Escape");
         }
     }
+    // Mobile emulation includes touch and WebKit's mobile user agent, not just a narrow desktop viewport.
+    const phone = await browser.newPage({ ...devices["iPhone 16 Pro"], locale: "de-DE", colorScheme: "light" });
+    phone.on("pageerror", (error) => errors.push(error.message));
+    await phone.goto(`${origin}/`);
+    await phone.locator("#loginSection:not([hidden])").waitFor();
+    await phone.evaluate(() => document.documentElement.dataset.theme = "light");
+    assert.equal(await phone.locator("#demoLink").evaluate((node) => getComputedStyle(node).color), "rgb(255, 255, 255)");
+    assert.doesNotMatch(await phone.locator("#demoLink").textContent(), /account|Konto/i);
+    assert.equal(await phone.locator('[data-i18n="landing.aiDisclosure"], [data-i18n="landing.markAttribution"]').count(), 0);
+    await phone.goto(`${origin}/expenses?demo=1&demoSeed=iphone`);
+    await phone.locator("#appSection:not([hidden])").waitFor();
+    await phone.evaluate(() => document.documentElement.dataset.theme = "light");
+    await phone.locator("#expenseAddBtn").tap();
+    await phone.locator("#expenseAmount").fill("10.50");
+    await phone.locator("#expenseDescription").fill("Stolpe Backstube");
+    await phone.locator("#expenseDate").fill("2026-09-07");
+    await inspectDialog(phone, "#expenseDialog", "expense-iphone16pro-de-light");
+    assert.equal(await phone.locator("#expenseDate").evaluate((node) => getComputedStyle(node).appearance), "none");
+    await phone.close();
     assert.deepEqual(errors, []);
     console.log(`Dialog audit screenshots: ${output}`);
 } finally {

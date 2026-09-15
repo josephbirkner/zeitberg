@@ -80,6 +80,10 @@ function harness(t, { component = "time", panel = "main", setup = false, connect
         state: { ...state, ...(runtime.activeGlobalPanel && panel === "search" ? { returnPanel: "search" } : {}) },
     });
     const elements = {
+        workspaceEditDialog: {
+            open: false,
+            close() { this.open = false; },
+        },
         workspaceDialog: {
             open: false,
             closes: 0,

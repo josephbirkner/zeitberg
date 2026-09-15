@@ -277,9 +277,18 @@ try {
     await desktop.locator("#workspaceSettingsBtn").click();
     assert.equal(await desktop.locator("#workspaceDialog").evaluate((dialog) => dialog.open), true);
     await assertNoHorizontalDialogOverflow(desktop.locator("#workspaceDialog .dialog-card"));
+    assert.equal(await desktop.locator("#workspaceConfigForm").isVisible(), false);
+    await desktop.locator('[data-workspace-action="edit"]').click();
+    await desktop.locator("#workspaceEditDialog[open]").waitFor();
     assert.equal(await desktop.locator("#workspaceConfigForm").isVisible(), true);
     assert.equal(await desktop.locator("#workspaceConfigName").inputValue(), "My workspace");
     assert.equal(await desktop.locator("#workspaceConfigTimeEnabled").isChecked(), true);
+    await desktop.locator("#workspaceConfigName").fill("Canceled name");
+    await desktop.locator("#workspaceEditCancelBtn").click();
+    assert.equal(await desktop.locator("#workspaceDialog").isVisible(), true);
+    await desktop.locator('[data-workspace-action="edit"]').click();
+    assert.equal(await desktop.locator("#workspaceConfigName").inputValue(), "My workspace");
+    await desktop.locator("#workspaceEditCloseBtn").click();
     await desktop.locator("#workspaceDialogCloseBtn").click();
     await desktop.locator("#projectsBtn").click();
     assert.equal(await desktop.locator("#projectsDialog").evaluate((dialog) => dialog.open), true);
@@ -460,6 +469,7 @@ try {
         localStorage.getItem("zeitberg:workspace-credentials:local:v1"),
     );
     assert.match(pastedCapabilityCredentials || "", /browser-smoke-capability-token/);
+    await desktop.locator("#workspaceEditCloseBtn").click();
     await desktop.locator("#workspaceDialogCloseBtn").click();
     await desktop.locator("#logoutBtn").click();
 
@@ -479,6 +489,7 @@ try {
     assert.equal(await desktop.locator("#menuWeekBtn").isVisible(), false);
     assert.equal(await desktop.locator("#menuTodoBtn").isVisible(), false);
     assert.equal(await desktop.locator("#menuExpenseBtn").isVisible(), false);
+    await desktop.locator("#workspaceEditCloseBtn").click();
     await desktop.locator("#workspaceDialogCloseBtn").click();
     await desktop.locator("#logoutBtn").click();
     assert.deepEqual(browserErrors, []);

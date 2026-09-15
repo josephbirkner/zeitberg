@@ -730,6 +730,10 @@ export class WorkspaceSessions {
             return;
         }
         const session = this.sessions.get(id);
+        if (!session?.ready && app.workspaceRegistry.getById(id)) {
+            void app.workspaceController.switchWorkspace(id).catch((error) => app.shell.toast(String(error), 6000));
+            return;
+        }
         if (!session?.supports(app.state.activeTab)) return;
         if (app.state.activeTab === "todos") this.todos.enabled = false;
         app.todoView.projectFiltersEl.hidden = false;
@@ -737,8 +741,9 @@ export class WorkspaceSessions {
     }
 
     /**
-     * Updates the page-title dropdown with ready workspaces for the active module.
-     * A single choice renders as a plain heading; shared save state and availability warnings remain independent.
+     * Updates the page-title dropdown with compatible workspaces and connections awaiting hydration.
+     * Unavailable connections remain reachable for reconnection; loaded repositories lacking the module
+     * are omitted. A single choice renders as a plain heading, without a hidden interactive overlay.
      * @returns {void}
      */
     render() {
@@ -758,7 +763,10 @@ export class WorkspaceSessions {
             selectedId = "";
             this.label.textContent = app.locale.t("workspaceSessions.all");
         }
-        const choices = available.map((session) => ({ id: session.id, name: session.name }));
+        const choices = app.workspaceRegistry.list().filter((connection) => {
+            const session = this.sessions.get(connection.id);
+            return (!session?.ready && app.state.activeTab !== "search") || session?.supports(app.state.activeTab);
+        }).map((connection) => ({ id: connection.id, name: this.sessions.get(connection.id)?.name || connection.displayName }));
         if (all) choices.unshift({ id: "", name: app.locale.t("workspaceSessions.all") });
         // Retain the native select node/options during ordinary renders so keyboard focus and an open picker are not disrupted.
         const changed = choices.length !== this.selector.options.length || choices.some((choice, index) => {

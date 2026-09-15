@@ -242,7 +242,7 @@ body:not(.app-mode) main {
   outline: none;
 }
 
-.landing-button-primary {
+.landing .landing-button-primary {
   border-color: var(--landing-orange);
   background: var(--landing-orange);
   color: #fff;

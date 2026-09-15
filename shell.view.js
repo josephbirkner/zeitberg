@@ -101,6 +101,8 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLInputElement} workspaceConfigNameInput
  * @property {HTMLInputElement} workspaceConfigProjectsPathInput
  * @property {HTMLButtonElement} workspaceConfigSaveBtn
+ * @property {HTMLButtonElement} workspaceEditCloseBtn
+ * @property {HTMLButtonElement} workspaceEditCancelBtn
  * @property {HTMLInputElement} workspaceConfigTimeEnabledInput
  * @property {HTMLInputElement} workspaceConfigTimezoneInput
  * @property {HTMLInputElement} workspaceConfigTodosEnabledInput
@@ -547,6 +549,8 @@ export class ShellView {
         this.elements.openSharedWorkspaceBtn.disabled = isBusy;
         this.elements.workspaceDialogCloseBtn.disabled = isBusy;
         this.elements.workspaceConfigSaveBtn.disabled = isBusy;
+        this.elements.workspaceEditCloseBtn.disabled = isBusy;
+        this.elements.workspaceEditCancelBtn.disabled = isBusy;
         this.elements.workspaceConfigNameInput.disabled = isBusy;
         this.elements.workspaceConfigIdInput.disabled = isBusy;
         this.elements.workspaceConfigTimezoneInput.disabled = isBusy;

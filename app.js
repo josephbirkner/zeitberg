@@ -361,6 +361,9 @@ export class App {
         this.interfaceDialogCloseBtn = getRequiredElement("interfaceDialogCloseBtn", HTMLButtonElement);
         this.interfaceLanguageSelect = getRequiredElement("interfaceLanguage", HTMLSelectElement);
         this.workspaceDialog = getRequiredElement("workspaceDialog", HTMLDialogElement);
+        this.workspaceEditDialog = getRequiredElement("workspaceEditDialog", HTMLDialogElement);
+        this.workspaceEditCloseBtn = getRequiredElement("workspaceEditCloseBtn", HTMLButtonElement);
+        this.workspaceEditCancelBtn = getRequiredElement("workspaceEditCancelBtn", HTMLButtonElement);
         this.workspaceDialogCloseBtn = getRequiredElement("workspaceDialogCloseBtn", HTMLButtonElement);
         this.workspaceListEl = getRequiredElement("workspaceList", HTMLElement);
         this.workspaceConfigForm = getRequiredElement("workspaceConfigForm", HTMLFormElement);
@@ -776,6 +779,7 @@ export class App {
                 rememberInput: this.rememberInput,
                 workspaceSettingsBtn: this.workspaceSettingsBtn,
                 workspaceDialog: this.workspaceDialog,
+                workspaceEditDialog: this.workspaceEditDialog,
                 workspaceListEl: this.workspaceListEl,
                 workspaceConfigForm: this.workspaceConfigForm,
                 workspaceConfigMetaEl: this.workspaceConfigMetaEl,
@@ -970,6 +974,8 @@ export class App {
                 workspaceCreateTimezoneInput: this.workspaceCreateTimezoneInput,
                 workspaceCreateTokenInput: this.workspaceCreateTokenInput,
                 workspaceDialogCloseBtn: this.workspaceDialogCloseBtn,
+                workspaceEditCloseBtn: this.workspaceEditCloseBtn,
+                workspaceEditCancelBtn: this.workspaceEditCancelBtn,
                 workspaceOpenCapabilityBtn: this.workspaceOpenCapabilityBtn,
                 workspaceOAuthBtn: this.workspaceOAuthBtn,
                 workspacePathInput: this.workspacePathInput,
@@ -1427,6 +1433,13 @@ export class App {
             this.shell.showLoginScreen();
         });
         this.workspaceDialogCloseBtn.addEventListener("click", () => this.workspaceController.closeWorkspaceSettings());
+        for (const button of [this.workspaceEditCloseBtn, this.workspaceEditCancelBtn]) {
+            button.addEventListener("click", () => this.workspaceController.closeWorkspaceEditor());
+        }
+        this.workspaceEditDialog.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            if (!this.workspaceConfigSaveBtn.disabled) this.workspaceController.closeWorkspaceEditor();
+        });
         this.workspaceDialog.addEventListener("cancel", (ev) => {
             ev.preventDefault();
             this.workspaceController.closeWorkspaceSettings();

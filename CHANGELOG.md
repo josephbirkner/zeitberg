@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+
+- Keep the workspace title picker visible and tappable on phones, including when another configured repository is still loading or needs reconnection.
+- Normalize Safari's expense date field so Date and Category remain aligned without overlapping, while retaining the native date picker.
+- Move workspace configuration into a separate Edit workspace dialog, accessible from each workspace row. Cancel leaves saved configuration unchanged; missing configurations open the editor directly.
+- Give the playground button white text in light mode, shorten its label, and remove the two implementation/artwork disclosure paragraphs from the welcome page.
+- Add mobile WebKit regression checks for expense-only workspace switching, reconnection, workspace editing, and expense-field geometry.
+
 ## 1.3.0
 
 ### Multiple workspaces
