@@ -5,6 +5,7 @@
  */
 function applyStoredTheme() {
     try {
+        if (new URL(window.location.href).searchParams.get("demo") === "1") return;
         const savedConfig = JSON.parse(localStorage.getItem("zeitberg:config:v1") || "{}");
         if (savedConfig.theme === "light") document.documentElement.dataset.theme = "light";
     } catch {

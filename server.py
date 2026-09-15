@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -114,7 +115,24 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 (stdlib)
         parsed = urlparse(self.path)
+        if parsed.path == f"{self.app_entry_path}build-info.js":
+            info = {"version": json.loads((APP_ROOT / "package.json").read_text())["version"], "commit": "", "dirty": False}
+            try:
+                info["commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=APP_ROOT, text=True, stderr=subprocess.DEVNULL, timeout=3).strip()
+                info["dirty"] = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=APP_ROOT, text=True, stderr=subprocess.DEVNULL, timeout=3).strip())
+            except (OSError, subprocess.SubprocessError):
+                pass
+            content = f"export const BUILD_INFO = {json.dumps(info)};\n".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+            return
         if parsed.path in ("", "/"):
+            if self.app_entry_path == "/" and parse_qs(parsed.query).get("demo") == ["1"]:
+                return super().do_GET()
             if not self.local_mode_enabled:
                 if self.app_entry_path == "/":
                     return super().do_GET()

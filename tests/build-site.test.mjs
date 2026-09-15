@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
+
+test("Pages artifact embeds its checkout revision, coherent cache keys and a valid CSP", async () => {
+    const root = fileURLToPath(new URL("..", import.meta.url));
+    const packageVersion = JSON.parse(await readFile(path.join(root, "package.json"))).version;
+    const { BUILD_INFO: fallback } = await import("../build-info.js");
+    assert.equal(fallback.version, packageVersion, "Static fallback and release metadata must agree");
+    const temporary = await mkdtemp(path.join(tmpdir(), "zeitberg-build-"));
+    const output = path.join(temporary, "site");
+    execFileSync(process.execPath, ["scripts/build-site.mjs", output], { cwd: root });
+    const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+    const { BUILD_INFO } = await import(pathToFileURL(path.join(output, "build-info.js")));
+    assert.equal(BUILD_INFO.commit, commit);
+    assert.equal(BUILD_INFO.version, packageVersion);
+    const html = await readFile(path.join(output, "index.html"), "utf8");
+    const importMap = html.match(/<script\s+type="importmap">([\s\S]*?)<\/script>/)[1];
+    const hash = createHash("sha256").update(importMap).digest("base64");
+    assert.ok(html.includes(`'sha256-${hash}'`));
+    for (const value of Object.values(JSON.parse(importMap).imports)) assert.ok(value.endsWith(`?v=${commit}`));
+    const names = await readdir(output);
+    for (const name of ["data", "node_modules", "server.py", "tests", ".git", "graphify-out"]) assert.ok(!names.includes(name));
+    for (const name of ["demo.js", "version.js", "build-info.js", "404.html", "assets", "vendor", "workspace-template"]) assert.ok(names.includes(name));
+    assert.throws(() => execFileSync(process.execPath, ["scripts/build-site.mjs", output], { cwd: root, stdio: "pipe" }), /EEXIST/);
+    assert.equal(await readFile(path.join(output, "index.html"), "utf8"), html);
+});

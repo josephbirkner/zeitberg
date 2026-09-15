@@ -1948,6 +1948,9 @@ export class EntryStore {
      */
     getWeekBillableSecondsThroughDate(weekStart, throughDate) {
         if (!weekStart || !throughDate) return 0;
+        if (this.weekRequirements.accounting) {
+            return this.getAccountBillableSeconds(weekStart, throughDate < addIsoDays(weekStart, 6) ? throughDate : addIsoDays(weekStart, 6));
+        }
         const throughWeekStart = isoWeekStart(throughDate);
         if (weekStart < throughWeekStart) return this.getWeekBillableSeconds(weekStart);
         if (weekStart > throughWeekStart) return 0;
@@ -1965,14 +1968,17 @@ export class EntryStore {
     }
 
     /**
-     * Returns the portion of a weekly requirement due through a reference day.
-     * Requirements are distributed evenly across Monday through Friday because the model stores one target for the whole week.
+     * Returns schedule-derived daily requirements through the reference date.
+     * Unmigrated legacy documents retain their even Monday–Friday distribution.
      * @param {string} weekStart
      * @param {string} throughDate
      * @returns {number}
      */
     getRequiredHoursThroughDate(weekStart, throughDate) {
         if (!weekStart || !throughDate) return 0;
+        if (this.weekRequirements.accounting) {
+            return this.weekRequirements.accounting.requiredHours(weekStart, throughDate < addIsoDays(weekStart, 6) ? throughDate : addIsoDays(weekStart, 6));
+        }
         const requiredHours = this.getWeekRequiredHours(weekStart);
         const throughWeekStart = isoWeekStart(throughDate);
         if (weekStart < throughWeekStart) return requiredHours;
@@ -1983,7 +1989,7 @@ export class EntryStore {
 
     /**
      * Computes week delta in seconds through a reference day.
-     * Past weeks use their full requirement, while the current week only deducts the evenly distributed target due so far.
+     * Past weeks use their full requirement; the current week deducts only the daily requirements due so far.
      * @param {string} weekStart
      * @param {string} [throughDate]
      * @returns {number}
@@ -2023,6 +2029,14 @@ export class EntryStore {
      */
     getAccumulatedBalanceSeconds(weekStart, throughDate = this.timeContext.formatDate(new Date())) {
         if (!weekStart) return 0;
+        const accounting = this.weekRequirements.accounting;
+        if (accounting) {
+            const end = throughDate < addIsoDays(weekStart, 6) ? throughDate : addIsoDays(weekStart, 6);
+            return accounting.employers.reduce((total, account) => {
+                if (end < account.tracking_start) return total;
+                return total + this.getEmployerBalance(account.id, end);
+            }, 0);
+        }
         const startWeek = isoWeekStart(BALANCE_ACCUMULATION_START);
         if (weekStart < startWeek) return 0;
         let total = 0;
@@ -2032,6 +2046,60 @@ export class EntryStore {
             cursor = addIsoDays(cursor, 7);
         }
         return total;
+    }
+
+    /**
+     * Counts only billable entries assigned to employer projects, clipped to real timestamp boundaries.
+     * Weekly indexes avoid scanning the complete diary per day; midnight and DST crossings use actual elapsed seconds.
+     * @param {string} from Inclusive first calendar date.
+     * @param {string} through Inclusive last calendar date.
+     * @param {string} [employerId] Optional account filter; omission sums all accounts.
+     * @param {import("./work-time.js").WorkTimeConfig | null} [accounting] Detached candidate for preview calculations.
+     * @returns {number} Attributed billable seconds within the accounting period.
+     */
+    getAccountBillableSeconds(from, through, employerId = "", accounting = this.weekRequirements.accounting) {
+        if (!accounting || from > through) return 0;
+        let seconds = 0;
+        for (const account of accounting.employers) {
+            if (employerId && account.id !== employerId) continue;
+            const start = from < account.tracking_start ? account.tracking_start : from;
+            const end = account.active_until && account.active_until < through ? account.active_until : through;
+            if (start > end) continue;
+            const projects = new Set(account.project_keys);
+            const fromMs = this.timeContext.dateFromLocalDayMinutes(start, 0).getTime();
+            const untilMs = this.timeContext.dateFromLocalDayMinutes(addIsoDays(end, 1), 0).getTime();
+            for (let week = isoWeekStart(start); week <= end; week = addIsoDays(week, 7)) {
+                const bounds = this.timeContext.weekBoundsMs(week);
+                if (!bounds) continue;
+                const seen = new Set();
+                for (const segments of this.getWeekSegmentsIndex(week).values()) {
+                    for (const { entry } of segments) {
+                        if (seen.has(entry.id)) continue;
+                        seen.add(entry.id);
+                        if (entry.billable !== true || !projects.has(entry.raw.project_key)) continue;
+                        const clippedStart = Math.max(fromMs, bounds.startMs, entry.startDate.getTime());
+                        const clippedEnd = Math.min(untilMs, bounds.endMs, entry.endDate.getTime());
+                        seconds += Math.max(0, (clippedEnd - clippedStart) / 1000);
+                    }
+                }
+            }
+        }
+        return seconds;
+    }
+
+    /**
+     * Recomputes one employer's overtime from its opening balance and dated requirements.
+     * @param {string} employerId Stable employer key.
+     * @param {string} through Inclusive balance date, normally capped at today.
+     * @param {import("./work-time.js").WorkTimeConfig | null} [accounting] Detached candidate for preview calculations.
+     * @returns {number} Accumulated overtime in seconds.
+     */
+    getEmployerBalance(employerId, through, accounting = this.weekRequirements.accounting) {
+        const account = accounting?.getEmployer(employerId);
+        if (!account || through < account.tracking_start) return 0;
+        return account.opening_overtime_hours * 3600
+            + this.getAccountBillableSeconds(account.tracking_start, through, employerId, accounting)
+            - accounting.requiredHours(account.tracking_start, through, employerId) * 3600;
     }
 
     /**

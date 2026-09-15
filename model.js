@@ -8,6 +8,7 @@ import {
     jsonStringifySorted,
     utf8ByteLength,
 } from "./utils.js";
+import { WorkTimeConfig } from "./work-time.js";
 
 /**
  * @typedef {Object} EntryRaw
@@ -2770,8 +2771,9 @@ export class WeekRequirement {
 }
 
 /**
- * Represents the week-requirements.json payload.
- * Stores default hours plus per-week required-hours/comment overrides.
+ * Provides a compatibility boundary for the configured work-requirements document.
+ * Legacy weekly overrides retain their original accounting until reviewed migration;
+ * version three delegates daily schedules and employer balances to WorkTimeConfig.
  */
 export class WeekRequirements {
     /**
@@ -2782,6 +2784,8 @@ export class WeekRequirements {
      * @param {string} generatedAt
      */
     constructor(defaultRequiredHours, weeks, generatedAt) {
+        /** @type {WorkTimeConfig | null} Daily accounting after explicit migration; null preserves legacy totals. */
+        this.accounting = null;
         this.default_required_hours = normalizeRequiredHours(defaultRequiredHours, DEFAULT_WEEK_REQUIRED_HOURS);
         this.generated_at = generatedAt;
         this.schema_version = 2;
@@ -2806,8 +2810,8 @@ export class WeekRequirements {
     }
 
     /**
-     * Parses week-requirements.json into a validated model.
-     * Drops invalid rows and keeps only one override per week.
+     * Parses a versioned requirements document without silently upgrading historical accounting.
+     * Legacy rows retain their normalization rules; version-three accounts use strict validation.
      * @param {unknown} raw
      * @returns {WeekRequirements}
      */
@@ -2817,6 +2821,16 @@ export class WeekRequirements {
         }
 
         const rawObj = /** @type {WeekRequirementsFileRaw} */ (raw);
+        if (rawObj.schema_version === 3) {
+            const result = WeekRequirements.createDefault();
+            result.accounting = new WorkTimeConfig(/** @type {import("./work-time.js").WorkTimeRaw} */ (raw));
+            result.schema_version = 3;
+            result.generated_at = result.accounting.generated_at;
+            return result;
+        }
+        if (rawObj.schema_version !== undefined && rawObj.schema_version !== 1 && rawObj.schema_version !== 2) {
+            throw new Error("Unsupported week requirements schema version.");
+        }
         const defaultRequiredHours = normalizeRequiredHours(rawObj.default_required_hours, DEFAULT_WEEK_REQUIRED_HOURS);
         const weeksRaw = Array.isArray(rawObj.weeks) ? rawObj.weeks : [];
         const byWeek = new Map();
@@ -2850,6 +2864,7 @@ export class WeekRequirements {
      * @returns {number}
      */
     getRequiredHours(weekStart) {
+        if (this.accounting) return this.accounting.requiredHours(weekStart, addIsoDays(weekStart, 6));
         const week = this.getWeek(weekStart);
         return week ? week.required_hours : this.default_required_hours;
     }
@@ -2861,6 +2876,11 @@ export class WeekRequirements {
      * @returns {string}
      */
     getComment(weekStart) {
+        if (this.accounting) {
+            return this.accounting.employers.flatMap((account) => account.days
+                .filter((day) => day.date >= weekStart && day.date <= addIsoDays(weekStart, 6) && day.comment)
+                .map((day) => `${account.name} · ${day.date}: ${day.comment}`)).join(" • ");
+        }
         const week = this.getWeek(weekStart);
         return week ? week.comment : "";
     }
@@ -2875,6 +2895,7 @@ export class WeekRequirements {
      * @returns {WeekRequirements}
      */
     withUpdatedWeek(weekStart, requiredHours, comment, updatedAt) {
+        if (this.accounting) throw new Error("Daily requirements are derived from employer schedules and leave, not manual overrides.");
         const key = String(weekStart || "").trim();
         if (!key) return this;
 
@@ -2917,9 +2938,10 @@ export class WeekRequirements {
     /**
      * Returns a JSON-ready object for serialization.
      * Used to persist week requirements through the save pipeline.
-     * @returns {WeekRequirementsFileRaw}
+     * @returns {WeekRequirementsFileRaw | import("./work-time.js").WorkTimeRaw}
      */
     toObject() {
+        if (this.accounting) return this.accounting.toObject();
         return {
             generated_at: this.generated_at,
             schema_version: this.schema_version,

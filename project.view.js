@@ -1,3 +1,4 @@
+import { bindSessionEvents } from "./session-binding.js";
 import { parseGitHubRepositoryId } from "./datasource.js";
 import { ProjectList } from "./model.js";
 import { isTodoIssuePublishable } from "./todo.view.js";
@@ -52,6 +53,7 @@ export class ProjectDialog {
      * @param {ProjectDialogOptions} options
      */
     constructor(options) {
+        this.sessionOptions = options;
         this.store = options.store;
         this.todoStore = options.todoStore;
         this.dataSource = options.dataSource;
@@ -74,7 +76,7 @@ export class ProjectDialog {
         this.hasUnsavedTodos = options.hasUnsavedTodos;
         this.bindingDecisionResolve = null;
 
-        this.bindEvents();
+        this.sessionBinding = bindSessionEvents(this, options);
     }
 
     /**

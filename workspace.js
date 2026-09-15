@@ -260,7 +260,6 @@ export class WorkspaceController {
         this.writeCurrentRoute = options.onWriteRoute;
         this.buildCurrentRoute = options.buildCurrentRoute;
         this.logout = options.onLogout;
-        this.workspaceDialogOpenedByPush = false;
         this.capabilityScanner = new CapabilityScanner({
             elements: {
                 container: this.elements.workspaceQrScannerEl,
@@ -1173,39 +1172,32 @@ export class WorkspaceController {
             this.runtime.workspace || this.runtime.workspaceSetup || this.runtime.activeWorkspaceConnection,
         );
         this.runtime.activeGlobalPanel = "workspaces";
-        this.workspaceDialogOpenedByPush = historyMode === "push" && hasRoutableWorkspace;
         this.elements.workspaceSettingsBtn.setAttribute("aria-current", "page");
         this.setError(this.elements.workspaceErrorEl, "");
         this.setError(this.elements.workspaceCapabilityErrorEl, "");
         this.renderWorkspaceRegistry();
         if (!this.elements.workspaceDialog.open) this.elements.workspaceDialog.showModal();
-        if (this.workspaceDialogOpenedByPush) this.writeCurrentRoute("push");
+        if (historyMode === "push" && hasRoutableWorkspace) this.writeCurrentRoute("push");
     }
 
     /**
      * Closes Workspace settings and restores the route beneath it.
-     * A panel opened by an in-app push returns through browser history; a directly loaded settings URL is normalized in place.
-     * @param {"back" | "replace" | "none"} [historyMode] Route behavior used while closing.
+     * Explicit dismissal replaces the current URL without replaying history or restoring view state, preserving pending edits.
+     * @param {"back" | "replace" | "none"} [historyMode] Use "none" during route restoration; legacy "back" also replaces in place.
      * @returns {void}
      */
-    closeWorkspaceSettings(historyMode = "back") {
+    closeWorkspaceSettings(historyMode = "replace") {
         this.closeCapabilityScanner();
         this.elements.workspaceCapabilityLinkInput.value = "";
         const wasOpen = this.elements.workspaceDialog.open;
         if (wasOpen) this.elements.workspaceDialog.close();
         if (this.runtime.activeGlobalPanel === "workspaces") this.runtime.activeGlobalPanel = null;
         this.elements.workspaceSettingsBtn.removeAttribute("aria-current");
-        if (!wasOpen || historyMode === "none" || this.runtime.routeRestoreInProgress) {
-            if (historyMode === "none") this.workspaceDialogOpenedByPush = false;
-            return;
+        if (!wasOpen || historyMode === "none" || this.runtime.routeRestoreInProgress) return;
+        if (this.runtime.workspace || this.runtime.workspaceSetup || this.runtime.activeWorkspaceConnection) {
+            // Setup can have no loaded workspace, so the app's ordinary route-write guard would skip this cleanup.
+            this.routeController.write(this.buildCurrentRoute(), "replace");
         }
-        if (historyMode === "back" && this.workspaceDialogOpenedByPush) {
-            this.workspaceDialogOpenedByPush = false;
-            window.history.back();
-            return;
-        }
-        this.workspaceDialogOpenedByPush = false;
-        this.writeCurrentRoute("replace");
     }
 
     /**

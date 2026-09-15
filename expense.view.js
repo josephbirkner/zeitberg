@@ -1,3 +1,4 @@
+import { bindSessionEvents } from "./session-binding.js";
 import { allocateExpenseByWeights, createDefaultExpenseCategories } from "./model.js";
 import { cloneJson, createMaterialIcon, setVisible, utcNowIso } from "./utils.js";
 
@@ -109,14 +110,14 @@ const EXPENSE_DOCUMENT_NAME = "expenses";
  */
 
 /**
- * Compares complete normalized expense snapshots without depending on model object identity.
- * Stable model serialization makes JSON equality suitable for undo and dirty-state checks.
+ * Compares normalized expense content without treating the save timestamp as an edit.
+ * Undo snapshots may predate a completed write; generated_at must not leave them permanently dirty.
  * @param {import("./model.js").ExpensesFileRaw} left First complete snapshot.
  * @param {import("./model.js").ExpensesFileRaw} right Second complete snapshot.
  * @returns {boolean}
  */
 function expenseSnapshotsEqual(left, right) {
-    return JSON.stringify(left) === JSON.stringify(right);
+    return JSON.stringify({ ...left, generated_at: "" }) === JSON.stringify({ ...right, generated_at: "" });
 }
 
 /**
@@ -286,6 +287,7 @@ export class ExpenseView {
      * @param {ExpenseViewOptions} options View dependencies and elements.
      */
     constructor(options) {
+        this.sessionOptions = options;
         this.store = options.store;
         this.projectStore = options.projectStore;
         this.dataSource = options.dataSource;
@@ -298,6 +300,8 @@ export class ExpenseView {
         this.onSaved = options.onSaved;
         this.onStatsChanged = options.onStatsChanged;
         this.onStateChange = options.onStateChange || (() => {});
+        /** @type {() => void} Reports applied edits, independently of navigation and save acknowledgements. */
+        this.onEdit = () => {};
 
         this.expenseView = options.elements.expenseView;
         this.expenseBalanceStrip = options.elements.expenseBalanceStrip;
@@ -368,6 +372,7 @@ export class ExpenseView {
         this.active = false;
         this.busy = false;
         this.saveInFlight = false;
+        this.lastSaveError = "";
         this.searchQuery = "";
         this.categoryFilterKey = "*";
         this.selectedRecordKey = null;
@@ -391,8 +396,8 @@ export class ExpenseView {
         this.categoryLabelByKey = new Map();
         this.lastSimplePayerKey = "";
 
-        this.bindEvents();
-        this.updateSaveState();
+        this.sessionBinding = bindSessionEvents(this, options);
+        if (options["bindEvents"] !== false) this.updateSaveState();
     }
 
     /**
@@ -565,7 +570,7 @@ export class ExpenseView {
             const current = this.editingExpenseId ? this.store.getExpenseById(this.editingExpenseId) : null;
             const selectedCategoryKey = current ? current.category_key : this.getCategoryControlKey();
             this.expenseDialogTitle.textContent = this.locale.t(current ? "expenses.editTitle" : "expenses.add");
-            this.expenseSubmitBtn.textContent = this.locale.t(current ? "expenses.saveAction" : "expenses.createAction");
+            this.expenseSubmitBtn.textContent = this.locale.t(current ? "common.save" : "expenses.createAction");
             this.populateCategoryControl(selectedCategoryKey === undefined ? null : selectedCategoryKey, false);
             const customPayer = [...this.expensePayer.options].find((option) => option.value === "__custom__");
             if (customPayer) customPayer.text = this.locale.t("expenses.multiplePayers");
@@ -1121,7 +1126,7 @@ export class ExpenseView {
      * @returns {void}
      */
     openCreateDialog() {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         const participants = this.store.getParticipants().filter((participant) => !participant.archived);
         if (!participants.length) {
             this.openInventoryDialog(true);
@@ -1172,10 +1177,10 @@ export class ExpenseView {
      * @returns {void}
      */
     openEditDialog(expense, focusSplit = false) {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         this.editingExpenseId = expense.id;
         this.expenseDialogTitle.textContent = this.locale.t("expenses.editTitle");
-        this.expenseSubmitBtn.textContent = this.locale.t("expenses.saveAction");
+        this.expenseSubmitBtn.textContent = this.locale.t("common.save");
         this.clearExpenseDialogError();
         this.expenseDescription.value = expense.description;
         this.expenseDate.value = expense.date;
@@ -1623,6 +1628,7 @@ export class ExpenseView {
             const control = guided?.control;
             if (!control) return;
             control.focus({ preventScroll: true });
+            control.scrollIntoView({ block: "center" });
             if (control instanceof HTMLInputElement && control.type !== "checkbox") control.select();
         });
     }
@@ -2493,7 +2499,7 @@ export class ExpenseView {
      */
     handleExpenseSubmit(event) {
         event.preventDefault();
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         let details;
         try {
             details = this.collectExpenseDetails();
@@ -2574,7 +2580,7 @@ export class ExpenseView {
      * @returns {boolean} Whether the document changed.
      */
     applyMutation(label, mutation, selectionAfter = this.selectedRecordKey, onError = null) {
-        if (this.busy || this.saveInFlight) return false;
+        if (this.busy) return false;
         const before = this.store.snapshotRaw();
         const selectionBefore = this.selectedRecordKey;
         try {
@@ -2600,7 +2606,7 @@ export class ExpenseView {
      * @returns {void}
      */
     undo() {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         const action = this.undoStack.pop();
         if (!action) return;
         this.store.applySnapshot(action.before);
@@ -2616,7 +2622,7 @@ export class ExpenseView {
      * @returns {void}
      */
     redo() {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         const action = this.redoStack.pop();
         if (!action) return;
         this.store.applySnapshot(action.after);
@@ -2632,7 +2638,7 @@ export class ExpenseView {
      * @returns {void}
      */
     openSettlementDialog() {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         this.renderSettlementSuggestions();
         if (!this.expenseSettlementDialog.open) this.expenseSettlementDialog.showModal();
     }
@@ -2718,7 +2724,7 @@ export class ExpenseView {
      * @returns {void}
      */
     openInventoryDialog(resumeCreate = false) {
-        if (this.busy || this.saveInFlight) return;
+        if (this.busy) return;
         this.resumeCreateAfterInventory = Boolean(resumeCreate);
         this.setInlineError(this.expenseInventoryError, "");
         this.updateInventoryDialogMode();
@@ -2741,7 +2747,7 @@ export class ExpenseView {
         this.expenseInventoryTitle.textContent = this.locale.t(onboarding ? "expenses.setupParticipantsTitle" : "expenses.inventory");
         this.expenseInventoryMeta.textContent = this.locale.t(onboarding ? "expenses.setupParticipantsMeta" : "expenses.inventoryMeta");
         this.expenseInventoryCategoriesSection.hidden = onboarding;
-        this.expenseInventorySubmitBtn.textContent = this.locale.t(onboarding ? "common.continue" : "common.ok");
+        this.expenseInventorySubmitBtn.textContent = this.locale.t(onboarding ? "common.continue" : "common.save");
     }
 
     /**
@@ -2965,13 +2971,15 @@ export class ExpenseView {
 
     /**
      * Compares the current ledger with its last successful save and schedules the matching IndexedDB draft operation.
+     * @param {boolean} [edited] False when acknowledging a saved snapshot rather than applying an edit.
      * @returns {void}
      */
-    refreshDirtyState() {
+    refreshDirtyState(edited = true) {
         this.dirty = !expenseSnapshotsEqual(this.cleanSnapshot, this.store.snapshotRaw());
         if (this.dirty) this.queueDraftWrite();
         else this.queueDraftDelete();
         this.updateSaveState();
+        if (edited) this.onEdit();
     }
 
     /**
@@ -3036,6 +3044,8 @@ export class ExpenseView {
      * @returns {void}
      */
     enqueueDraftOperation(operation, failureMessage) {
+        // Playground edits are intentionally ephemeral, not a failed browser-storage write.
+        if (this.draftJournal.persistent === false) return;
         this.draftWriteChain = this.draftWriteChain
             .catch(() => undefined)
             .then(async () => {
@@ -3151,6 +3161,7 @@ export class ExpenseView {
             return;
         }
         this.saveInFlight = true;
+        this.lastSaveError = "";
         this.onBusy(true);
         this.updateSaveState();
         try {
@@ -3160,16 +3171,18 @@ export class ExpenseView {
                 this.dataSource.getExpensesManifestPath(),
                 utcNowIso(),
             );
+            const snapshot = this.store.snapshotRaw();
+            this.onBusy(false);
             await this.dataSource.saveFiles(persistence.files, "Update expenses");
-            this.store.setDocument(persistence.document);
+            if (expenseSnapshotsEqual(snapshot, this.store.snapshotRaw())) this.store.setDocument(persistence.document);
             this.store.setManifest(persistence.manifest);
-            this.cleanSnapshot = this.store.snapshotRaw();
-            this.dirty = false;
-            this.queueDraftDelete();
+            this.cleanSnapshot = persistence.document.toObject();
+            this.refreshDirtyState(false);
             await this.flushDraftWrites();
             this.onSaved();
             this.onToast(this.locale.t("toast.expensesSaved"), 2400, "success");
         } catch (error) {
+            this.lastSaveError = String(error);
             this.onToast(error instanceof Error ? error.message : String(error), 5000);
         } finally {
             this.saveInFlight = false;

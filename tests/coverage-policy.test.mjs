@@ -4,15 +4,20 @@ import test from "node:test";
 
 const EXPECTED_PRODUCTION_SCOPE = [
     "appstate.js",
+    "autosave.js",
     "cache.js",
     "config.js",
     "datasource.js",
+    "demo.js",
     "locale.js",
     "model.js",
     "oauth.js",
     "routing.js",
+    "session-binding.js",
     "store.js",
     "utils.js",
+    "version.js",
+    "work-time.js",
 ];
 
 test("coverage policy names its production scope, threshold, reports, and browser prerequisite", async () => {

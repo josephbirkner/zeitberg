@@ -1,3 +1,4 @@
+import { bindSessionEvents } from "./session-binding.js";
 import { safeText, setVisible } from "./utils.js";
 
 /**
@@ -30,6 +31,7 @@ export class SearchView {
      * @param {SearchViewOptions} options
      */
     constructor(options) {
+        this.sessionOptions = options;
         this.store = options.store;
         this.timeContext = options.timeContext;
         this.locale = options.locale;
@@ -51,8 +53,15 @@ export class SearchView {
         this.allEntries = [];
         this.searchDirty = false;
         this.restoringRoute = false;
+        this.workspaceSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("searchWorkspace"));
+        this.workspaceScope = "";
+        this.requestedProject = "";
+        /** @type {() => Array<{id: string, name: string, store: import("./store.js").EntryStore, timeContext: import("./utils.js").TimeContext}>} */
+        this.getSources = () => [{ id: "", name: "", store: this.store, timeContext: this.timeContext }];
+        /** @type {Map<import("./model.js").Entry, ReturnType<SearchView["getSources"]>[number]>} */
+        this.origins = new Map();
 
-        this.bindEvents();
+        this.sessionBinding = bindSessionEvents(this, options);
     }
 
     /**
@@ -71,12 +80,22 @@ export class SearchView {
      * @returns {void}
      */
     bindEvents() {
+        this.workspaceSelect?.addEventListener("change", () => {
+            this.workspaceScope = this.workspaceSelect.value;
+            this.requestedProject = "";
+            this.projectSelect.value = "";
+            this.searchDirty = true;
+            this.applyFiltersAndRender();
+            this.notifyStateChange();
+        });
         this.searchInput.addEventListener("input", () => {
             if (!this.active) return;
             this.query = this.searchInput.value;
             this.applyFiltersAndRender();
         });
         const onChange = () => this.applyFiltersAndRender();
+        this.projectSelect.addEventListener("input", () => { this.requestedProject = ""; });
+        this.projectSelect.addEventListener("change", () => { this.requestedProject = ""; });
         for (const el of [this.projectSelect, this.fromDateInput, this.toDateInput, this.maxRowsInput, this.sortSelect]) {
             el.addEventListener("input", onChange);
             if (el instanceof HTMLSelectElement) el.addEventListener("change", onChange);
@@ -123,12 +142,13 @@ export class SearchView {
     /**
      * Returns the serializable filter state owned by the Time search panel.
      * App merges this with the current week state when producing a `/time` route, so switching between timeline and search never loses either context.
-     * @returns {{query: string, project: string, from: string, to: string, maxRows: number, sort: "asc" | "desc"}}
+     * @returns {{query: string, project: string, from: string, to: string, maxRows: number, sort: "asc" | "desc", workspaceScope: string}}
      */
     getRouteState() {
         return {
+            workspaceScope: this.workspaceScope,
             query: this.query,
-            project: this.projectSelect.value,
+            project: this.projectSelect.value || this.requestedProject,
             from: this.fromDateInput.value,
             to: this.toDateInput.value,
             maxRows: Math.max(50, Number.parseInt(this.maxRowsInput.value || "500", 10) || 500),
@@ -143,6 +163,9 @@ export class SearchView {
      * @returns {void}
      */
     restoreRouteState(state) {
+        this.workspaceScope = String(state.workspaceScope || "");
+        this.searchDirty = true;
+        this.requestedProject = String(state.project || "");
         const routeState = state && typeof state === "object" ? state : {};
         this.restoringRoute = true;
         try {
@@ -208,9 +231,9 @@ export class SearchView {
      * @returns {void}
      */
     renderProjects(entries) {
-        const knownProjects = this.store.getProjects();
+        const sources = this.getSources().filter((source) => !this.workspaceScope || source.id === this.workspaceScope);
 
-        const current = this.projectSelect.value;
+        const current = this.requestedProject || this.projectSelect.value;
         this.projectSelect.innerHTML = "";
         const allOpt = document.createElement("option");
         allOpt.value = "";
@@ -222,21 +245,26 @@ export class SearchView {
         noneOpt.textContent = this.locale.t("search.noProject");
         this.projectSelect.append(noneOpt);
 
-        const sortedKnown = knownProjects.slice().sort((a, b) => this.locale.compare(a.name, b.name));
-        for (const project of sortedKnown) {
-            const group = document.createElement("optgroup");
-            group.label = project.archived
-                ? `${project.name} (${this.locale.t("search.archived")})`
-                : project.name;
-            group.append(new Option(this.locale.t("search.allProject", { project: project.name }), `p:${project.key}`));
-            for (const section of project.listSections()) {
-                const suffix = section.archived ? ` (${this.locale.t("search.archived")})` : "";
-                group.append(new Option(`${section.name}${suffix}`, `s:${project.key}/${section.key}`));
+        for (const source of sources) {
+            const sortedKnown = source.store.getProjects().slice().sort((a, b) => this.locale.compare(a.name, b.name));
+            for (const project of sortedKnown) {
+                const group = document.createElement("optgroup");
+                group.label = project.archived
+                    ? `${project.name} (${this.locale.t("search.archived")})`
+                    : project.name;
+                if (sources.length > 1) group.label = `${source.name} / ${group.label}`;
+                const prefix = source.id ? `${encodeURIComponent(source.id)}|` : "";
+                group.append(new Option(this.locale.t("search.allProject", { project: project.name }), `${prefix}p:${project.key}`));
+                for (const section of project.listSections()) {
+                    const suffix = section.archived ? ` (${this.locale.t("search.archived")})` : "";
+                    group.append(new Option(`${section.name}${suffix}`, `${prefix}s:${project.key}/${section.key}`));
+                }
+                this.projectSelect.append(group);
             }
-            this.projectSelect.append(group);
         }
 
         this.projectSelect.value = current;
+        if (this.projectSelect.value === current) this.requestedProject = "";
         if (!this.projectSelect.value && current !== "") {
             this.projectSelect.value = "";
         }
@@ -249,13 +277,26 @@ export class SearchView {
      */
     applyFiltersAndRender() {
         if (this.searchDirty) {
-            this.allEntries = this.store.getAllEntries();
+            const sources = this.getSources();
+            if (this.workspaceSelect) {
+                this.workspaceSelect.replaceChildren(new Option(this.locale.t("workspaceSessions.all"), ""));
+                for (const source of sources) this.workspaceSelect.append(new Option(source.name, source.id));
+                this.workspaceSelect.value = this.workspaceScope;
+            }
+            this.origins.clear();
+            this.allEntries = sources.flatMap((source) => source.store.getAllEntries().map((entry) => {
+                this.origins.set(entry, source);
+                return entry;
+            }));
             this.renderProjects(this.allEntries);
             this.searchDirty = false;
         }
 
         const query = this.query.trim().toLowerCase();
-        const project = this.projectSelect.value;
+        const projectValue = this.projectSelect.value || this.requestedProject;
+        const separator = projectValue.indexOf("|");
+        const projectSource = separator >= 0 ? decodeURIComponent(projectValue.slice(0, separator)) : "";
+        const project = separator >= 0 ? projectValue.slice(separator + 1) : projectValue;
         const from = this.fromDateInput.value ? this.fromDateInput.value : null;
         const to = this.toDateInput.value ? this.toDateInput.value : null;
         const maxRows = Math.max(50, Number.parseInt(this.maxRowsInput.value || "500", 10) || 500);
@@ -264,6 +305,8 @@ export class SearchView {
         const qTokens = query ? query.split(/\s+/).filter(Boolean) : [];
 
         let entries = this.allEntries;
+        if (this.workspaceScope) entries = entries.filter((entry) => this.origins.get(entry)?.id === this.workspaceScope);
+        if (projectSource) entries = entries.filter((entry) => this.origins.get(entry)?.id === projectSource);
         if (project === "__none__") {
             entries = entries.filter((entry) => !entry.projectKey);
         } else if (project.startsWith("p:")) {
@@ -274,10 +317,10 @@ export class SearchView {
             entries = entries.filter((entry) => entry.projectKey === projectKey && entry.sectionKey === sectionKey);
         }
         if (from) {
-            entries = entries.filter((entry) => this.timeContext.formatDate(entry.startDate) >= from);
+            entries = entries.filter((entry) => this.origins.get(entry).timeContext.formatDate(entry.startDate) >= from);
         }
         if (to) {
-            entries = entries.filter((entry) => this.timeContext.formatDate(entry.startDate) <= to);
+            entries = entries.filter((entry) => this.origins.get(entry).timeContext.formatDate(entry.startDate) <= to);
         }
         if (qTokens.length) {
             entries = entries.filter((entry) => qTokens.every((token) => entry.searchHaystack.includes(token)));
@@ -306,10 +349,13 @@ export class SearchView {
         this.entriesTbody.innerHTML = "";
         const frag = document.createDocumentFragment();
         for (const entry of shown) {
+            const origin = this.origins.get(entry);
+            const timeContext = origin?.timeContext || this.timeContext;
             const tr = document.createElement("tr");
             tr.classList.add("row-link", "search-result-card");
             tr.title = this.locale.t("search.openWeek");
             tr.tabIndex = 0;
+            tr.dataset.workspace = origin?.id || "";
             tr.addEventListener("click", () => this.onJumpToEntry(entry));
             tr.addEventListener("keydown", (event) => {
                 if (event.key !== "Enter" && event.key !== " ") return;
@@ -320,16 +366,16 @@ export class SearchView {
             const tdDate = document.createElement("td");
             tdDate.className = "search-result-cell search-result-date";
             tdDate.dataset.label = this.locale.t("search.date");
-            tdDate.textContent = this.locale.formatDate(entry.startDate, this.timeContext.timeZone);
+            tdDate.textContent = this.locale.formatDate(entry.startDate, timeContext.timeZone);
             const tdStart = document.createElement("td");
             tdStart.className = "search-result-cell search-result-start";
             tdStart.dataset.label = this.locale.t("search.start");
-            tdStart.textContent = this.locale.formatTime(entry.startDate, this.timeContext.timeZone);
+            tdStart.textContent = this.locale.formatTime(entry.startDate, timeContext.timeZone);
             const tdEnd = document.createElement("td");
             tdEnd.className = "search-result-cell search-result-end";
             tdEnd.dataset.label = this.locale.t("search.end");
             tdEnd.textContent = entry.endDate
-                ? this.locale.formatTime(entry.endDate, this.timeContext.timeZone)
+                ? this.locale.formatTime(entry.endDate, timeContext.timeZone)
                 : "—";
             const tdDur = document.createElement("td");
             tdDur.className = "search-result-cell search-result-duration";
@@ -340,7 +386,13 @@ export class SearchView {
             tdProject.className = "search-result-cell search-result-project";
             tdProject.dataset.label = this.locale.t("search.project");
             tdProject.textContent =
-                this.store.getAssignmentLabel(entry.projectKey, entry.sectionKey) || this.locale.t("search.noProject");
+                (origin?.store || this.store).getAssignmentLabel(entry.projectKey, entry.sectionKey) || this.locale.t("search.noProject");
+            if (origin?.name) {
+                const source = document.createElement("small");
+                source.className = "search-workspace-origin";
+                source.textContent = origin.name;
+                tdProject.append(source);
+            }
             const tdDesc = document.createElement("td");
             tdDesc.className = "search-result-cell search-result-description";
             tdDesc.dataset.label = this.locale.t("search.description");

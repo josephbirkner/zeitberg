@@ -310,6 +310,15 @@ function buildGraphqlChunkBatches(chunks) {
  */
 export class DataSource {
     /**
+     * Replaces a hosted credential without losing optimistic-concurrency baselines.
+     * Local or abstract sources do not authenticate and reject this operation.
+     * @param {string} token Replacement provider credential.
+     * @returns {void}
+     */
+    setToken(token) {
+        throw new Error("This data source does not support credentials.");
+    }
+    /**
      * Stores the repository configuration for later requests.
      * Used by the app to read or persist data.
      * @param {RepoConfig} config
@@ -1827,6 +1836,15 @@ export class ForgejoDataSource extends HostedFileDataSource {
  * A failed browser fetch is reported as a likely CORS/transport incompatibility instead of being misdiagnosed as bad workspace data.
  */
 export class CustomGitDataSource extends DataSource {
+    /**
+     * Updates both the deferred wrapper and any detected provider, preserving its loaded file baselines.
+     * @param {string} token Refreshed credential for the same repository.
+     * @returns {void}
+     */
+    setToken(token) {
+        this.token = String(token || "");
+        if (this.delegate) this.delegate.setToken(this.token);
+    }
     /**
      * Captures the custom repository and delays protocol selection until connection preflight.
      * @param {RepoConfig} config Repository configuration using provider `custom`.
