@@ -71,7 +71,12 @@ async function inspectDialog(page, selector, name) {
 let browser;
 try {
     for (let attempt = 0; attempt < 100; attempt++) {
-        try { if ((await fetch(origin)).ok) break; } catch { /* Listener starting. */ }
+        try {
+            const response = await fetch(origin);
+            // Drain readiness responses before the server closes its connection (Node/Undici).
+            await response.arrayBuffer();
+            if (response.ok) break;
+        } catch { /* Listener starting. */ }
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
     browser = await (process.argv.includes("--webkit") ? webkit : chromium).launch({ headless: true });

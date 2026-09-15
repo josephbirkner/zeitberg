@@ -53,7 +53,12 @@ const server = spawn("python3", ["server.py", "--workspace", workspace, "--port"
 let browser;
 try {
     for (let attempt = 0; attempt < 100; attempt += 1) {
-        try { if ((await fetch(`${origin}/local-workspaces`)).ok) break; } catch { /* Listener starting. */ }
+        try {
+            const response = await fetch(`${origin}/local-workspaces`);
+            // Drain readiness responses before the server closes its connection (Node/Undici).
+            await response.arrayBuffer();
+            if (response.ok) break;
+        } catch { /* Listener starting. */ }
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
     browser = await chromium.launch({ headless: true });

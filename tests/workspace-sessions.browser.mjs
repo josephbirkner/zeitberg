@@ -60,7 +60,12 @@ const server = spawn("python3", ["server.py", "--workspace", directories[0], "--
 let browser;
 try {
     for (let attempt = 0; attempt < 100; attempt++) {
-        try { if ((await fetch(`http://127.0.0.1:${port}/local-workspaces`)).ok) break; } catch { /* Starting. */ }
+        try {
+            const response = await fetch(`http://127.0.0.1:${port}/local-workspaces`);
+            // Drain readiness responses before the server closes its connection (Node/Undici).
+            await response.arrayBuffer();
+            if (response.ok) break;
+        } catch { /* Listener starting. */ }
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
     browser = await (process.argv.includes("--webkit") ? webkit : chromium).launch({ headless: true });
@@ -228,6 +233,8 @@ try {
     await page.locator("#expenseAmount").fill("20");
     await page.locator("#expenseDescription").fill("Beta newer receipt");
     await page.locator("#expenseForm").evaluate((form) => form.requestSubmit());
+    assert.equal(await page.locator("#expenseDialog").evaluate((dialog) => dialog.open), false,
+        await page.locator("#expenseDialogError").textContent());
     await page.locator("#expenseDialog").waitFor({ state: "hidden" });
     releaseExpenses();
     await page.waitForFunction(() => document.getElementById("editorBadge").dataset.state === "dirty");

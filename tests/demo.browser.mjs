@@ -23,7 +23,12 @@ const server = spawn("python3", ["server.py", "--no-local", "--port", String(por
 let browser;
 try {
     for (let attempt = 0; attempt < 100; attempt++) {
-        try { if ((await fetch(origin)).ok) break; } catch { /* Listener starting. */ }
+        try {
+            const response = await fetch(origin);
+            // Drain readiness responses before the server closes its connection (Node/Undici).
+            await response.arrayBuffer();
+            if (response.ok) break;
+        } catch { /* Listener starting. */ }
         await new Promise((resolve) => setTimeout(resolve, 50));
     }
     browser = await chromium.launch({ headless: true });
