@@ -144,6 +144,7 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {HTMLInputElement} rememberInput
  * @property {HTMLButtonElement} workspaceSettingsBtn
  * @property {HTMLDialogElement} workspaceDialog
+ * @property {HTMLDialogElement} workspaceEditDialog
  * @property {HTMLElement} workspaceListEl
  * @property {HTMLFormElement} workspaceConfigForm
  * @property {HTMLElement} workspaceConfigMetaEl
@@ -1039,6 +1040,7 @@ export class WorkspaceController {
         this.refreshSidebarNavigation();
         this.renderWorkspaceRegistry();
         this.openWorkspaceSettings("none");
+        this.openWorkspaceEditor();
     }
 
     /**
@@ -1070,7 +1072,6 @@ export class WorkspaceController {
         this.elements.workspaceListEl.innerHTML = "";
         this.elements.workspaceAddSectionEl.hidden = this.isLocalMode || Boolean(this.runtime.workspaceSetup);
         this.elements.workspaceShareBtn.disabled = !this.runtime.workspace;
-        this.renderWorkspaceConfiguration();
 
         const connections = this.runtime.workspaceRegistry.list();
         if (!connections.length) {
@@ -1132,6 +1133,7 @@ export class WorkspaceController {
 
             const actions = document.createElement("div");
             actions.className = "workspace-row-actions";
+            actions.append(this.createWorkspaceActionButton(this.locale.t("workspace.edit"), "edit", connection.id));
             actions.append(
                 this.createWorkspaceActionButton(
                     isActive && (this.runtime.workspace || this.runtime.workspaceSetup)
@@ -1181,12 +1183,34 @@ export class WorkspaceController {
     }
 
     /**
+     * Opens the active repository's configuration above the workspace list.
+     * Each visit starts from the saved model (or setup draft); dismissing never writes changes.
+     * @returns {void}
+     */
+    openWorkspaceEditor() {
+        if (!this.runtime.workspace && !this.runtime.workspaceConfigBaseRaw) return;
+        this.renderWorkspaceConfiguration();
+        if (!this.elements.workspaceEditDialog.open) this.elements.workspaceEditDialog.showModal();
+        this.elements.workspaceConfigNameInput.focus();
+    }
+
+    /**
+     * Dismisses only the configuration subdialog, leaving workspace navigation and data intact.
+     * The form is repopulated when reopened, so canceled edits cannot leak into a later save.
+     * @returns {void}
+     */
+    closeWorkspaceEditor() {
+        if (this.elements.workspaceEditDialog.open) this.elements.workspaceEditDialog.close();
+    }
+
+    /**
      * Closes Workspace settings and restores the route beneath it.
      * Explicit dismissal replaces the current URL without replaying history or restoring view state, preserving pending edits.
      * @param {"back" | "replace" | "none"} [historyMode] Use "none" during route restoration; legacy "back" also replaces in place.
      * @returns {void}
      */
     closeWorkspaceSettings(historyMode = "replace") {
+        this.closeWorkspaceEditor();
         this.closeCapabilityScanner();
         this.elements.workspaceCapabilityLinkInput.value = "";
         const wasOpen = this.elements.workspaceDialog.open;
@@ -1212,6 +1236,14 @@ export class WorkspaceController {
         const action = target.dataset.workspaceAction || "";
         const connectionId = target.dataset.workspaceId || "";
         if (!connectionId) return;
+        if (action === "edit") {
+            if (connectionId !== this.runtime.activeWorkspaceConnection?.id) await this.switchWorkspace(connectionId);
+            if (connectionId === this.runtime.activeWorkspaceConnection?.id) {
+                this.openWorkspaceSettings("none");
+                this.openWorkspaceEditor();
+            }
+            return;
+        }
         if (action === "open") {
             await this.switchWorkspace(connectionId);
             return;
