@@ -57,4 +57,3 @@ test("save background follows the existing deadline and clears on saving, reconn
     assert.equal(badge.dataset.state, "saved");
     assert.equal(properties["--autosave-progress"], "0%");
 });
-

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.4.0
+
+### Provider onboarding and connections
+
+- Connect GitHub, GitLab, and Codeberg accounts, discover existing workspaces, or create a private repository with the selected apps already configured.
+- Scan repository pages automatically, select several workspaces to add, and recognize connections already present. Reuse valid account authorization and coordinate token refresh across connections.
+- Use a restricted Scaleway relay for GitHub device authorization and refresh; GitLab and Codeberg use browser-based OAuth with PKCE. Workspace data still travels directly between the browser and Git provider.
+- Show one startup progress screen with per-workspace status. Connection failures remain visible without blocking healthy workspaces.
+- Manage independent connections through compact workspace cards with app icons, data summaries, status, and edit/share/open/reconnect/disconnect actions. Custom connection details and QR scanning have separate dialogs.
+
+### Sharing
+
+- Create short, browser-encrypted invitations with a 30-day lifetime and revocation. The service stores ciphertext; the decryption key stays in the URL fragment.
+- Keep locator links and existing capability links compatible. Account-wide OAuth grants cannot be shared as invitations; use a dedicated repository token.
+- Invitation revocation stops new imports, not access already imported. Revoke the underlying token at its provider to remove that access.
+
+### Interface and documentation
+
+- Refine typography, spacing, toolbar sizing, editor actions, workspace cards, and the front page. Move secondary explanations into contextual help.
+- Fix full-screen task and expense dialogs at non-default app zoom, and restore a compatible workspace when entering an app from the front page.
+- Edit time-entry start and end times in the details dialog using the existing collision and week-boundary rules. Keep description focus and put Save before Cancel and Delete in keyboard order.
+- Add English and German user guides with fictional playground screenshots, plus CI-generated documentation examples.
+- Document the authentication and invitation services, deployment limits, and credential handling.
+
+### Compatibility and deployment
+
+- No workspace data migration is required. Existing personal-token connections remain supported.
+- GitHub Pages continues to publish the static app from main through Actions. The two Scaleway services are deployed separately; neither stores workspace documents.
+
 ## 1.3.1
 
 - Keep the workspace title picker visible and tappable on phones, including when another configured repository is still loading or needs reconnection.
