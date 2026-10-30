@@ -399,11 +399,7 @@ export class App {
         this.workspaceConfigErrorEl = getRequiredElement("workspaceConfigError", HTMLElement);
         this.workspaceConfigSaveBtn = getRequiredElement("workspaceConfigSaveBtn", HTMLButtonElement);
         this.workspaceAddSectionEl = getRequiredElement("workspaceAddSection", HTMLElement);
-        this.workspaceCapabilityForm = getRequiredElement("workspaceCapabilityForm", HTMLFormElement);
-        this.workspaceCapabilityLinkInput = getRequiredElement("workspaceCapabilityLink", HTMLInputElement);
         this.workspaceCapabilityErrorEl = getRequiredElement("workspaceCapabilityError", HTMLElement);
-        this.workspaceScanCapabilityBtn = getRequiredElement("workspaceScanCapabilityBtn", HTMLButtonElement);
-        this.workspaceOpenCapabilityBtn = getRequiredElement("workspaceOpenCapabilityBtn", HTMLButtonElement);
         this.workspaceQrScannerEl = getRequiredElement("workspaceQrScanner", HTMLElement);
         this.workspaceQrVideoEl = getRequiredElement("workspaceQrVideo", HTMLVideoElement);
         this.workspaceQrFileInput = getRequiredElement("workspaceQrFile", HTMLInputElement);
@@ -416,7 +412,6 @@ export class App {
         this.workspaceTokenInput = getRequiredElement("workspaceToken", HTMLInputElement);
         this.workspaceRememberInput = getRequiredElement("workspaceRemember", HTMLInputElement);
         this.workspaceErrorEl = getRequiredElement("workspaceError", HTMLElement);
-        this.workspaceShareBtn = getRequiredElement("workspaceShareBtn", HTMLButtonElement);
         this.workspaceOAuthBtn = getRequiredElement("workspaceOAuthBtn", HTMLButtonElement);
         this.workspaceCreateBtn = getRequiredElement("workspaceCreateBtn", HTMLButtonElement);
 
@@ -818,11 +813,7 @@ export class App {
                 workspaceConfigErrorEl: this.workspaceConfigErrorEl,
                 workspaceConfigSaveBtn: this.workspaceConfigSaveBtn,
                 workspaceAddSectionEl: this.workspaceAddSectionEl,
-                workspaceCapabilityForm: this.workspaceCapabilityForm,
-                workspaceCapabilityLinkInput: this.workspaceCapabilityLinkInput,
                 workspaceCapabilityErrorEl: this.workspaceCapabilityErrorEl,
-                workspaceScanCapabilityBtn: this.workspaceScanCapabilityBtn,
-                workspaceOpenCapabilityBtn: this.workspaceOpenCapabilityBtn,
                 workspaceQrScannerEl: this.workspaceQrScannerEl,
                 workspaceQrVideoEl: this.workspaceQrVideoEl,
                 workspaceQrFileInput: this.workspaceQrFileInput,
@@ -835,7 +826,6 @@ export class App {
                 workspaceTokenInput: this.workspaceTokenInput,
                 workspaceRememberInput: this.workspaceRememberInput,
                 workspaceErrorEl: this.workspaceErrorEl,
-                workspaceShareBtn: this.workspaceShareBtn,
                 workspaceOAuthBtn: this.workspaceOAuthBtn,
                 workspaceCreateDialog: this.workspaceCreateDialog,
                 workspaceCreateProviderInput: this.workspaceCreateProviderInput,
@@ -980,7 +970,6 @@ export class App {
                 workspaceConfigTimeEnabledInput: this.workspaceConfigTimeEnabledInput,
                 workspaceConfigTimezoneInput: this.workspaceConfigTimezoneInput,
                 workspaceConfigTodosEnabledInput: this.workspaceConfigTodosEnabledInput,
-                workspaceCapabilityLinkInput: this.workspaceCapabilityLinkInput,
                 workspaceCopyCapabilityBtn: this.workspaceCopyCapabilityBtn,
                 workspaceCopyLocatorBtn: this.workspaceCopyLocatorBtn,
                 workspaceCreateBtn: this.workspaceCreateBtn,
@@ -996,7 +985,6 @@ export class App {
                 workspaceDialogCloseBtn: this.workspaceDialogCloseBtn,
                 workspaceEditCloseBtn: this.workspaceEditCloseBtn,
                 workspaceEditCancelBtn: this.workspaceEditCancelBtn,
-                workspaceOpenCapabilityBtn: this.workspaceOpenCapabilityBtn,
                 workspaceOAuthBtn: this.workspaceOAuthBtn,
                 workspacePathInput: this.workspacePathInput,
                 workspaceProviderInput: this.workspaceProviderInput,
@@ -1004,8 +992,6 @@ export class App {
                 workspaceRememberInput: this.workspaceRememberInput,
                 workspaceRepositoryInput: this.workspaceRepositoryInput,
                 workspaceSettingsBtn: this.workspaceSettingsBtn,
-                workspaceScanCapabilityBtn: this.workspaceScanCapabilityBtn,
-                workspaceShareBtn: this.workspaceShareBtn,
                 workspaceShareCloseBtn: this.workspaceShareCloseBtn,
                 workspaceQrCloseBtn: this.workspaceQrCloseBtn,
                 workspaceQrFileInput: this.workspaceQrFileInput,
@@ -1480,12 +1466,6 @@ export class App {
             this.shell.closeInterfaceSettings();
         });
         this.workspaceAddForm.addEventListener("submit", (ev) => void this.workspaceController.handleWorkspaceAdd(ev));
-        this.workspaceCapabilityForm.addEventListener("submit", (event) =>
-            void this.workspaceController.handleCapabilityLinkImport(event),
-        );
-        this.workspaceScanCapabilityBtn.addEventListener("click", () =>
-            void this.workspaceController.startCapabilityScanner(),
-        );
         this.workspaceQrCloseBtn.addEventListener("click", () => this.workspaceController.closeCapabilityScanner());
         this.workspaceQrFileInput.addEventListener("change", () =>
             void this.workspaceController.scanCapabilityImage(this.workspaceQrFileInput.files?.[0] || null),
@@ -1501,7 +1481,6 @@ export class App {
             toggle.addEventListener("change", () => this.workspaceController.refreshWorkspaceComponentFields());
         }
         this.workspaceListEl.addEventListener("click", (ev) => void this.workspaceController.handleWorkspaceListClick(ev));
-        this.workspaceShareBtn.addEventListener("click", () => this.workspaceController.openWorkspaceShareDialog());
         this.workspaceShareCloseBtn.addEventListener("click", () => this.workspaceController.closeWorkspaceShareDialog());
         this.workspaceShareDialog.addEventListener("cancel", (ev) => {
             ev.preventDefault();

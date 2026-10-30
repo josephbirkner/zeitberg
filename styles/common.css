@@ -800,7 +800,6 @@ body.app-ready.app-mode .data-badge {
 .connection-dialog .landing-security-note { font-size: var(--font-control); }
 .connection-dialog .workspace-add-form { margin: 0; }
 #workspaceQrDialog .workspace-qr-scanner { padding: 0; margin: 0; border: 0; }
-#workspaceQrDialog .workspace-capability-import-form { display: none; }
 .dialog-actions.editor-actions { justify-content: flex-start; }
 .editor-actions .dialog-delete-action { margin-left: auto; margin-right: 0; }
 .workspace-row-inventory { font-size: .7rem; line-height: 1.5; overflow-wrap: anywhere; }
@@ -1491,22 +1490,6 @@ html.ui-narrow .workspace-row-actions .workspace-icon-action { width: 44px; heig
   grid-template-columns: minmax(120px, 0.65fr) minmax(0, 1fr);
 }
 
-.workspace-capability-import-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 10px;
-  padding: 11px;
-  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface-faint));
-}
-
-.workspace-capability-import-form > label {
-  min-width: 0;
-}
-
-.workspace-capability-import-actions,
 .workspace-qr-fallback,
 .workspace-qr-heading {
   display: flex;
@@ -1514,7 +1497,6 @@ html.ui-narrow .workspace-row-actions .workspace-icon-action { width: 44px; heig
   gap: 8px;
 }
 
-.workspace-capability-import-actions .btn,
 .workspace-qr-file-button {
   min-height: 44px;
   display: inline-flex;
@@ -2054,14 +2036,6 @@ html.ui-narrow #workspaceAddSection .workspace-section-heading {
 
 html.ui-narrow .workspace-share-option {
   grid-template-columns: minmax(0, 1fr) auto;
-}
-
-html.ui-narrow .workspace-capability-import-form {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-html.ui-narrow .workspace-capability-import-actions .btn {
-  flex: 1;
 }
 
 html.ui-narrow .workspace-qr-fallback {

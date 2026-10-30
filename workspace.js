@@ -170,11 +170,7 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {HTMLElement} workspaceConfigErrorEl
  * @property {HTMLButtonElement} workspaceConfigSaveBtn
  * @property {HTMLElement} workspaceAddSectionEl
- * @property {HTMLFormElement} workspaceCapabilityForm
- * @property {HTMLInputElement} workspaceCapabilityLinkInput
  * @property {HTMLElement} workspaceCapabilityErrorEl
- * @property {HTMLButtonElement} workspaceScanCapabilityBtn
- * @property {HTMLButtonElement} workspaceOpenCapabilityBtn
  * @property {HTMLElement} workspaceQrScannerEl
  * @property {HTMLVideoElement} workspaceQrVideoEl
  * @property {HTMLInputElement} workspaceQrFileInput
@@ -187,7 +183,6 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {HTMLInputElement} workspaceTokenInput
  * @property {HTMLInputElement} workspaceRememberInput
  * @property {HTMLElement} workspaceErrorEl
- * @property {HTMLButtonElement} workspaceShareBtn
  * @property {HTMLButtonElement} workspaceOAuthBtn
  * @property {HTMLDialogElement} workspaceCreateDialog
  * @property {HTMLSelectElement} workspaceCreateProviderInput
@@ -1154,7 +1149,6 @@ export class WorkspaceController {
     renderWorkspaceRegistry() {
         this.elements.workspaceListEl.innerHTML = "";
         this.elements.workspaceAddSectionEl.hidden = this.isLocalMode || Boolean(this.runtime.workspaceSetup);
-        this.elements.workspaceShareBtn.hidden = true;
 
         const connections = this.runtime.workspaceRegistry.list();
         if (!connections.length) {
@@ -1324,7 +1318,6 @@ export class WorkspaceController {
         if (manual?.open) manual.close();
         this.closeWorkspaceEditor();
         this.closeCapabilityScanner();
-        this.elements.workspaceCapabilityLinkInput.value = "";
         const wasOpen = this.elements.workspaceDialog.open;
         if (wasOpen) this.elements.workspaceDialog.close();
         if (this.runtime.activeGlobalPanel === "workspaces") this.runtime.activeGlobalPanel = null;
@@ -1626,23 +1619,11 @@ export class WorkspaceController {
     }
 
     /**
-     * Handles submission of the compact capability-link form in Workspace settings.
-     * Pressing Enter and activating the Open link button both enter the same parser and connection pipeline used by QR results and startup capability URLs.
-     * @param {Event} event Capability form submission.
-     * @returns {Promise<void>}
-     */
-    async handleCapabilityLinkImport(event) {
-        event.preventDefault();
-        await this.importCapabilityValue(this.elements.workspaceCapabilityLinkInput.value);
-    }
-
-    /**
-     * Starts the embedded QR camera surface after an explicit user action.
-     * Any stale pasted bearer link is cleared first, while an unavailable camera leaves the local image-decoding fallback visible.
+     * Opens the QR scanner after an explicit user action.
+     * An unavailable camera leaves the local image-decoding fallback visible.
      * @returns {Promise<void>}
      */
     async startCapabilityScanner() {
-        this.elements.workspaceCapabilityLinkInput.value = "";
         const dialog = this.elements.workspaceQrScannerEl.closest("dialog");
         if (dialog && !dialog.open) dialog.showModal();
         await this.capabilityScanner.start();
@@ -1671,14 +1652,13 @@ export class WorkspaceController {
 
     /**
      * Parses one pasted or scanned bearer link and imports it through the ordinary capability connection workflow.
-     * Raw link text is removed from the DOM before validation or network access, preventing the credential fragment from lingering in controls, screenshots, or later diagnostics.
+     * Callers clear pasted links before invoking this shared parser; QR results are never rendered as text.
      * @param {unknown} value Candidate capability URL.
      * @returns {Promise<boolean>} Whether a valid capability reached the workspace connection pipeline.
      */
     async importCapabilityValue(value) {
         const scannerWasOpen = this.elements.workspaceQrScannerEl?.closest?.("dialog")?.open;
         const candidate = String(value || "").trim();
-        this.elements.workspaceCapabilityLinkInput.value = "";
         this.closeCapabilityScanner(false);
         this.setError(this.elements.workspaceCapabilityErrorEl, "");
         if (!candidate) {

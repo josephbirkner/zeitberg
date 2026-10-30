@@ -89,30 +89,15 @@ After opening a workspace, use the first sidebar action beneath the zeitberg mar
 
 ### Open workspaces and combined views
 
-Remembered connections with available credentials load into independent sessions. One startup screen shows aggregate progress and a status line per connection; the application opens after every connection has loaded or reported a problem. Failures are flagged on the Workspaces action and on the affected card, without blocking healthy workspaces. Each card shows enabled apps, repository details, data counts, and compact edit/share/open/reconnect/disconnect actions.
+Connections load independently behind one progress screen. Failed connections are marked in workspace settings; healthy ones remain usable. Each module has its own workspace selection, while tasks and time-entry search can combine results across workspaces. Edits always save to their source repository.
 
-The workspace name appears as a page title above the toolbar. When there are multiple choices for the current module, the title becomes a keyboard- and touch-accessible dropdown; a single workspace is shown as plain text. Each module remembers its selected workspace during the session; switching preserves selections, scroll positions, unsaved changes, and undo history. Returning from the front page also selects a workspace that actually enables the requested module. Unavailable repositories do not contribute partial data to combined results.
+Save / Ctrl+S saves pending changes across open workspaces. Autosave runs 60 seconds after the latest applied edit, undo, or redo. Writes are serialized per repository and acknowledge only the submitted snapshot, preserving edits made during a save. Unsaved drafts are isolated by workspace in IndexedDB.
 
-- **TODOs → All workspaces** shows origin-labelled tasks. Editing always targets the original repository. New tasks use one searchable **Workspace → Project → Section** field, remembering the last destination. Undo chooses the latest TODO edit across open workspaces; Redo follows the coordinated undo sequence. Selecting an individual workspace retains local history behavior.
-- **Time-entry search** searches every accessible time-enabled workspace by default. Its detailed filters include a workspace selector, and results display their origin. Opening a result selects the correct workspace and entry, even when repositories reuse local IDs. Browser routes restore the combined TODO view and explicit search scope.
-- **Save / Ctrl+S** saves pending documents across all open workspaces. Autosave uses the same pipeline **60 seconds after the latest applied edit**, including undo/redo; every edit restarts the shared countdown. Navigation and save acknowledgements do not restart it. Continuous editing therefore postpones autosave until you pause or save manually. The save button softly pulses while changes are pending and counts down to the next attempt, respecting reduced-motion preferences. Transient failures retain edits and retry after 60 seconds; expired credentials instead require reconnection. Unchanged workspaces produce no writes. Writes are serialized per repository; independent repositories can save concurrently. Completion acknowledges only the submitted snapshot, leaving newer edits dirty. GitHub issue reconciliation briefly locks its workspace's controls while remote task identities are reconciled; subsequent repository-file writes permit further editing. Saving does not clear undo history. Unsubmitted dialog fields remain drafts until you apply them. Browser suspension can delay an autosave; the countdown uses the actual deadline when execution resumes.
-- The title has no close button. Connections are managed in workspace settings; disconnecting a dirty workspace first offers **Save and close / Cancel**. A failed save leaves it open and shows the error in the dialog. Disconnecting removes that connection's credential. Leaving the page warns while edits or saves remain pending.
+Each workspace card offers a credential-free locator link or an encrypted invitation using a dedicated repository token. Invitations expire after 30 days; revocation prevents new imports, not access already imported. Revoke the underlying token to remove that access. OAuth account grants cannot be shared. Existing capability links remain supported, and ordinary navigation URLs never contain credentials.
 
-Time calendars and expense ledgers remain separate documents; their hours and balances are never added across workspaces. No workspace data-format migration is required for multi-workspace browsing.
+See the [workspace guide](guide.html#workspaces) for switching, sharing, and QR codes, and the [saving guide](guide.html#save) for recovery. The [invitation service README](serverless/invitations/README.md) covers encryption and deployment. Interface language is a browser preference; workspace calendar calculations use the configured IANA timezone.
 
-Each workspace card has its own Share action:
-
-- A **locator link** contains only the provider, repository URL, branch, workspace file and ID, selected component, and current view state. Its recipient supplies a credential independently.
-- An **encrypted invitation** grants access using the connection's existing dedicated repository token. The browser encrypts the capability with AES-256-GCM; the invitation service stores only ciphertext. The short URL uses `/join/<id>#k=<key>`, keeping the decryption key in the fragment, outside service requests. Invitations expire after 30 days and can be revoked from the same browser's Share dialog. Revocation prevents new imports; revoke the token at its provider to remove access already imported. Broad OAuth account grants cannot be shared this way.
-- Existing **capability links** with the full capability in their fragment remain supported. The fragment is removed before authenticated activity; zeitberg remembers the imported credential and opens the workspace without a recipient confirmation dialog. Pasting a link or scanning its QR code uses the same validation and connection pipeline.
-
-Anyone holding an invitation or capability link receives the token's permissions. Use a dedicated, least-privilege, expiring repository token and share the link as carefully as that token. The [invitation service documentation](./serverless/invitations/README.md) describes encryption, expiry, revocation, deployment, and storage boundaries.
-
-Ordinary routes, locator links, workspace records, cache keys, and repository documents never contain credentials. Opening a capability link authorizes the provider host encoded by its sender without an additional recipient confirmation.
-
-The interface language is selected in the sidebar's Interface settings. English and German share one first-party message catalog; the browser language supplies only the initial default, after which the explicit device preference wins. Dates, weekdays, numbers, durations, and currencies use `Intl` in the selected language while workspace calendar math continues to use the workspace's IANA timezone. Language changes do not alter route paths or write translated interface text into workspace documents.
-
-If a project is bound to another GitHub repository for issue synchronization, the token additionally needs `Issues: Read & write` for that repository. Workspaces without such a binding do not need issue access.
+GitHub issue-linked projects additionally need Issues read/write access to their bound repository. Other workspaces do not need issue access.
 
 ## How the workspace works
 
@@ -197,21 +182,11 @@ Then open <http://127.0.0.1:8000/>. This serves the provider login flow, disable
 
 ### Employer schedules, overtime and leave
 
-Open the overtime summary in the Time view to edit work requirements. Each employer has independent project assignments, effective-dated Monday–Sunday schedules, opening balances, annual vacation allowances and dated balance adjustments. A project can belong to only one employer account; only its billable entries count toward that account's overtime.
+The [time-tracking guide](guide.html#time) covers schedules, half-day leave, vacation planning, and overtime. Only billable entries count toward work totals; TOIL consumes overtime rather than vacation. Allowances are explicit and unused vacation carries forward.
 
-The seven-day table supports first-half/second-half **Work**, **Vacation**, **Sick leave**, **Holiday** and **Time off in lieu (Gleitzeit)** statuses, optional comments, and bulk editing of selected days. Required hours are read-only and derived from the schedule and leave. Gleitzeit keeps the requirement unchanged: absent work draws down overtime naturally, without consuming vacation or applying an extra deduction. Contextual leave on a non-working day consumes no vacation. Unused vacation carries forward; yearly allowances are explicit, never automatically prorated. Current-week overtime deducts requirements only through today.
+Developer details: `work-time.js` owns daily accounting, `work-time.view.js` owns the editor, and `WeekRequirements` preserves legacy read compatibility. The configured `week_requirements` path uses [schema version 3](schema/work-requirements-v3.schema.json). Configuration saves immediately through the normal provider pipeline; Cancel discards the dialog draft. New workspaces have no employers or assumed vacation entitlement.
 
-Vacation planning shows **Taken | Planned | Unplanned** for the current calendar year, independently of the displayed week. Taken includes PTO through today; Planned includes later bookings in the year; Unplanned is carryover (including negative balances), annual allowance and adjustments minus both. Editing future PTO updates the planning preview immediately. Expand the calculation explanation for the budget breakdown.
-
-Expand **PTO dates this year** to see the selected employer's charged vacation dates, full/half-day amounts, Taken/Planned status and comments. Clicking a date navigates the daily editor to its week without discarding pending changes; only OK saves, including edits made across multiple weeks. The list uses the same bookings as the annual totals, excluding uncharged annotations on non-working days.
-
-Day headers show full dates and compact work/leave badges; clicking a badge opens that day's requirements. Click the week number in the upper-left corner to choose any date and jump to its week, including weeks without entries. The selected day is brought into the narrow sliding window and the week is reflected in the URL.
-
-**OK saves the configuration immediately** through the existing local/Git provider pipeline; Cancel discards the dialog draft. Errors appear inside the dialog and leave the draft available for retry. The configured `week_requirements` path is unchanged; the new payload uses [schema version 3](schema/work-requirements-v3.schema.json). New workspaces start with no employers; adding an employer defaults to 40 hours, Monday–Friday, and no assumed vacation entitlement.
-
-Legacy weekly documents remain readable with their original accounting, but historical conversion is a one-off edit in the private data repository, not an in-app wizard. Keep the original data in Git history and document uncertain mappings privately. Entry files do not need changing. Missing vacation allowances are highlighted and should be configured before interpreting the vacation balance.
-
-`work-time.js` owns the daily accounting model and `work-time.view.js` the dialog. `WeekRequirements` preserves read compatibility; the entry store supplies timezone-aware billable totals using its weekly indexes.
+Legacy weekly documents remain readable. Historical conversion is a deliberate edit in the private data repository; preserve the original data in Git history and record uncertain mappings privately. Entry files do not need changing.
 
 ### Test coverage
 

@@ -670,7 +670,6 @@
             </label>
           </div>
           <div class="row dialog-actions workspace-dialog-actions">
-            <button id="workspaceShareBtn" class="btn btn-secondary" type="button" data-i18n="workspace.shareActive">Share active workspace</button>
             <button id="workspaceCreateBtn" class="btn btn-secondary" type="button" data-i18n="workspace.createPrivate">Create private workspace</button>
             <span class="topbar-spacer"></span>
             <button id="workspaceOAuthBtn" class="btn btn-secondary" type="button" data-i18n="landing.useOAuth">Use OAuth</button>
@@ -680,20 +679,6 @@
           </div></dialog>
 <dialog id="workspaceQrDialog" class="dialog connection-dialog" aria-labelledby="workspaceQrTitle"><div class="dialog-card">
           <section id="workspaceQrScanner" class="workspace-qr-scanner" aria-labelledby="workspaceQrTitle" hidden>
-          <form id="workspaceCapabilityForm" class="workspace-capability-import-form">
-            <label>
-              <span data-i18n="workspace.capabilityLink">Capability link</span>
-              <input id="workspaceCapabilityLink" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://zeitberg.io/expenses?…#zb-cap=…" required />
-            </label>
-            <div class="workspace-capability-import-actions">
-              <button id="workspaceScanCapabilityBtn" class="btn btn-secondary" type="button">
-                <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#qr_code_scanner"></use></svg>
-                <span data-i18n="workspace.scanQr">Scan QR</span>
-              </button>
-              <button id="workspaceOpenCapabilityBtn" class="btn" type="submit" data-i18n="workspace.openCapability">Open link</button>
-            </div>
-          </form>
-
             <div class="workspace-qr-heading">
               <div>
                 <strong id="workspaceQrTitle" data-i18n="workspace.scanQrTitle">Scan capability QR</strong>

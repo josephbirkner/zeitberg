@@ -12,9 +12,9 @@ The existing capability validator then checks its provider, repository and route
 Pasted URLs and QR codes use the same resolver. OAuth account grants are not
 shareable: use a dedicated, appropriately scoped repository token.
 
-## Deployment status
+## Deployment
 
-Deployed and live-verified on 2026-10-30. `INVITATION_SERVICE_URL` points to
+`INVITATION_SERVICE_URL` points to
 `https://zeitbergauthjktlgxby-invitations.functions.fnc.fr-par.scw.cloud/`.
 Existing full capability links continue to work. The public site uses this
 service once the 1.4.0 frontend is deployed; publishing the frontend does not
@@ -33,21 +33,11 @@ Created in the Scaleway `zeitberg` project:
   `ObjectStorageObjectsDelete`, scoped to the `zeitberg` project.
 - Bucket policy: owner access preserved; service may list this bucket and
   read/write/delete only `invitations/*` objects. No public access.
-- Temporary bucket-policy administration was detached from the application.
-  Its policy `ffcfa2a6-f86f-41ee-be60-bc2ee7834b1e` has no principal assigned.
 - Function: `invitations`, ID `b46edf67-ec3d-440f-9546-1819b5ff0f36`, in
   namespace `e1299703-a835-4083-b66f-f81fffbaa204`. Node 24, 128 MB,
   0–1 instances, 20-second timeout, public invocation over HTTPS only.
 - Service API key is stored only in Function secret variables; rotate before
   its expiration on 2027-10-30. No owner credential is deployed.
-
-Live checks passed: create/resolve/decrypt with a fictional capability, incorrect
-revocation token rejection, successful revocation and subsequent failed lookup,
-foreign-origin rejection, no-store responses, and CORS preflights for all three
-allowed origins. The fictional test record was removed.
-An isolated localhost browser check also passed create/decrypt/revoke through
-the actual browser Fetch and Web Crypto APIs. Signed storage checks confirmed
-that bucket-policy access and reads outside `invitations/*` are denied (403).
 
 Scaleway requires both IAM permission and bucket-policy permission. The project
 scope is intentional and user-approved: any additional bucket in this project

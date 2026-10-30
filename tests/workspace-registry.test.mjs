@@ -293,7 +293,7 @@ test("capability import remembers its credential and connects without recipient 
     assert.deepEqual(connectedTokens, ["shared-capability-token"]);
 });
 
-test("pasted capability links use the startup parser and are cleared before connection", async (context) => {
+test("pasted and scanned capability values use the startup parser", async (context) => {
     const previousWindow = globalThis.window;
     globalThis.window = { location: { origin: "https://zeitberg.io" } };
     context.after(() => { if (previousWindow) globalThis.window = previousWindow; else delete globalThis.window; });
@@ -306,7 +306,6 @@ test("pasted capability links use the startup parser and are cleared before conn
     };
     const link = formatCapabilityLink(route, "pasted-capability-token", "https://zeitberg.io");
     const runtime = { capabilityImport: null };
-    const capabilityInput = { value: link };
     let importedCapability = null;
     let scannerCloseCount = 0;
     let errorText = "";
@@ -315,7 +314,6 @@ test("pasted capability links use the startup parser and are cleared before conn
         routeController: { basePath: "/" },
         elements: {
             workspaceCapabilityErrorEl: {},
-            workspaceCapabilityLinkInput: capabilityInput,
         },
         capabilityScanner: { close: () => (scannerCloseCount += 1) },
         locale: { t: (key) => key },
@@ -333,7 +331,6 @@ test("pasted capability links use the startup parser and are cleared before conn
     });
 
     assert.equal(await controller.importCapabilityValue(link), true);
-    assert.equal(capabilityInput.value, "");
     assert.equal(scannerCloseCount, 1);
     assert.equal(errorText, "");
     assert.equal(importedCapability?.credential, "pasted-capability-token");

@@ -94,8 +94,10 @@ test("capability recipients are not presented with a confirmation dialog", async
 test("capability sharing reuses browser credentials and QR decoding remains local", async () => {
     const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
     assert.doesNotMatch(html, /id="workspaceShareToken"/);
-    assert.match(html, /id="workspaceCapabilityForm"/);
-    assert.match(html, /id="workspaceScanCapabilityBtn"/);
+    assert.match(html, /id="workspaceLinkForm"/);
+    assert.match(html, /data-setup-action="scan"/);
+    assert.match(html, /id="workspaceQrFile"/);
+    assert.doesNotMatch(html, /id="workspaceCapabilityForm"|id="workspaceShareBtn"/);
     assert.match(html, /"qr-scanner": "\.\/vendor\/qr-scanner\/qr-scanner\.min\.js\?v=/);
     await Promise.all([
         access(new URL("../vendor/qr-scanner/qr-scanner.min.js", import.meta.url)),

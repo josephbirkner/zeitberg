@@ -108,7 +108,6 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLInputElement} workspaceConfigTodosEnabledInput
  * @property {HTMLButtonElement} workspaceCopyCapabilityBtn
  * @property {HTMLButtonElement} workspaceCopyLocatorBtn
- * @property {HTMLInputElement} workspaceCapabilityLinkInput
  * @property {HTMLButtonElement} workspaceCreateBtn
  * @property {HTMLButtonElement} workspaceCreateCancelBtn
  * @property {HTMLButtonElement} workspaceCreateCloseBtn
@@ -120,16 +119,13 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLInputElement} workspaceCreateTimezoneInput
  * @property {HTMLInputElement} workspaceCreateTokenInput
  * @property {HTMLButtonElement} workspaceDialogCloseBtn
- * @property {HTMLButtonElement} workspaceOpenCapabilityBtn
  * @property {HTMLButtonElement} workspaceOAuthBtn
  * @property {HTMLInputElement} workspacePathInput
  * @property {HTMLSelectElement} workspaceProviderInput
  * @property {HTMLInputElement} workspaceRefInput
  * @property {HTMLInputElement} workspaceRememberInput
  * @property {HTMLInputElement} workspaceRepositoryInput
- * @property {HTMLButtonElement} workspaceScanCapabilityBtn
  * @property {HTMLButtonElement} workspaceSettingsBtn
- * @property {HTMLButtonElement} workspaceShareBtn
  * @property {HTMLButtonElement} workspaceShareCloseBtn
  * @property {HTMLButtonElement} workspaceQrCloseBtn
  * @property {HTMLInputElement} workspaceQrFileInput
@@ -583,13 +579,9 @@ export class ShellView {
         this.elements.workspaceCreateTokenInput.disabled = isBusy;
         this.elements.workspaceCreateRememberInput.disabled = isBusy;
         this.elements.workspaceCreateOAuthBtn.disabled = isBusy || this.elements.workspaceCreateOAuthBtn.disabled;
-        this.elements.workspaceShareBtn.disabled = isBusy || !this.runtime.workspace;
         this.elements.workspaceShareCloseBtn.disabled = isBusy;
         this.elements.workspaceCopyLocatorBtn.disabled = isBusy;
         this.elements.workspaceCopyCapabilityBtn.disabled = isBusy || this.isLocalMode;
-        this.elements.workspaceCapabilityLinkInput.disabled = isBusy;
-        this.elements.workspaceOpenCapabilityBtn.disabled = isBusy;
-        this.elements.workspaceScanCapabilityBtn.disabled = isBusy;
         this.elements.workspaceQrCloseBtn.disabled = isBusy;
         this.elements.workspaceQrFileInput.disabled = isBusy;
         this.elements.menuWeekBtn.disabled = isBusy;
