@@ -1,7 +1,7 @@
 /* TODO navigation, lists, editor details, and TODO-specific responsive rules. */
 
 .todo-conflict-card {
-  width: min(760px, calc(100vw - 24px));
+  width: min(760px, calc(var(--app-viewport-width) - 24px));
 }
 
 .todo-conflict-list {
@@ -29,9 +29,9 @@
 }
 
 html.ui-narrow .todo-conflict-dialog {
-  width: 100vw;
+  width: var(--app-viewport-width);
   max-width: none;
-  height: 100dvh;
+  height: var(--app-viewport-height);
   max-height: none;
   margin: 0;
 }
@@ -62,8 +62,8 @@ body.app-mode #todoView {
 }
 
 .todo-topbar-controls .btn {
-  width: 34px;
-  height: 34px;
+  width: var(--control-height);
+  height: var(--control-height);
   padding: 0;
   border-radius: 5px;
   display: grid;
@@ -155,7 +155,7 @@ body.app-mode #todoView {
 
 .todo-group-header,
 .todo-section-header {
-  min-height: 34px;
+  min-height: var(--control-height);
   padding: 5px 7px 5px 10px;
   display: flex;
   align-items: center;
@@ -167,7 +167,7 @@ body.app-mode #todoView {
   border-left: 4px solid var(--todo-project-color);
   background: var(--surface-soft);
   font-size: 0.76rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .todo-group-title,
@@ -370,7 +370,7 @@ body.app-mode #todoView {
 }
 
 .todo-priority {
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .todo-priority.priority-4 {

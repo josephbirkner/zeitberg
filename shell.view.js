@@ -108,7 +108,6 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLInputElement} workspaceConfigTodosEnabledInput
  * @property {HTMLButtonElement} workspaceCopyCapabilityBtn
  * @property {HTMLButtonElement} workspaceCopyLocatorBtn
- * @property {HTMLInputElement} workspaceCapabilityLinkInput
  * @property {HTMLButtonElement} workspaceCreateBtn
  * @property {HTMLButtonElement} workspaceCreateCancelBtn
  * @property {HTMLButtonElement} workspaceCreateCloseBtn
@@ -120,16 +119,13 @@ const RESPONSIVE_CLASS_BREAKPOINTS = [
  * @property {HTMLInputElement} workspaceCreateTimezoneInput
  * @property {HTMLInputElement} workspaceCreateTokenInput
  * @property {HTMLButtonElement} workspaceDialogCloseBtn
- * @property {HTMLButtonElement} workspaceOpenCapabilityBtn
  * @property {HTMLButtonElement} workspaceOAuthBtn
  * @property {HTMLInputElement} workspacePathInput
  * @property {HTMLSelectElement} workspaceProviderInput
  * @property {HTMLInputElement} workspaceRefInput
  * @property {HTMLInputElement} workspaceRememberInput
  * @property {HTMLInputElement} workspaceRepositoryInput
- * @property {HTMLButtonElement} workspaceScanCapabilityBtn
  * @property {HTMLButtonElement} workspaceSettingsBtn
- * @property {HTMLButtonElement} workspaceShareBtn
  * @property {HTMLButtonElement} workspaceShareCloseBtn
  * @property {HTMLButtonElement} workspaceQrCloseBtn
  * @property {HTMLInputElement} workspaceQrFileInput
@@ -313,6 +309,8 @@ export class ShellView {
         this.uiZoom = this.normalizeAppZoom(value);
         this.uiZoomMode = mode === "auto" ? "auto" : "manual";
         document.body.style.setProperty("zoom", String(this.uiZoom));
+        // Viewport units do not shrink with CSS zoom; top-layer dialogs must compensate.
+        document.documentElement.style.setProperty("--app-zoom", String(this.uiZoom));
         const zoomPercent = this.locale.formatNumber(Math.round(this.uiZoom * 100));
         this.elements.appZoomLabelEl.textContent = `${zoomPercent}%`;
         this.elements.appZoomResetBtn.title =
@@ -411,6 +409,9 @@ export class ShellView {
      * @returns {void}
      */
     showLoadingScreen(label) {
+        for (const dialog of document.querySelectorAll(".connection-dialog[open]")) {
+            if (dialog instanceof HTMLDialogElement) dialog.close();
+        }
         document.body.classList.remove("app-ready");
         setVisible(this.elements.sidebarEl, false);
         setVisible(this.elements.topbarEl, false);
@@ -495,6 +496,9 @@ export class ShellView {
      * @returns {void}
      */
     setError(el, message) {
+        const localError = el.id === "loginError" ? document.querySelector("#customConnection[open] #customConnectionError")
+            : el.id === "workspaceError" ? document.querySelector("#workspaceManualConnection[open] #workspaceManualError") : null;
+        if (localError instanceof HTMLElement) el = localError;
         const localized = this.locale.localizeError(message);
         if (!localized) {
             el.textContent = "";
@@ -575,13 +579,9 @@ export class ShellView {
         this.elements.workspaceCreateTokenInput.disabled = isBusy;
         this.elements.workspaceCreateRememberInput.disabled = isBusy;
         this.elements.workspaceCreateOAuthBtn.disabled = isBusy || this.elements.workspaceCreateOAuthBtn.disabled;
-        this.elements.workspaceShareBtn.disabled = isBusy || !this.runtime.workspace;
         this.elements.workspaceShareCloseBtn.disabled = isBusy;
         this.elements.workspaceCopyLocatorBtn.disabled = isBusy;
         this.elements.workspaceCopyCapabilityBtn.disabled = isBusy || this.isLocalMode;
-        this.elements.workspaceCapabilityLinkInput.disabled = isBusy;
-        this.elements.workspaceOpenCapabilityBtn.disabled = isBusy;
-        this.elements.workspaceScanCapabilityBtn.disabled = isBusy;
         this.elements.workspaceQrCloseBtn.disabled = isBusy;
         this.elements.workspaceQrFileInput.disabled = isBusy;
         this.elements.menuWeekBtn.disabled = isBusy;
@@ -810,7 +810,7 @@ export class ShellView {
                 ? this.todoSummary
                 : this.state.activeTab === "expenses"
                   ? this.expenseSummary
-                  : this.repositorySummary;
+                  : "";
     }
 
 }

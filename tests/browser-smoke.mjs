@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -199,9 +200,12 @@ async function writeBrowserCoverage(entries) {
 
 const port = await reservePort();
 const baseUrl = `http://127.0.0.1:${port}`;
+const fixtureRoot = await mkdtemp(path.join(tmpdir(), "zeitberg-browser-smoke-"));
+const fixtureWorkspace = path.join(fixtureRoot, "workspace");
+await cp(path.join(APP_ROOT, "workspace-template"), fixtureWorkspace, { recursive: true });
 const server = spawn(
     "python3",
-    ["server.py", "--workspace", "workspace-template", "--host", "127.0.0.1", "--port", String(port)],
+    ["server.py", "--workspace", fixtureWorkspace, "--host", "127.0.0.1", "--port", String(port)],
     { cwd: APP_ROOT, stdio: ["ignore", "pipe", "pipe"] },
 );
 let serverOutput = "";
@@ -300,9 +304,18 @@ try {
     assert.equal(await desktop.locator("#todoView").isVisible(), true);
     await desktop.locator("#todoCurrentFilterBtn").click();
     await desktop.locator("#todoOpenFilterBtn").click();
+    assert.equal(await desktop.locator("#todoAddBtn .expense-add-label").isVisible(), true);
+    const todoActionStyle = await desktop.locator("#todoAddBtn").evaluate((button) => ({
+        background: getComputedStyle(button).backgroundColor,
+        height: button.getBoundingClientRect().height,
+    }));
     await desktop.locator("#todoAddBtn").click();
     assert.equal(await desktop.locator("#todoDialog").evaluate((dialog) => dialog.open), true);
     await assertNoHorizontalDialogOverflow(desktop.locator("#todoDialog .dialog-card"));
+    const today = await desktop.evaluate(() => new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date()));
+    assert.equal(await desktop.locator("#todoDueDate").inputValue(), today);
     await desktop.locator("#todoCancelBtn").click();
 
     await openComponent(desktop, baseUrl, "expenses");
@@ -314,12 +327,15 @@ try {
         const settleStyle = settle ? getComputedStyle(settle) : null;
         return {
             background: style.backgroundColor,
+            height: button.getBoundingClientRect().height,
             settleBackground: settleStyle?.backgroundColor || "",
             width: button.getBoundingClientRect().width,
             settleWidth: settle?.getBoundingClientRect().width || 0,
         };
     });
     assert.notEqual(expenseActionStyle.background, expenseActionStyle.settleBackground);
+    assert.equal(expenseActionStyle.background, todoActionStyle.background);
+    assert.equal(expenseActionStyle.height, todoActionStyle.height);
     assert.ok(expenseActionStyle.width > expenseActionStyle.settleWidth);
     const expenseActionChannels = (expenseActionStyle.background.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
     assert.ok(
@@ -405,9 +421,40 @@ try {
     assert.equal(await percentageInputs.nth(1).isEditable(), false);
     await percentageInputs.nth(0).fill("35.00");
     assert.equal(await percentageInputs.nth(1).inputValue(), "65.00");
+    await desktop.locator("#expenseDate").fill("2025-01-01");
+    await desktop.locator("#expenseSaveTemplateBtn").click();
+    assert.equal(await desktop.locator("#expenseDialog").evaluate((dialog) => dialog.open), true);
+    assert.equal(await desktop.locator("#expenseList .expense-row").count(), 0, "Saving a template must not add an expense");
+    await desktop.locator("#expenseCancelBtn").click();
+    await desktop.locator("#expenseTemplatesBtn").click();
+    await desktop.locator("#expenseTemplatesMenu:popover-open").waitFor();
+    await desktop.locator("#expenseTemplatesBtn").click();
+    assert.equal(await desktop.locator("#expenseTemplatesMenu").isVisible(), false);
+    await desktop.locator("#expenseTemplatesBtn").click();
+    assert.equal(await desktop.locator("#expenseTemplatesMenu .expense-template-choice").textContent(), "Dinner");
+    await desktop.locator("#expenseTemplatesMenu .expense-template-choice").press("Enter");
+    assert.notEqual(await desktop.locator("#expenseDate").inputValue(), "2025-01-01");
+    assert.equal(await desktop.locator("#expenseDescription").inputValue(), "Dinner");
+    assert.equal(await desktop.locator("#expenseAmount").inputValue(), "48.00");
+    assert.equal(await desktop.locator("#expenseDeleteBtn").isVisible(), false);
+    assert.equal(await desktop.locator("#expenseAllocationType").inputValue(), "percentage");
+    assert.equal(await desktop.locator("#expenseSplitRows .expense-owed-input").nth(0).inputValue(), "35.00");
     await desktop.locator("#expenseForm").evaluate((form) => form.requestSubmit());
     await desktop.locator("#expenseDialog:not([open])").waitFor({ state: "attached" });
     assert.match(await desktop.locator("#expenseList").textContent(), /Dinner/);
+    await desktop.locator("#editorBadge").click();
+    await desktop.waitForFunction(() => document.querySelector("#editorBadge")?.textContent.includes("Saved"));
+    await desktop.reload();
+    await desktop.locator("#appSection:not([hidden])").waitFor();
+    await desktop.locator("#expenseTemplatesBtn").click();
+    await desktop.locator("#expenseTemplatesMenu [data-delete-template-id]").click();
+    assert.equal(await desktop.locator("#expenseTemplatesMenu .expense-template-choice").count(), 0);
+    assert.equal(await desktop.locator("#expenseList .expense-row").count(), 1);
+    await desktop.locator("#expenseTemplatesBtn").press("Escape");
+    await desktop.locator("#expenseList").press("Control+z");
+    await desktop.locator("#expenseTemplatesBtn").click();
+    assert.equal(await desktop.locator("#expenseTemplatesMenu .expense-template-choice").count(), 1);
+    await desktop.locator("#expenseTemplatesMenu .expense-template-choice").press("Escape");
 
     await openComponent(desktop, baseUrl, "time");
     await desktop.locator("#menuSearchBtn").click();
@@ -457,14 +504,13 @@ try {
         capabilityToken,
         baseUrl,
     );
-    await desktop.locator("#openSharedWorkspaceBtn").click();
-    await desktop.locator("#workspaceDialog[open]").waitFor();
-    assert.equal(await desktop.locator("#workspaceAddSection").isVisible(), true);
-    assert.equal(await desktop.locator("#workspaceScanCapabilityBtn").isVisible(), true);
-    await desktop.locator("#workspaceCapabilityLink").fill(capabilityLink);
-    await desktop.locator("#workspaceCapabilityForm").evaluate((form) => form.requestSubmit());
+    assert.equal(await desktop.locator('#setupCards [data-setup-action="scan"]').isVisible(), true);
+    await desktop.locator('#setupCards [data-setup-action="link"]').click();
+    await desktop.locator("#workspaceLinkDialog[open]").waitFor();
+    await desktop.locator("#workspaceLinkValue").fill(capabilityLink);
+    await desktop.locator("#workspaceLinkForm").evaluate((form) => form.requestSubmit());
     await desktop.locator("#workspaceConfigForm:not([hidden])").waitFor();
-    assert.equal(await desktop.locator("#workspaceCapabilityLink").inputValue(), "");
+    assert.equal(await desktop.locator("#workspaceLinkValue").inputValue(), "");
     const pastedCapabilityCredentials = await desktop.evaluate(() =>
         localStorage.getItem("zeitberg:workspace-credentials:local:v1"),
     );
@@ -495,6 +541,10 @@ try {
     assert.deepEqual(browserErrors, []);
     const desktopCoverage = await desktop.coverage.stopJSCoverage();
 
+    // The narrow first-use scenario needs a blank ledger, independently of desktop save/reload checks.
+    for (const file of ["data/expenses.json", "data/index/expenses-manifest.json"]) {
+        await copyFile(path.join(APP_ROOT, "workspace-template", file), path.join(fixtureWorkspace, file));
+    }
     const narrow = await browser.newPage({ viewport: { width: 375, height: 667 } });
     await narrow.coverage.startJSCoverage({ resetOnNavigation: false });
     const narrowErrors = [];

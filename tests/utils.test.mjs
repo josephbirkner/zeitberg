@@ -17,6 +17,7 @@ import {
     isoWeekStartFromYearWeek,
     isoWeekdayIndex,
     isEditableTarget,
+    initializeContextHelp,
     jsonStringifySorted,
     minutesToHHMM,
     parseHexColor,
@@ -52,6 +53,48 @@ class FakeElement {
 }
 
 class ExpectedElement extends FakeElement {}
+
+test("context help preserves translatable content and builds idempotent native popovers", () => {
+    const previousDocument = globalThis.document;
+    const previousHTMLElement = globalThis.HTMLElement;
+    class HelpElement extends FakeElement {
+        constructor(tag = "div") { super(tag); this.dataset = {}; }
+        append(...children) { this.children.push(...children); }
+        replaceWith(element) { this.replacement = element; }
+    }
+    const content = new HelpElement("p");
+    content.id = "dynamicHelp";
+    content.dataset.helpAnchor = "#label";
+    content.dataset.i18n = "workspace.locatorHelp";
+    const anchor = new HelpElement();
+    const root = {
+        querySelectorAll: () => content.dataset.helpReady ? [] : [content],
+        querySelector: (selector) => selector === "#label" ? anchor : null,
+    };
+    globalThis.HTMLElement = HelpElement;
+    globalThis.document = {
+        createElement: (tag) => new HelpElement(tag),
+        createElementNS: (_namespace, tag) => new HelpElement(tag),
+    };
+    try {
+        initializeContextHelp(root);
+        const wrapper = anchor.children[0];
+        const [trigger, panel] = wrapper.children;
+        assert.equal(content.replacement, wrapper);
+        assert.equal(panel.id, "help-dynamicHelp");
+        assert.equal(panel.attributes.get("popover"), "auto");
+        assert.equal(trigger.type, "button");
+        assert.equal(trigger.attributes.get("popovertarget"), panel.id);
+        assert.equal(trigger.dataset.i18nAriaLabel, "common.moreInfo");
+        assert.equal(panel.children[1], content, "Keep the original ID and localization hooks");
+        assert.equal(panel.children[0].attributes.get("popovertargetaction"), "hide");
+        initializeContextHelp(root);
+        assert.equal(anchor.children.length, 1);
+    } finally {
+        globalThis.document = previousDocument;
+        globalThis.HTMLElement = previousHTMLElement;
+    }
+});
 
 test("general utility helpers normalize text, colors, JSON, and calendar keys", () => {
     assert.equal(safeText(null), "");

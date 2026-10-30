@@ -20,6 +20,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/expense" }
     },
+    "templates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/template" }
+    },
     "transfers": {
       "type": "array",
       "items": { "$ref": "#/$defs/transfer" }
@@ -160,6 +164,24 @@
         "section_key": { "$ref": "#/$defs/keyOrNull" },
         "source": { "$ref": "#/$defs/source" },
         "updated_at": { "type": "string" }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "currency", "amount_minor", "payers", "allocations", "allocation_rule", "category_key", "project_key", "section_key", "notes"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "description": { "type": "string", "minLength": 1 },
+        "currency": { "$ref": "#/$defs/currency" },
+        "amount_minor": { "$ref": "#/$defs/minorAmount" },
+        "payers": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/amountLine" } },
+        "allocations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/amountLine" } },
+        "allocation_rule": { "$ref": "#/$defs/allocationRule" },
+        "category_key": { "$ref": "#/$defs/keyOrNull" },
+        "project_key": { "$ref": "#/$defs/keyOrNull" },
+        "section_key": { "$ref": "#/$defs/keyOrNull" },
+        "notes": { "type": "string" }
       }
     },
     "transfer": {

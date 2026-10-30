@@ -1,7 +1,7 @@
 import { AppState } from "./appstate.js";
 import { ChunkCache } from "./cache.js";
 import { EntryStore, TodoStore, ExpenseStore } from "./store.js";
-import { TimeContext } from "./utils.js";
+import { TimeContext, setVisible, createMaterialIcon } from "./utils.js";
 import { createHostedDataSource, LocalDataSource } from "./datasource.js";
 import { configForRouteWorkspace, WorkspaceSetupRequiredError } from "./workspace.js";
 import { WorkspaceLoader } from "./workspace.loader.js";
@@ -81,6 +81,10 @@ export class WorkspaceSessions {
         /** @type {Map<string, string>} */
         this.selected = new Map();
         this.initializing = false;
+        /** @type {Map<string, number>} Settled fractions for the current startup batch. */
+        this.loadProgress = new Map();
+        /** @type {Map<string, string>} Current per-connection loading stage, without credentials. */
+        this.loadLabels = new Map();
         this.started = false;
         this.generation = 0;
         /** @type {Map<string, Promise<WorkspaceSession | null>>} */
@@ -126,6 +130,13 @@ export class WorkspaceSessions {
                 const connection = session.runtime.activeWorkspaceConnection;
                 if (connection?.provider !== "local") {
                     const credential = await app.workspaceController.loadUsableWorkspaceCredential(connection);
+                    if (!credential) {
+                        this.unavailable.set(id, app.locale.t("workspaceSessions.reconnect"));
+                        app.workspaceController.openWorkspaceSettings("none");
+                        app.workspaceController.requestWorkspaceCredential(connection);
+                        this.render();
+                        return;
+                    }
                     if (credential && credential !== session.runtime.token) {
                         const source = session.runtime.dataSource;
                         source.setToken(credential);
@@ -135,6 +146,7 @@ export class WorkspaceSessions {
                         session.saveError = "";
                         if (this.current === session) { app.dataSource = source; app.token = credential; }
                     }
+                    this.unavailable.delete(id);
                 }
                 app.workspaceController.closeWorkspaceSettings("none");
                 this.mount(session, route ? app.tabForRoute(route) : app.state.activeTab);
@@ -144,7 +156,19 @@ export class WorkspaceSessions {
             if (this.current && id !== this.current.id) {
                 const connection = app.workspaceRegistry.getById(id);
                 if (connection) {
-                    const loaded = await this.open(connection);
+                    app.workspaceController.closeWorkspaceSettings("none");
+                    app.shell.showLoadingScreen(connection.displayName);
+                    this.beginLoading();
+                    for (const known of app.workspaceRegistry.list()) {
+                        if (known.id !== id) this.reportLoadingProgress(known.id, 1, 1);
+                    }
+                    let loaded;
+                    try { loaded = await this.open(connection); }
+                    finally {
+                        this.reportLoadingProgress(id, 1, 1);
+                        this.initializing = false;
+                        app.shell.showApplicationScreen();
+                    }
                     if (loaded?.ready) {
                         app.workspaceController.closeWorkspaceSettings("none");
                         this.mount(loaded, route ? app.tabForRoute(route) : app.state.activeTab);
@@ -156,6 +180,7 @@ export class WorkspaceSessions {
                         app.workspaceController.enterWorkspaceSetup(loaded.setupError);
                         return;
                     }
+                    app.workspaceController.openWorkspaceSettings("none");
                     if (!loaded) app.workspaceController.requestWorkspaceCredential(connection);
                     // A failed repository must not evict the current document or its edits.
                     app.shell.toast(loaded?.error || app.locale.t("workspaceSessions.reconnect"), 6000);
@@ -243,6 +268,9 @@ export class WorkspaceSessions {
     async loaded() {
         const app = this.app;
         if (!app.workspace || !app.activeWorkspaceConnection) return;
+        if (this.current && this.current.id !== app.activeWorkspaceConnection.id) {
+            throw new Error("Workspace identity changed outside the isolated session loader.");
+        }
         if (!this.current) {
             const session = new WorkspaceSession(app);
             for (const key of VIEW_KEYS) Reflect.set(session.views, key, this.bindings[key].target);
@@ -258,17 +286,193 @@ export class WorkspaceSessions {
         }
         this.selected.set(app.state.activeTab, this.current.id);
         this.render();
-        if (this.started) return;
+        if (this.started) {
+            this.reportLoadingProgress(this.current.id, 1, 1);
+            this.initializing = false;
+            return;
+        }
         this.started = true;
         this.initializing = true;
         this.render();
         const generation = this.generation;
+        this.reportLoadingProgress(this.current.id, 1, 1);
         for (const connection of app.workspaceRegistry.list()) {
             if (generation !== this.generation) return;
-            if (!this.sessions.has(connection.id)) await this.open(connection);
+            if (!this.sessions.has(connection.id)) {
+                this.reportLoadingProgress(connection.id, 0, 1, connection.displayName);
+                await this.open(connection);
+            }
+            this.reportLoadingProgress(connection.id, 1, 1);
         }
         this.initializing = false;
         this.render();
+    }
+
+    /**
+     * Hydrates newly registered connections as one loading batch, without changing
+     * the selected document or its unsaved stores. First-time onboarding hydrates
+     * all registered workspaces and selects the first usable one after the batch.
+     * Failed repositories remain registered with an attention status for retry.
+     * @param {import("./config.js").WorkspaceConnection[]} connections Newly selected repositories.
+     * @returns {Promise<void>}
+     */
+    async addConnections(connections) {
+        if (!connections.length) return;
+        const app = this.app;
+        const initial = !this.current;
+        const batch = initial ? app.workspaceRegistry.list() : connections;
+        const generation = this.generation;
+        this.beginLoading();
+        app.shell.showLoadingScreen(app.locale.t("onboarding.adding"));
+        const selected = new Set(batch.map((connection) => connection.id));
+        for (const known of app.workspaceRegistry.list()) {
+            if (!selected.has(known.id)) this.reportLoadingProgress(known.id, 1, 1);
+        }
+        try {
+            for (const connection of batch) {
+                if (generation !== this.generation) return;
+                await this.open(connection);
+                this.reportLoadingProgress(connection.id, 1, 1);
+            }
+        } finally {
+            if (generation === this.generation) {
+                this.initializing = false;
+                if (this.current) app.shell.showApplicationScreen();
+                this.render();
+                app.workspaceController.renderWorkspaceRegistry();
+            }
+        }
+        if (initial && generation === this.generation) {
+            this.started = true;
+            app.pendingRoute = null;
+            const ready = [...this.sessions.values()].find((session) => session.ready);
+            const setup = [...this.sessions.values()].find((session) => session.setupError);
+            if (ready || setup) {
+                for (const button of [app.logoutBtn, app.reloadDataBtn, app.projectsBtn]) setVisible(button, true);
+                this.mount(ready || setup, app.state.activeTab, true, !ready);
+                if (!ready) app.workspaceController.enterWorkspaceSetup(setup.setupError);
+            } else {
+                app.shell.showLoginScreen();
+                app.workspaceController.openWorkspaceSettings("none");
+            }
+        }
+    }
+
+    /** Starts one aggregate loading batch; ready sessions retain their completed share.
+     * @returns {void}
+     */
+    beginLoading() {
+        this.initializing = true;
+        this.loadProgress.clear();
+        this.loadLabels?.clear();
+        if (typeof document !== "undefined") document.getElementById("workspaceLoadingList")?.replaceChildren();
+        for (const connection of this.app.workspaceRegistry.list()) {
+            this.loadProgress.set(connection.id, this.sessions.get(connection.id)?.ready && connection.id !== this.current?.id ? 1 : 0);
+        }
+    }
+
+    /** Settles the remaining connections when the initially requested repository fails.
+     * A failed default must not hide other usable workspaces. With no successes the caller
+     * retains its explicit loading error instead of exposing an empty application shell.
+     * @param {unknown} error Failure of the requested repository.
+     * @returns {Promise<boolean>} Whether a usable fallback document was revealed.
+     */
+    async recoverInitialFailure(error) {
+        if (this.current) return false;
+        const app = this.app;
+        const failedId = app.activeWorkspaceConnection?.id;
+        this.beginLoading();
+        if (failedId) {
+            this.unavailable.set(failedId, String(error));
+            this.reportLoadingProgress(failedId, 1, 1);
+        }
+        const generation = this.generation;
+        for (const connection of app.workspaceRegistry.list()) {
+            if (generation !== this.generation) return false;
+            if (connection.id !== failedId) await this.open(connection);
+            this.reportLoadingProgress(connection.id, 1, 1);
+        }
+        this.initializing = false;
+        const fallback = [...this.sessions.values()].find((session) => session.ready);
+        if (!fallback) return false;
+        this.started = true;
+        app.pendingRoute = null;
+        this.mount(fallback, app.state.activeTab);
+        return true;
+    }
+
+    /** Reports monotonic progress across repositories, including failed attempts as settled work.
+     * @param {string} id Connection being loaded.
+     * @param {number} loaded Completed chunk count.
+     * @param {number} total Total chunk count.
+     * @param {string} [label] Current provider or chunk stage.
+     * @returns {void}
+     */
+    reportLoadingProgress(id, loaded, total, label = "") {
+        if (!this.initializing) return;
+        if (label) this.loadLabels?.set(id, label);
+        this.loadProgress.set(id, Math.max(this.loadProgress.get(id) || 0, Math.min(1, loaded / Math.max(1, total))));
+        const completed = [...this.loadProgress.values()].reduce((sum, value) => sum + value, 0);
+        this.app.shell.setProgress(completed, Math.max(1, this.loadProgress.size),
+            this.app.locale.t("workspaceSessions.progress", { loaded: Math.floor(completed), total: this.loadProgress.size, stage: label }));
+        this.renderLoadingConnections();
+    }
+
+    /**
+     * Describes a connection's loaded documents without exposing credentials or borrowing
+     * another workspace's stores. Used by both startup progress and workspace cards.
+     * @param {string} id Browser connection identity.
+     * @returns {string} Localized counts and manifest timestamp, or an empty string before hydration.
+     */
+    describeConnection(id) {
+        const session = this.sessions.get(id);
+        const owner = session || (this.app.activeWorkspaceConnection?.id === id ? this.app : null);
+        if (!owner) return "";
+        const workspace = session ? session.runtime.workspace : this.app.workspace;
+        if (!workspace) return "";
+        const locale = this.app.locale;
+        const manifest = owner.store.getManifest();
+        const expenseManifest = owner.expenseStore.getManifest();
+        const parts = [];
+        if (workspace.hasComponent("time_tracking") && manifest) {
+            parts.push(locale.t("data.weekFiles", { count: locale.formatNumber(manifest.chunks.length) }));
+            parts.push(locale.t("data.entries", { count: locale.formatNumber(manifest.total_entries || 0) }));
+        }
+        if (workspace.hasComponent("todos")) parts.push(locale.t("data.todos", { count: locale.formatNumber(owner.todoStore.getTodos().length) }));
+        if (workspace.hasComponent("expenses")) parts.push(locale.t("data.expenses", { count: locale.formatNumber(owner.expenseStore.getExpenses().length) }));
+        const generated = [manifest?.generated_at || "", expenseManifest?.generated_at || ""].sort().pop();
+        if (generated) parts.push(locale.t("data.manifestAt", { date: locale.formatDate(generated, owner.timeContext.timeZone, { dateStyle: "short", timeStyle: "short" }) }));
+        return parts.join(" · ");
+    }
+
+    /**
+     * Updates the incremental startup list beneath the single aggregate progress bar.
+     * Rows remain visible as each connection settles, including failed connections.
+     * @returns {void}
+     */
+    renderLoadingConnections() {
+        if (typeof document === "undefined") return;
+        const list = document.getElementById("workspaceLoadingList");
+        if (!list) return;
+        list.replaceChildren();
+        for (const connection of this.app.workspaceRegistry.list()) {
+            const session = this.sessions.get(connection.id);
+            const error = session?.error || this.unavailable.get(connection.id);
+            const ready = Boolean(session?.ready);
+            if (!ready && !error && !this.loadLabels?.has(connection.id)) continue;
+            const row = document.createElement("div");
+            row.className = `workspace-loading-row ${error ? "needs-attention" : ready ? "is-ok" : "is-loading"}`;
+            row.setAttribute("role", "listitem");
+            row.append(createMaterialIcon(error ? "warning" : ready ? "check_circle" : "refresh"));
+            const copy = document.createElement("div");
+            const name = document.createElement("strong");
+            name.textContent = session?.name || connection.displayName;
+            const detail = document.createElement("small");
+            detail.textContent = error ? this.app.locale.localizeError(error) : ready ? this.describeConnection(connection.id) : this.loadLabels.get(connection.id);
+            copy.append(name, detail);
+            row.append(copy);
+            list.append(row);
+        }
     }
 
     /**
@@ -300,6 +504,53 @@ export class WorkspaceSessions {
         this.opening.set(connection.id, opening);
         try { return await opening; }
         finally { this.opening.delete(connection.id); }
+    }
+
+    /** Reloads a clean workspace after editing its configuration, retaining the displayed document
+     * when another connection was edited. Failed reloads keep the last usable stores available.
+     * @param {WorkspaceSession} previous Session whose configuration was saved.
+     * @returns {Promise<boolean>} Whether the updated connection was loaded successfully.
+     */
+    async reloadSession(previous) {
+        if (previous.dirty || previous.saving) throw new Error(this.app.locale.t("workspace.saveBeforeConfig"));
+        this.sessions.delete(previous.id);
+        const replacement = await this.open(previous.runtime.activeWorkspaceConnection);
+        if (!replacement?.ready) {
+            this.sessions.set(previous.id, previous);
+            this.unavailable.set(previous.id, replacement?.error || this.app.locale.t("workspaceSessions.reconnect"));
+            this.render();
+            throw new Error(this.unavailable.get(previous.id));
+        }
+        if (this.current === previous) this.mount(replacement, this.app.state.activeTab);
+        previous.views.weekView.stopNowTimer();
+        this.todoDetachers.get(previous)?.();
+        this.todoDetachers.delete(previous);
+        for (const view of Object.values(previous.views)) this.originalMethods.delete(view);
+        this.app.workspaceController.renderWorkspaceRegistry();
+        this.render();
+        return true;
+    }
+
+    /** Applies a renewed connection credential without changing the mounted document or its edits.
+     * Failed/unloaded sessions are hydrated independently; ready sessions keep stores and histories.
+     * @param {import("./config.js").WorkspaceConnection} connection Reauthenticated connection.
+     * @returns {Promise<void>}
+     */
+    async reconnect(connection) {
+        const token = await this.app.workspaceController.loadUsableWorkspaceCredential(connection);
+        if (!token) throw new Error(this.app.locale.t("workspaceSessions.reconnect"));
+        let session = this.sessions.get(connection.id);
+        if (session?.ready) {
+            session.runtime.dataSource.setToken(token);
+            session.runtime.token = token;
+            session.state.setToken(token);
+            session.needsReconnect = false;
+            session.saveError = "";
+            if (session === this.current) this.app.token = token;
+        } else session = await this.open(connection);
+        if (!session?.ready) throw new Error(session?.error || this.app.locale.t("workspaceSessions.reconnect"));
+        this.unavailable.delete(connection.id);
+        this.render();
     }
 
     /**
@@ -357,7 +608,8 @@ export class WorkspaceSessions {
             runtime: session.runtime, workspaceController: controller,
             isLocalMode: connection.provider === "local",
             activateRegistry: false,
-            onProgress: () => {}, onNavigationChanged: () => {}, onRepositorySummaryChanged: () => {},
+            onProgress: (loaded, total, label) => this.reportLoadingProgress(connection.id, loaded, total, label),
+            onNavigationChanged: () => {}, onRepositorySummaryChanged: () => {},
             onSearchDirty: () => {}, onToast: (message) => app.shell.toast(`${session.name}: ${message}`, 5000),
         });
         try {
@@ -494,6 +746,7 @@ export class WorkspaceSessions {
     /**
      * Mounts an already loaded workspace without fetching, discarding edits, or recreating histories.
      * The document's saved scroll coordinates are restored after its normal render path.
+     * Explicit navigation also reveals the application when the welcome page was hiding a retained session.
      * @param {WorkspaceSession} session Destination repository.
      * @param {"week" | "todos" | "expenses" | "search"} tab Requested module.
      * @param {boolean} [navigate] Whether to update the shell and browser URL.
@@ -535,7 +788,12 @@ export class WorkspaceSessions {
             this.restoreScroll();
         }
         this.selected.set(tab, session.id);
-        if (navigate) app.shell.setTab(tab);
+        if (navigate) {
+            app.shell.setTab(tab);
+            // The welcome page keeps sessions alive. Selecting a ready document
+            // must also leave that screen, even when no reload was necessary.
+            if (app.appSection.hidden) app.shell.showApplicationScreen();
+        }
         this.render();
     }
 
@@ -568,6 +826,15 @@ export class WorkspaceSessions {
         if (session.saving) { session.saveAgain = true; return session.saving; }
         session.automaticSave = automatic;
         session.saving = (async () => {
+            const connection = session.runtime.activeWorkspaceConnection;
+            if (connection?.provider !== "local") {
+                const token = await this.app.workspaceController.loadUsableWorkspaceCredential(connection);
+                if (!token) throw new Error(this.app.locale.t("workspaceSessions.reconnect"));
+                session.runtime.dataSource.setToken(token);
+                session.runtime.token = token;
+                session.state.setToken(token);
+                if (session === this.current) this.app.token = token;
+            }
             do {
                 session.saveAgain = false;
                 session.saveError = "";
@@ -789,12 +1056,21 @@ export class WorkspaceSessions {
             this.unavailable.has(connection.id) || this.sessions.get(connection.id)?.error);
         const status = document.getElementById("workspaceAvailability");
         if (status) {
-            status.hidden = unavailable.length === 0 && !this.initializing;
+            status.hidden = true;
             status.textContent = unavailable.length
                 ? app.locale.t("workspaceSessions.unavailable", { workspaces: unavailable.map((connection) => connection.displayName).join(", ") })
                 : app.locale.t("workspaceSessions.loading");
             status.title = unavailable.map((connection) => `${connection.displayName}: ${this.unavailable.get(connection.id) || this.sessions.get(connection.id)?.error}`).join("\n");
             status.onclick = () => app.workspaceController.openWorkspaceSettings();
+        }
+        const management = document.getElementById("workspaceSettingsBtn");
+        if (management) {
+            const warning = unavailable.length ? app.locale.t("workspaceSessions.unavailable", {
+                workspaces: unavailable.map((connection) => connection.displayName).join(", "),
+            }) : "";
+            management.classList.toggle("has-workspace-warning", Boolean(warning));
+            management.title = warning || app.locale.t("nav.workspaces");
+            management.setAttribute("aria-label", [app.locale.t("nav.manageWorkspaces"), warning].filter(Boolean).join(": "));
         }
         app.refreshSidebarNavigation();
     }
@@ -817,6 +1093,9 @@ export class WorkspaceSessions {
         else if (this.previousSaveState === "saving") badge.classList.add("is-just-saved");
         this.previousSaveState = state;
         badge.dataset.state = state;
+        const progress = this.autosave.deadline && !saving && ["dirty", "failed"].includes(state)
+            ? Math.min(1, Math.max(0, 1 - (this.autosave.deadline - Date.now()) / this.autosave.delay)) : 0;
+        badge.style.setProperty("--autosave-progress", `${progress * 100}%`);
         badge.title = failed.length
             ? failed.map((session) => `${session.name}: ${session.saveError}`).join("\n")
             : dirty.length ? `${app.locale.t("workspaceSessions.autosaveHelp")}\n${dirty.map((session) => session.name).join(", ")}` : "";

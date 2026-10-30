@@ -56,7 +56,22 @@ const port = await new Promise((resolve) => {
         socket.close(() => resolve(address.port));
     });
 });
-const server = spawn("python3", ["server.py", "--workspace", directories[0], "--workspace", directories[1], "--port", String(port), "--host", "127.0.0.1"], { cwd: root, stdio: "ignore" });
+// Interactive QA uses the same isolated fixtures without launching an automation browser.
+if (process.argv.includes("--serve-only")) {
+    for (const name of ["Empty", "Unavailable", "Expenses-only"]) {
+        const directory = path.join(temporary, name.toLowerCase());
+        await cp(path.join(root, "workspace-template"), directory, { recursive: true });
+        const file = path.join(directory, "zeitberg.json");
+        const raw = JSON.parse(await readFile(file, "utf8"));
+        raw.workspace_id = name.toLowerCase();
+        raw.name = name;
+        if (name === "Expenses-only") raw.components = { expenses: raw.components.expenses };
+        await writeFile(file, JSON.stringify(raw));
+        if (name === "Unavailable") await writeFile(path.join(directory, "data/projects.json"), "{}");
+        directories.push(directory);
+    }
+}
+const server = spawn("python3", ["server.py", ...directories.flatMap((directory) => ["--workspace", directory]), "--port", String(port), "--host", "127.0.0.1"], { cwd: root, stdio: "ignore" });
 let browser;
 try {
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -67,6 +82,11 @@ try {
             if (response.ok) break;
         } catch { /* Listener starting. */ }
         await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    if (process.argv.includes("--serve-only")) {
+        console.log(`Interactive fixtures: http://127.0.0.1:${port}/time?source=local&workspace=empty`);
+        console.log(`Disposable fixture directory: ${temporary}`);
+        await new Promise(() => {});
     }
     browser = await (process.argv.includes("--webkit") ? webkit : chromium).launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, locale: "en-US" });
@@ -251,8 +271,21 @@ try {
     await page.waitForFunction(() => document.getElementById("editorBadge").textContent === "Saved");
     assert.equal(JSON.parse(await readFile(expensePath, "utf8")).expenses.length, 1);
     // Switching retains the saved document without duplicating listeners.
+    await page.locator(".expense-row:not(.is-transfer)").first().dblclick();
+    await page.locator("#expenseSaveTemplateBtn").click();
+    await page.locator("#expenseCancelBtn").click();
     await selectWorkspace("Alpha");
+    await page.locator("#expenseTemplatesBtn").click();
+    assert.equal(await page.locator("#expenseTemplatesMenu .expense-template-choice").count(), 0);
+    await page.keyboard.press("Escape");
     await selectWorkspace("Beta");
+    await page.locator("#expenseTemplatesBtn").click();
+    assert.equal(await page.locator("#expenseTemplatesMenu .expense-template-choice").count(), 1);
+    await page.keyboard.press("Escape");
+    await page.locator("#editorBadge").click();
+    await page.waitForFunction(() => document.getElementById("editorBadge").textContent === "Saved");
+    assert.equal(JSON.parse(await readFile(expensePath, "utf8")).templates.length, 1);
+    assert.equal(JSON.parse(await readFile(path.join(directories[0], "data/expenses.json"), "utf8")).templates, undefined);
     assert.equal(await page.locator("#documentWorkspaceName").textContent(), "Beta");
     // The taller header must not obscure save feedback.
     assert.ok(await page.evaluate(() => Number(getComputedStyle(document.getElementById("dataError")).zIndex)
@@ -267,7 +300,7 @@ try {
     const compactHeights = await page.evaluate(() => ["editorBadge", "expenseAddBtn"].map(
         (id) => document.getElementById(id).getBoundingClientRect().height,
     ));
-    assert.deepEqual(compactHeights, [34, 34]);
+    assert.deepEqual(compactHeights, [44, 44]);
     await page.screenshot({ path: path.join(temporary, "multi-workspace-narrow.png"), fullPage: true });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     assert.ok(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1));
@@ -296,7 +329,7 @@ try {
     const saveBox = await page.locator("#editorBadge").boundingBox();
     assert.ok(labelBox.y + labelBox.height <= countdownBox.y);
     assert.ok(countdownBox.y + countdownBox.height < saveBox.y + saveBox.height);
-    assert.equal(saveBox.height, 34);
+    assert.equal(saveBox.height, 44);
     assert.equal(await page.locator(".save-countdown").evaluate((element) => getComputedStyle(element).fontWeight), "400");
     assert.equal(await page.locator("#editorBadge").evaluate((element) => getComputedStyle(element).backgroundColor), "rgb(230, 170, 75)");
     await page.screenshot({ path: path.join(temporary, "autosave-pending-narrow.png"), fullPage: true });
@@ -400,9 +433,11 @@ try {
     await picker.selectOption({ label: "Alpha" });
     await phone.waitForURL(/workspace=alpha/);
     await phone.locator("#workspaceSettingsBtn").tap();
+    assert.equal(await phone.locator(".workspace-active-badge, .workspace-row.is-active").count(), 0);
     const betaRow = phone.locator(".workspace-row", { hasText: "Beta" });
     await betaRow.locator('[data-workspace-action="edit"]').tap();
     await phone.locator("#workspaceEditDialog[open]").waitFor();
+    assert.equal(await phone.locator("#documentWorkspaceName").textContent(), "Alpha");
     assert.equal(await phone.locator("#workspaceConfigName").inputValue(), "Beta");
     await phone.locator("#workspaceConfigName").fill("Canceled mobile edit");
     await phone.locator("#workspaceEditCancelBtn").tap();
@@ -417,7 +452,8 @@ try {
     await phone.unroute("**/save");
     await phone.locator("#workspaceConfigSaveBtn").tap();
     await phone.locator("#workspaceEditDialog").waitFor({ state: "hidden" });
-    await phone.waitForFunction(() => document.getElementById("documentWorkspaceName").textContent === "Beta updated");
+    await phone.locator(".workspace-row", { hasText: "Beta updated" }).waitFor();
+    assert.equal(await phone.locator("#documentWorkspaceName").textContent(), "Alpha");
     assert.equal(JSON.parse(await readFile(path.join(directories[1], "zeitberg.json"), "utf8")).name, "Beta updated");
     // Simulate a secondary repository that failed hydration: its picker option must not vanish.
     let failedHydration = false;
@@ -428,7 +464,8 @@ try {
     });
     await phone.goto(`http://127.0.0.1:${port}/expenses?source=local&workspace=alpha`);
     await phone.locator('#documentWorkspaces option', { hasText: "Beta" }).waitFor({ state: "attached" });
-    await phone.waitForFunction(() => document.getElementById("workspaceAvailability").title.includes("503"));
+    await phone.locator("#workspaceSettingsBtn.has-workspace-warning").waitFor();
+    assert.equal(await phone.locator("#workspaceAvailability").isVisible(), false);
     assert.equal(failedHydration, true);
     assert.equal(await picker.isVisible(), true);
     await phone.unroute("**/workspace-config?*");

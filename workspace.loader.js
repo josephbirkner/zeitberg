@@ -435,8 +435,8 @@ export class WorkspaceLoader {
                 this.weekView.setWeekStart(latest);
             }
         } else {
-            this.state.setWeekStart(null);
-            this.weekView.reset();
+            // An empty repository is an editable calendar, not an absent calendar.
+            this.weekView.focusTodayLastEntry(true);
         }
 
         this.searchView.markDirty();

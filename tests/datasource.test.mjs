@@ -10,6 +10,7 @@ import {
     LocalDataSource,
     parseGitHubRepositoryId,
     parseHostedRepositoryUrl,
+    ProviderApiError,
     WorkspaceConfigurationError,
 } from "../datasource.js";
 import { Workspace } from "../model.js";
@@ -17,6 +18,49 @@ import { gitBlobSha1 } from "../utils.js";
 
 const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+test("provider errors preserve nested field validation, arrays, plain text, and HTTP status", () => {
+    for (const [payload, expected] of [
+        [{ message: { name: ["has already been taken"], path: ["has already been taken"] } }, "name: has already been taken; path: has already been taken"],
+        [{ message: "Repository already exists" }, "Repository already exists"],
+        [{ errors: [{ field: "name", message: "is invalid" }] }, "is invalid"],
+        [{ error_description: "Access denied" }, "Access denied"],
+    ]) {
+        const error = new ProviderApiError("GitLab", 400, JSON.stringify(payload));
+        assert.equal(error.status, 400);
+        assert.equal(error.detail, expected);
+        assert.equal(error.message, `GitLab API error 400: ${expected}`);
+    }
+    assert.equal(new ProviderApiError("Codeberg", 503, "Service unavailable").detail, "Service unavailable");
+    assert.equal(new ProviderApiError("Codeberg", 503, "x".repeat(1000)).detail.length, 500);
+});
+
+test("hosted repository creation aborts stalled requests without retrying writes", async (context) => {
+    let requests = 0;
+    const source = new GitLabDataSource({ provider: "gitlab", repositoryUrl: "https://gitlab.com/person/workspace", ref: "main" }, "token");
+    source.requestTimeoutMs = 10;
+    context.mock.method(globalThis, "fetch", (_url, options) => new Promise((_resolve, reject) => {
+        requests++;
+        // Keep Node alive while its unreferenced AbortSignal timeout is pending.
+        const timer = setTimeout(() => reject(new Error("Abort was not delivered")), 1000);
+        options.signal.addEventListener("abort", () => { clearTimeout(timer); reject(options.signal.reason); }, { once: true });
+    }));
+    await assert.rejects(() => source.createPrivateRepository("workspace"), /timed out.*may already have succeeded/);
+    assert.equal(requests, 1);
+});
+
+test("hosted response-body timeouts also produce actionable errors", async (context) => {
+    const source = new GitLabDataSource({ provider: "gitlab", repositoryUrl: "https://gitlab.com/person/workspace", ref: "main" }, "token");
+    for (const status of [200, 400]) {
+        context.mock.method(globalThis, "fetch", async () => ({
+            ok: status === 200, status,
+            async json() { throw new DOMException("Body stalled", "AbortError"); },
+            async text() { throw new DOMException("Body stalled", "AbortError"); },
+        }));
+        await assert.rejects(() => source.requestJson("/projects"), /timed out/);
+        await assert.rejects(() => source.requestText("/projects"), /timed out/);
+    }
+});
 
 /**
  * Builds minimal manifest chunk metadata for data-source tests.

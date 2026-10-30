@@ -58,21 +58,21 @@ body.app-mode #searchView > section:last-child .table-wrap {
 }
 
 .week-controls .btn {
-  height: 34px;
+  height: var(--control-height);
   padding: 6px 9px;
   border-radius: 5px;
   font-size: 0.75rem;
 }
 
 .week-controls .btn-icon {
-  width: 34px;
+  width: var(--control-height);
   padding: 0;
 }
 
 .week-summary {
   min-width: 0;
   max-width: min(46vw, 620px);
-  height: 34px;
+  height: var(--control-height);
   padding: 5px 8px;
   border: 1px solid transparent;
   border-radius: 5px;
@@ -150,7 +150,7 @@ body.app-mode #searchView > section:last-child .table-wrap {
 .week-editor-actions .btn,
 .week-history-actions .btn,
 .week-zoom-actions .btn {
-  flex: 0 0 34px;
+  flex: 0 0 var(--control-height);
 }
 
 .week-action-separator {
@@ -371,7 +371,7 @@ body.app-mode #searchView > section:last-child .table-wrap {
 }
 
 .week-date-dialog {
-  max-width: min(24rem, calc(100vw - 24px));
+  max-width: min(24rem, calc(var(--app-viewport-width) - 24px));
 }
 
 .week-date-dialog label {
@@ -895,8 +895,8 @@ body.app-mode #searchView > section:last-child .table-wrap {
 }
 
 #weekReqDialog {
-    width: min(1100px, calc(100vw - 32px));
-    max-width: calc(100vw - 32px);
+    width: min(1100px, calc(var(--app-viewport-width) - 32px));
+    max-width: calc(var(--app-viewport-width) - 32px);
 }
 
 #workTimeEditor {
@@ -1097,7 +1097,7 @@ html.ui-narrow .work-time-half::before {
 }
 
 .entry-suggestion .suggestion-project {
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .entry-suggestion .suggestion-desc {
@@ -1209,10 +1209,10 @@ html.ui-narrow .zoom-compact {
 }
 
 html.ui-narrow .week-summary {
-  width: 34px;
-  max-width: 34px;
+  width: var(--control-height);
+  max-width: var(--control-height);
   padding: 0;
-  flex: 0 0 34px;
+  flex: 0 0 var(--control-height);
   display: grid;
   place-items: center;
   border-color: var(--border);

@@ -18,17 +18,18 @@ body.app-mode #expenseView {
 }
 
 .expense-topbar-controls .btn {
-  width: 34px;
-  height: 34px;
+  width: var(--control-height);
+  height: var(--control-height);
   padding: 0;
   border-radius: 5px;
   display: grid;
   place-items: center;
 }
 
-.expense-topbar-controls .expense-add-button {
+.expense-topbar-controls .expense-add-button,
+.todo-topbar-controls .expense-add-button {
   width: auto;
-  min-width: 34px;
+  min-width: var(--control-height);
   padding: 0 11px;
   border-color: var(--accent-2);
   background: var(--accent-2);
@@ -40,7 +41,9 @@ body.app-mode #expenseView {
 }
 
 .expense-topbar-controls .expense-add-button:hover,
-.expense-topbar-controls .expense-add-button:focus-visible {
+.expense-topbar-controls .expense-add-button:focus-visible,
+.todo-topbar-controls .expense-add-button:hover,
+.todo-topbar-controls .expense-add-button:focus-visible {
   border-color: color-mix(in srgb, var(--accent-2) 82%, var(--text));
   background: color-mix(in srgb, var(--accent-2) 88%, var(--text));
   color: var(--bg);
@@ -51,6 +54,68 @@ body.app-mode #expenseView {
   line-height: 1;
   white-space: nowrap;
 }
+
+.expense-add-split { display: flex; flex: none; }
+.expense-add-split #expenseAddBtn { border-radius: 5px 0 0 5px; box-shadow: none; }
+.expense-add-split .expense-templates-toggle {
+  border-radius: 0 5px 5px 0;
+  border-left-color: color-mix(in srgb, var(--bg) 30%, transparent);
+  padding: 0;
+  width: var(--control-height);
+  box-shadow: none;
+}
+.expense-templates-chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+.expense-templates-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(320px, calc(var(--app-viewport-width) - 16px));
+  max-height: min(420px, calc(var(--app-viewport-height) - 110px));
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--dialog-bg);
+  color: var(--text);
+  box-shadow: 0 8px 24px #0003;
+}
+.expense-templates-menu > p { margin: 8px; font-size: var(--font-control); }
+.expense-template-row { display: flex; align-items: center; gap: 4px; }
+.expense-template-choice {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: var(--font-control);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.expense-template-choice:hover, .expense-template-choice:focus-visible {
+  background: color-mix(in srgb, var(--text) 8%, var(--panel));
+}
+.expense-template-row > .btn {
+  flex: none;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  line-height: 1;
+}
+.expense-save-template { display: inline-flex; align-items: center; gap: 6px; }
+.expense-save-template.is-saved:disabled { color: var(--accent-2); opacity: 1; }
+html.ui-narrow .expense-save-template { flex: 0 0 44px; width: 44px; padding: 0; justify-content: center; }
+html.ui-narrow .expense-save-template > span { display: none; }
 
 .expense-view {
   min-height: 0;
@@ -269,13 +334,13 @@ body.app-mode #expenseView {
 
 .expense-dialog,
 .expense-inventory-dialog {
-  max-width: min(760px, calc(100vw - 24px));
+  max-width: min(760px, calc(var(--app-viewport-width) - 24px));
 }
 
 .expense-dialog-card,
 .expense-inventory-card {
   width: 100%;
-  max-height: min(940px, calc(100dvh - 24px));
+  max-height: min(940px, calc(var(--app-viewport-height) - 24px));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
@@ -296,12 +361,11 @@ body.app-mode #expenseView {
 .expense-receipt-composer {
   display: block;
   margin-top: 9px;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-  border-radius: 13px;
-  background:
-    radial-gradient(circle at 0 0, color-mix(in srgb, var(--accent) 9%, transparent), transparent 52%),
-    var(--surface-faint);
+  padding: 0 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .expense-value-row {
@@ -333,11 +397,10 @@ body.app-mode #expenseView {
   overflow: hidden;
   color: var(--muted);
   font-size: 0.57rem;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1;
   text-overflow: ellipsis;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   pointer-events: none;
   transition: color 120ms ease;
@@ -349,18 +412,19 @@ body.app-mode #expenseView {
 
 .expense-amount-field input {
   height: 78px;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: clamp(1.9rem, 5vw, 2.35rem);
-  font-weight: 850;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.035em;
 }
 
 .expense-currency-field input {
   height: 78px;
   padding-inline: 12px;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 1rem;
-  font-weight: 800;
+  font-weight: 500;
   text-align: center;
   text-transform: uppercase;
 }
@@ -435,29 +499,25 @@ body.app-mode #expenseView {
 
 .expense-flow-card {
   min-width: 0;
-  min-height: 82px;
-  padding: 11px 12px;
+  min-height: 68px;
+  padding: 9px 10px;
   border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--surface-faint);
+  border-radius: var(--control-radius);
+  background: transparent;
   color: var(--text);
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 12px;
+  grid-template-columns: 24px minmax(0, 1fr) 12px;
   gap: 10px;
   align-items: center;
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .expense-flow-card:hover,
 .expense-flow-card:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
   background: var(--surface-soft);
-}
-
-.expense-flow-card:active {
-  transform: translateY(1px);
 }
 
 .expense-flow-card:disabled {
@@ -481,11 +541,11 @@ body.app-mode #expenseView {
 .expense-flow-card > .app-icon {
   width: 22px;
   height: 22px;
-  padding: 6px;
-  border-radius: 9px;
+  padding: 0;
+  border-radius: 0;
   box-sizing: content-box;
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface-soft));
-  color: var(--accent);
+  background: transparent;
+  color: var(--muted);
 }
 
 .expense-flow-copy,
@@ -505,6 +565,7 @@ body.app-mode #expenseView {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.78rem;
+  font-weight: 500;
 }
 
 .expense-flow-copy > span {
@@ -533,8 +594,8 @@ body.app-mode #expenseView {
   scroll-margin-block: 12px 84px;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--surface-soft) 88%, var(--accent) 12%);
+  border-radius: var(--control-radius);
+  background: var(--surface-faint);
 }
 
 .expense-context-panel[hidden] {
@@ -716,7 +777,7 @@ body.app-mode #expenseView {
 
 .expense-allocation-choices button {
   min-width: 0;
-  min-height: 34px;
+  min-height: var(--control-height);
   padding: 5px 7px;
   border: 0;
   border-radius: 6px;
@@ -735,26 +796,24 @@ body.app-mode #expenseView {
 .expense-allocation-choices button[aria-pressed="true"] {
   background: color-mix(in srgb, var(--accent) 22%, var(--surface-soft));
   color: var(--text);
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .expense-outcome {
   margin-top: 10px;
   padding: 11px 13px;
-  border: 1px solid color-mix(in srgb, var(--accent-2) 35%, var(--border));
-  border-radius: 11px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-2) 10%, transparent), transparent 70%),
-    var(--surface-faint);
+  border: 0;
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-faint);
 }
 
 .expense-outcome-label {
   margin-bottom: 4px;
   color: var(--muted);
   font-size: 0.58rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .expense-outcome > strong {
@@ -774,9 +833,10 @@ body.app-mode #expenseView {
 
 .expense-disclosure {
   margin-top: 10px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface-faint) 78%, transparent);
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
   overflow: hidden;
 }
 
@@ -944,14 +1004,14 @@ html.ui-narrow .expense-inventory-card,
 html.ui-narrow .expense-settlement-card {
   width: 100%;
   max-width: none;
-  height: 100dvh;
+  height: var(--app-viewport-height);
   max-height: none;
   border: 0;
   border-radius: 0;
 }
 
 html.ui-narrow .expense-receipt-composer {
-  padding: 12px;
+  padding: 0 0 12px;
 }
 
 html.ui-narrow .expense-value-row {
@@ -1044,10 +1104,12 @@ html.ui-toolbar-compact .expense-topbar-controls {
 
 html.ui-toolbar-compact .expense-topbar-controls .btn {
   width: 32px;
-  height: 34px;
+  height: var(--control-height);
 }
 
-html.ui-toolbar-compact .expense-topbar-controls .expense-add-button {
+html.ui-toolbar-compact .expense-topbar-controls .expense-add-button,
+html.ui-toolbar-compact .todo-topbar-controls .expense-add-button {
+  width: 32px;
   min-width: 32px;
   padding: 0;
 }

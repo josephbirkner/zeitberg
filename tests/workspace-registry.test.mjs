@@ -152,10 +152,95 @@ test("ConfigService preserves refreshable OAuth grants without exposing them thr
     service.saveWorkspaceOAuthCredential(connection.id, credential, true);
 
     assert.equal(service.loadWorkspaceCredential(connection.id), "oauth-access");
-    assert.deepEqual(service.loadWorkspaceCredentialRecord(connection.id), credential);
+    const { grantId, ...loaded } = service.loadWorkspaceCredentialRecord(connection.id);
+    assert.ok(grantId);
+    assert.deepEqual(loaded, credential);
     assert.equal(service.isWorkspaceCredentialRemembered(connection.id), true);
-    assert.match(local.getItem("zeitberg:workspace-credentials:local:v1") || "", /oauth-v1/);
+    assert.match(local.getItem("zeitberg:workspace-credentials:local:v1") || "", /oauth-ref-v1/);
     assert.equal(JSON.stringify(connection.toObject()).includes("oauth-access"), false);
+});
+
+/** Builds a fictional public-client grant for storage/rotation regression tests.
+ * @returns {import("../config.js").WorkspaceCredentialRecord} Disposable authorization.
+ */
+function sharedGrant() {
+    return { kind: "oauth", provider: "gitlab", clientId: "client", redirectUri: "https://example.test/",
+        accessToken: "old-access", refreshToken: "old-refresh", expiresAt: 1 };
+}
+
+test("shared OAuth connections refresh once, keep separate tiers, and disconnect independently", async (t) => {
+    const { local, session } = installBrowserStorage(t);
+    const service = new ConfigService();
+    service.saveWorkspaceOAuthCredential("a", sharedGrant(), true);
+    service.saveWorkspaceOAuthCredential("b", sharedGrant(), false);
+    assert.equal(service.loadWorkspaceCredentialRecord("a").grantId, service.loadWorkspaceCredentialRecord("b").grantId);
+    assert.equal(service.isWorkspaceCredentialRemembered("b"), false);
+    let count = 0;
+    const refresh = async (record) => { count++; await new Promise((resolve) => setImmediate(resolve));
+        return { ...record, accessToken: "new-access", refreshToken: "new-refresh" }; };
+    assert.deepEqual(await Promise.all([service.refreshWorkspaceCredential("a", refresh), service.refreshWorkspaceCredential("b", refresh)]), ["new-access", "new-access"]);
+    assert.equal(count, 1);
+    service.clearWorkspaceCredential("a");
+    assert.equal(service.loadWorkspaceCredential("b"), "new-access");
+    assert.equal(local.getItem("zeitberg:oauth-grants:v1"), null);
+    assert.ok(session.getItem("zeitberg:oauth-grants:v1"));
+    service.clearWorkspaceCredential("b");
+    assert.equal(session.getItem("zeitberg:oauth-grants:v1"), null);
+});
+
+test("legacy duplicated OAuth envelopes migrate before refresh and PATs remain isolated", async (t) => {
+    const { local } = installBrowserStorage(t);
+    const service = new ConfigService();
+    const old = service.serializeWorkspaceOAuthCredential(sharedGrant());
+    local.setItem("zeitberg:workspace-credentials:local:v1", JSON.stringify({ a: old, b: old, pat: "scoped-pat" }));
+    let count = 0;
+    await service.refreshWorkspaceCredential("a", async (record) => {
+        count++; return { ...record, accessToken: "rotated", refreshToken: "rotated-refresh" };
+    });
+    assert.equal(count, 1);
+    assert.equal(service.loadWorkspaceCredential("b"), "rotated");
+    assert.equal(service.loadWorkspaceCredential("pat"), "scoped-pat");
+    assert.equal(Object.keys(JSON.parse(local.getItem("zeitberg:oauth-grants:v1"))).length, 1);
+    assert.doesNotMatch(local.getItem("zeitberg:workspace-credentials:local:v1"), /old-access|rotated-refresh/);
+});
+
+test("OAuth refresh failure is retryable and does not erase stored authorization", async (t) => {
+    installBrowserStorage(t);
+    const service = new ConfigService();
+    service.saveWorkspaceOAuthCredential("a", sharedGrant(), false);
+    await assert.rejects(service.refreshWorkspaceCredential("a", async () => { throw new Error("offline"); }), /offline/);
+    assert.equal(service.loadWorkspaceCredential("a"), "old-access");
+    assert.equal(await service.refreshWorkspaceCredential("a", async (record) => ({ ...record, accessToken: "retry" })), "retry");
+    service.clearSaved();
+    assert.equal(service.loadWorkspaceCredential("a"), "");
+});
+
+test("revoking the last connection during OAuth refresh cannot resurrect credentials", async (t) => {
+    installBrowserStorage(t);
+    const service = new ConfigService();
+    service.saveWorkspaceOAuthCredential("a", sharedGrant(), false);
+    let finish;
+    const pending = service.refreshWorkspaceCredential("a", (record) => new Promise((resolve) => { finish = () => resolve(record); }));
+    service.clearWorkspaceCredential("a");
+    finish();
+    assert.equal(await pending, "");
+    assert.equal(service.loadWorkspaceCredentialRecord("a"), null);
+});
+
+test("disconnecting the refreshing connection preserves rotation for other references", async (t) => {
+    installBrowserStorage(t);
+    const service = new ConfigService();
+    service.saveWorkspaceOAuthCredential("a", sharedGrant(), false);
+    service.saveWorkspaceOAuthCredential("b", sharedGrant(), false);
+    let finish;
+    const refresh = (record) => new Promise((resolve) => { finish = () => resolve({ ...record, accessToken: "rotated" }); });
+    const first = service.refreshWorkspaceCredential("a", refresh);
+    const second = service.refreshWorkspaceCredential("b", refresh);
+    service.clearWorkspaceCredential("a");
+    finish();
+    assert.equal(await first, "");
+    assert.equal(await second, "rotated");
+    assert.equal(service.loadWorkspaceCredential("b"), "rotated");
 });
 
 test("capability import remembers its credential and connects without recipient interaction", async (testContext) => {
@@ -208,7 +293,10 @@ test("capability import remembers its credential and connects without recipient 
     assert.deepEqual(connectedTokens, ["shared-capability-token"]);
 });
 
-test("pasted capability links use the startup parser and are cleared before connection", async () => {
+test("pasted and scanned capability values use the startup parser", async (context) => {
+    const previousWindow = globalThis.window;
+    globalThis.window = { location: { origin: "https://zeitberg.io" } };
+    context.after(() => { if (previousWindow) globalThis.window = previousWindow; else delete globalThis.window; });
     const route = {
         version: 1,
         component: "expenses",
@@ -218,7 +306,6 @@ test("pasted capability links use the startup parser and are cleared before conn
     };
     const link = formatCapabilityLink(route, "pasted-capability-token", "https://zeitberg.io");
     const runtime = { capabilityImport: null };
-    const capabilityInput = { value: link };
     let importedCapability = null;
     let scannerCloseCount = 0;
     let errorText = "";
@@ -227,7 +314,6 @@ test("pasted capability links use the startup parser and are cleared before conn
         routeController: { basePath: "/" },
         elements: {
             workspaceCapabilityErrorEl: {},
-            workspaceCapabilityLinkInput: capabilityInput,
         },
         capabilityScanner: { close: () => (scannerCloseCount += 1) },
         locale: { t: (key) => key },
@@ -245,7 +331,6 @@ test("pasted capability links use the startup parser and are cleared before conn
     });
 
     assert.equal(await controller.importCapabilityValue(link), true);
-    assert.equal(capabilityInput.value, "");
     assert.equal(scannerCloseCount, 1);
     assert.equal(errorText, "");
     assert.equal(importedCapability?.credential, "pasted-capability-token");
@@ -288,7 +373,12 @@ test("capability sharing reuses the active stored credential", async (testContex
         runtime: { activeWorkspaceConnection: connection, token: "stale-runtime-token" },
         configService: service,
         routeController: { basePath: "/" },
-        elements: { workspaceShareErrorEl: {} },
+        elements: { workspaceShareErrorEl: {}, workspaceCopyCapabilityBtn: {} },
+        invitations: { endpoint: "https://invites.example/", create: async (capability) => {
+            assert.equal(parseCapabilityLink(capability).credential, "already-connected-token");
+            return "https://zeitberg.io/join/fictional#k=fictional";
+        } },
+        renderInvitationReceipts() {},
         locale: {
             t: (key) => key,
         },
@@ -307,7 +397,7 @@ test("capability sharing reuses the active stored credential", async (testContex
 
     assert.equal(errorText, "");
     assert.equal(toastTone, "success");
-    assert.equal(parseCapabilityLink(copiedLink).credential, "already-connected-token");
+    assert.equal(copiedLink, "https://zeitberg.io/join/fictional#k=fictional");
     assert.equal(copiedLink.includes("already-connected-token"), false);
 });
 

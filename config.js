@@ -27,9 +27,12 @@ import { normalizeWorkspaceRouteLocator, workspaceRouteLocatorKey } from "./rout
  * @property {string} [clientId]
  * @property {string} [redirectUri]
  * @property {string} [tokenType]
+ * @property {string} [grantId] Opaque browser-only shared authorization identifier.
  */
 
 const OAUTH_CREDENTIAL_PREFIX = "oauth-v1:";
+const OAUTH_REFERENCE_PREFIX = "oauth-ref-v1:";
+const OAUTH_GRANTS_KEY = "zeitberg:oauth-grants:v1";
 
 export const DEFAULT_CONFIG = {
     owner: "josephbirkner",
@@ -447,6 +450,8 @@ export class ConfigService {
         this.localStorage = storage?.local || localStorage;
         this.sessionStorage = storage?.session || sessionStorage;
         this.storageKeys = { ...STORAGE_KEYS };
+        /** @type {Map<string, Promise<string>>} One refresh per shared grant in this tab. */
+        this.refreshingGrants = new Map();
     }
 
     /**
@@ -621,7 +626,21 @@ export class ConfigService {
         if (!id) return null;
         const sessionCredentials = this.readCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials);
         const rememberedCredentials = this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials);
-        return this.parseWorkspaceCredential(sessionCredentials[id] || rememberedCredentials[id] || "");
+        const value = sessionCredentials[id] || rememberedCredentials[id] || "";
+        if (value.startsWith(OAUTH_REFERENCE_PREFIX)) {
+            const grantId = value.slice(OAUTH_REFERENCE_PREFIX.length);
+            const grants = { ...this.readCredentialMap(this.sessionStorage, OAUTH_GRANTS_KEY),
+                ...this.readCredentialMap(this.localStorage, OAUTH_GRANTS_KEY) };
+            const record = this.parseWorkspaceCredential(grants[grantId] || "");
+            return record ? { ...record, grantId } : null;
+        }
+        const record = this.parseWorkspaceCredential(value);
+        // Upgrade old duplicated envelopes only when accessed. Plain PATs are untouched.
+        if (record?.kind === "oauth") {
+            this.saveWorkspaceOAuthCredential(id, record, !sessionCredentials[id]);
+            return this.loadWorkspaceCredentialRecord(id);
+        }
+        return record;
     }
 
     /**
@@ -655,6 +674,7 @@ export class ConfigService {
         }
         this.writeCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
         this.writeCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
+        this.collectUnusedGrants();
     }
 
     /**
@@ -666,7 +686,89 @@ export class ConfigService {
      * @returns {void}
      */
     saveWorkspaceOAuthCredential(connectionId, credential, remember) {
-        this.saveWorkspaceCredential(connectionId, this.serializeWorkspaceOAuthCredential(credential), remember);
+        const local = this.readCredentialMap(this.localStorage, OAUTH_GRANTS_KEY);
+        const session = this.readCredentialMap(this.sessionStorage, OAUTH_GRANTS_KEY);
+        const match = Object.entries({ ...session, ...local }).find(([, value]) => {
+            const existing = this.parseWorkspaceCredential(value);
+            return existing?.provider === credential.provider && existing?.clientId === credential.clientId
+                && (credential.refreshToken ? existing?.refreshToken === credential.refreshToken
+                    : existing?.accessToken === credential.accessToken);
+        });
+        const grantId = credential.grantId || match?.[0] || crypto.randomUUID();
+        const value = this.serializeWorkspaceOAuthCredential(credential);
+        if (remember || local[grantId]) { local[grantId] = value; delete session[grantId]; }
+        else session[grantId] = value;
+        this.writeCredentialMap(this.localStorage, OAUTH_GRANTS_KEY, local);
+        this.writeCredentialMap(this.sessionStorage, OAUTH_GRANTS_KEY, session);
+        this.saveWorkspaceCredential(connectionId, `${OAUTH_REFERENCE_PREFIX}${grantId}`, remember);
+    }
+
+    /** Refreshes a shared provider authorization once, even when multiple connections request it.
+     * Web Locks also serialize remembered grants across tabs; credentials are re-read under the lock.
+     * @param {string} connectionId Connection referencing a PAT or OAuth grant.
+     * @param {(record: WorkspaceCredentialRecord) => Promise<WorkspaceCredentialRecord>} refresh Provider refresh implementation.
+     * @returns {Promise<string>} Usable access token, or an empty string for an unconnected repository.
+     */
+    async refreshWorkspaceCredential(connectionId, refresh) {
+        // Migrate every legacy reference before rotating a token shared by old records.
+        const ids = Object.keys({ ...this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials),
+            ...this.readCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials) });
+        for (const id of ids) this.loadWorkspaceCredentialRecord(id);
+        const record = this.loadWorkspaceCredentialRecord(connectionId);
+        if (!record || record.kind !== "oauth") return record?.accessToken || "";
+        const key = record.grantId;
+        if (this.refreshingGrants.has(key)) {
+            await this.refreshingGrants.get(key);
+            return this.loadWorkspaceCredentialRecord(connectionId)?.grantId === key ? this.loadWorkspaceCredential(connectionId) : "";
+        }
+        const operation = async () => {
+            const current = this.loadWorkspaceCredentialRecord(connectionId);
+            if (!current || current.kind !== "oauth") return current?.accessToken || "";
+            const updated = await refresh(current);
+            // A removed connection cannot be resurrected, but remaining references still need
+            // the rotated grant: otherwise disconnecting one repository would break all others.
+            const references = Object.keys({ ...this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials),
+                ...this.readCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials) });
+            const owner = references.find((id) => this.loadWorkspaceCredentialRecord(id)?.grantId === current.grantId);
+            if (!owner) return "";
+            this.saveWorkspaceOAuthCredential(owner, { ...updated, grantId: current.grantId },
+                this.isWorkspaceCredentialRemembered(owner));
+            return updated.accessToken;
+        };
+        const pending = typeof navigator !== "undefined" && navigator.locks
+            ? navigator.locks.request(`zeitberg-oauth:${key}`, operation) : operation();
+        this.refreshingGrants.set(key, pending);
+        try {
+            await pending;
+            return this.loadWorkspaceCredentialRecord(connectionId)?.grantId === key ? this.loadWorkspaceCredential(connectionId) : "";
+        }
+        finally { this.refreshingGrants.delete(key); }
+    }
+
+    /** Removes authorizations only after their last connection is disconnected.
+     * @returns {void}
+     */
+    collectUnusedGrants() {
+        const references = Object.values({
+            ...this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials),
+            ...this.readCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials),
+        });
+        for (const storage of [this.localStorage, this.sessionStorage]) {
+            const grants = this.readCredentialMap(storage, OAUTH_GRANTS_KEY);
+            for (const id of Object.keys(grants)) if (!references.includes(`${OAUTH_REFERENCE_PREFIX}${id}`)) delete grants[id];
+            this.writeCredentialMap(storage, OAUTH_GRANTS_KEY, grants);
+        }
+        const localReferences = Object.values(this.readCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials));
+        const local = this.readCredentialMap(this.localStorage, OAUTH_GRANTS_KEY);
+        const session = this.readCredentialMap(this.sessionStorage, OAUTH_GRANTS_KEY);
+        for (const id of Object.keys(local)) {
+            if (!localReferences.includes(`${OAUTH_REFERENCE_PREFIX}${id}`)) {
+                session[id] = local[id];
+                delete local[id];
+            }
+        }
+        this.writeCredentialMap(this.localStorage, OAUTH_GRANTS_KEY, local);
+        this.writeCredentialMap(this.sessionStorage, OAUTH_GRANTS_KEY, session);
     }
 
     /**
@@ -693,6 +795,7 @@ export class ConfigService {
         delete rememberedCredentials[id];
         this.writeCredentialMap(this.sessionStorage, this.storageKeys.sessionWorkspaceCredentials, sessionCredentials);
         this.writeCredentialMap(this.localStorage, this.storageKeys.rememberedWorkspaceCredentials, rememberedCredentials);
+        this.collectUnusedGrants();
     }
 
     /**
@@ -768,6 +871,8 @@ export class ConfigService {
      * @returns {void}
      */
     clearSaved() {
+        this.localStorage.removeItem(OAUTH_GRANTS_KEY);
+        this.sessionStorage.removeItem(OAUTH_GRANTS_KEY);
         this.localStorage.removeItem(this.storageKeys.config);
         this.localStorage.removeItem(this.storageKeys.token);
         this.localStorage.removeItem(this.storageKeys.tokenRemembered);

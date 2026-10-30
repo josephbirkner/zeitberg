@@ -330,6 +330,9 @@ function rawWeekSnapshotsEqual(left, right) {
  * @property {HTMLButtonElement} elements.entryDeleteBtn
  * @property {HTMLButtonElement} elements.entryCancelBtn
  * @property {HTMLElement} elements.entryMeta
+ * @property {HTMLInputElement} elements.entryStart
+ * @property {HTMLInputElement} elements.entryEnd
+ * @property {HTMLElement} elements.entryError
  * @property {HTMLInputElement} elements.entryAssignment
  * @property {HTMLDataListElement} elements.entryAssignmentList
  * @property {HTMLTextAreaElement} elements.entryDesc
@@ -395,6 +398,9 @@ export class WeekView {
         this.entryDeleteBtn = options.elements.entryDeleteBtn;
         this.entryCancelBtn = options.elements.entryCancelBtn;
         this.entryMetaEl = options.elements.entryMeta;
+        this.entryStartInput = options.elements.entryStart;
+        this.entryEndInput = options.elements.entryEnd;
+        this.entryErrorEl = options.elements.entryError;
         this.entryAssignmentInput = options.elements.entryAssignment;
         this.entryAssignmentListEl = options.elements.entryAssignmentList;
         this.entryDescInput = options.elements.entryDesc;
@@ -4410,6 +4416,8 @@ export class WeekView {
      */
     handleEntryFormSubmit(ev) {
         ev.preventDefault();
+        if (this.busy) return;
+        if (this.entryErrorEl) this.entryErrorEl.hidden = true;
         const id = this.dialogEntryId;
         if (!id) return this.closeEntryDialog();
         if (!this.appState.weekStart) return this.closeEntryDialog();
@@ -4435,24 +4443,57 @@ export class WeekView {
         const assignmentChanged = entry.projectKey !== projectKey || entry.sectionKey !== sectionKey;
         const billable = assignmentChanged ? assignment.billable : entry.billable;
 
-        this.applyWeekEdit({
-            weekStart: this.appState.weekStart,
-            label: "details",
-            focusAfter: id,
-            getAfterRaw: () => {
-                const raws = this.store.snapshotWeekRaw(this.appState.weekStart);
-                const idx = raws.findIndex((raw) => Number(raw?.id) === id);
-                if (idx < 0) throw new Error("Entry not found in this week");
-                raws[idx].project_key = projectKey;
-                raws[idx].section_key = sectionKey;
-                raws[idx].description = description;
-                raws[idx].billable = billable;
-                raws[idx].updated_at = this.timeContext.formatIsoWithOffset(new Date());
-                return raws;
-            },
-        });
+        try {
+            const startMs = this.parseDialogTime(this.entryStartInput?.value, entry.startDate);
+            const endMs = this.parseDialogTime(this.entryEndInput?.value, entry.endDate);
+            let raws;
+            if (startMs !== entry.startDate.getTime() || endMs !== entry.endDate.getTime()) {
+                const week = this.store.buildWeekSchedule(this.appState.weekStart);
+                const node = week.nodes.find((candidate) => candidate.id === id);
+                this.ensureEditableNode(node);
+                node.startMs = startMs;
+                node.endMs = endMs;
+                if (endMs - startMs < MIN_ENTRY_MS) throw new Error(this.locale.t("entry.minimumDuration"));
+                this.enforceEditableBounds(node, week.bounds);
+                this.resolveNonOverlapping(week.nodes, id, week.bounds);
+                raws = this.weekRawFromNodes(week.nodes);
+            } else {
+                raws = this.store.snapshotWeekRaw(this.appState.weekStart);
+            }
+            const raw = raws.find((candidate) => Number(candidate?.id) === id);
+            if (!raw) throw new Error("Entry not found in this week");
+            Object.assign(raw, { project_key: projectKey, section_key: sectionKey, description, billable,
+                updated_at: this.timeContext.formatIsoWithOffset(new Date()) });
+            this.applyWeekEdit({ weekStart: this.appState.weekStart, label: "details", focusAfter: id,
+                getAfterRaw: () => raws });
+        } catch (error) {
+            if (this.entryErrorEl) {
+                this.entryErrorEl.textContent = this.locale.localizeError(error);
+                this.entryErrorEl.hidden = false;
+            } else this.onToast(String(error));
+            return;
+        }
 
         this.closeEntryDialog();
+    }
+
+    /**
+     * Converts an editor wall-clock value using the workspace timezone, not the browser timezone.
+     * Unchanged values retain original seconds and the original DST occurrence. Nonexistent
+     * local times are rejected instead of silently moving an entry across a clock change.
+     * @param {string | undefined} value Native datetime-local input value.
+     * @param {Date} original Stored instant, preserved when its displayed value is unchanged.
+     * @returns {number} Validated timestamp in milliseconds.
+     */
+    parseDialogTime(value, original) {
+        const initial = this.timeContext.formatIsoWithOffset(original).slice(0, 16);
+        if (value === undefined || value === initial) return original.getTime();
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) throw new Error(this.locale.t("entry.invalidTime"));
+        const minutes = hhmmToMinutes(value.slice(11));
+        if (minutes === null) throw new Error(this.locale.t("entry.invalidTime"));
+        const date = this.timeContext.dateFromLocalDayMinutes(value.slice(0, 10), minutes);
+        if (this.timeContext.formatIsoWithOffset(date).slice(0, 16) !== value) throw new Error(this.locale.t("entry.invalidTime"));
+        return date.getTime();
     }
 
     /**
@@ -4544,6 +4585,9 @@ export class WeekView {
             sectionKey: entry.sectionKey,
         });
         this.entryDescInput.value = safeText(entry.description);
+        if (this.entryStartInput) this.entryStartInput.value = this.timeContext.formatIsoWithOffset(entry.startDate).slice(0, 16);
+        if (this.entryEndInput) this.entryEndInput.value = this.timeContext.formatIsoWithOffset(entry.endDate).slice(0, 16);
+        if (this.entryErrorEl) this.entryErrorEl.hidden = true;
 
         const day = this.locale.formatDate(entry.startDate, this.timeContext.timeZone);
         const start = this.locale.formatTime(entry.startDate, this.timeContext.timeZone);

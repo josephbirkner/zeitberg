@@ -5,15 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-lE6VmTWbnFyNS894kynIHpu6TxNPa4m+zwq6tsr6KL0='; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+      content="default-src 'self'; base-uri 'self'; connect-src 'self' https:; font-src 'self'; form-action 'none'; img-src 'self' data: blob:; manifest-src 'self'; object-src 'none'; script-src 'self' 'sha256-JQL+SnK1ds6Jc7t0ORT0CfqjZa2xeJ6O4QtJyVw9J38='; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
     />
     <meta name="theme-color" content="#17191f" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="zeitberg" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="zeitberg-oauth-gitlab-client-id" content="" />
-    <meta name="zeitberg-oauth-codeberg-client-id" content="" />
+    <meta name="zeitberg-oauth-gitlab-client-id" content="19fa37b6b6eb6e67e85a3a2a249fbc94454cb27184409c45857d92ae5cd7f9f4" />
+    <meta name="zeitberg-oauth-codeberg-client-id" content="af6513d0-4dc5-4585-a543-17469812d8cc" />
+    <!-- GitHub device authorization uses the restricted relay configured in oauth.js. -->
+    <meta name="zeitberg-oauth-github-client-id" content="Iv23liNvkhSh2mYH0oPw" />
     <meta
       name="description"
       data-i18n-content="meta.description"
@@ -36,15 +38,15 @@
     <meta name="twitter:image:alt" content="Why not zeitberg? Dr. Zoidberg presents the zeitberg logo." />
     <link rel="canonical" href="https://zeitberg.io/" />
     <title data-i18n="document.title">zeitberg — time, tasks, expenses → Git</title>
-    <script src="./theme-init.js?v=1.3.1"></script>
+    <script src="./theme-init.js?v=1.4.0"></script>
     <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
-    <link rel="stylesheet" href="./styles/common.css?v=1.3.1" />
-    <link rel="stylesheet" href="./styles/time.css?v=1.3.1" />
-    <link rel="stylesheet" href="./styles/todos.css?v=1.3.1" />
-    <link rel="stylesheet" href="./styles/expenses.css?v=1.3.1" />
-    <link rel="stylesheet" href="./styles/landing.css?v=1.3.1" />
+    <link rel="stylesheet" href="./styles/common.css?v=1.4.0" />
+    <link rel="stylesheet" href="./styles/time.css?v=1.4.0" />
+    <link rel="stylesheet" href="./styles/todos.css?v=1.4.0" />
+    <link rel="stylesheet" href="./styles/expenses.css?v=1.4.0" />
+    <link rel="stylesheet" href="./styles/landing.css?v=1.4.0" />
   </head>
   <body>
     <aside id="appSidebar" class="app-sidebar" data-i18n-aria-label="nav.application" aria-label="Application navigation" hidden>
@@ -71,6 +73,9 @@
       </nav>
       <div class="sidebar-spacer"></div>
       <div class="sidebar-tools">
+        <a class="sidebar-button" href="./guide.html" data-guide-link="" target="_blank" rel="noopener noreferrer" data-i18n-title="nav.guide" title="User guide" data-i18n-aria-label="nav.guide" aria-label="User guide">
+          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#open_in_new"></use></svg>
+        </a>
         <button id="interfaceSettingsBtn" class="sidebar-button sidebar-language-button" type="button" data-i18n-title="nav.interfaceSettings" title="Interface settings" data-i18n-aria-label="nav.interfaceSettings" aria-label="Interface settings">
           <span id="appLanguageLabel" aria-hidden="true">EN</span>
         </button>
@@ -122,8 +127,9 @@
       </label>
 
       <div id="todoTopbarControls" class="todo-topbar-controls" hidden>
-        <button id="todoAddBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.addTodoTitle" title="Add task (A)" data-i18n-aria-label="topbar.addTodo" aria-label="Add task">
+        <button id="todoAddBtn" class="btn btn-icon expense-add-button" type="button" data-i18n-title="topbar.addTodoTitle" title="Add task (A)" data-i18n-aria-label="topbar.addTodo" aria-label="Add task">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
+          <span class="expense-add-label" data-i18n="topbar.addTodo">Add task</span>
         </button>
         <div class="todo-view-toggles" role="group" data-i18n-aria-label="topbar.todoFilters" aria-label="Task view filters">
           <button id="todoCurrentFilterBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="topbar.currentOnly" title="Show current and overdue only" data-i18n-aria-label="topbar.currentOnly" aria-label="Show current and overdue only" aria-pressed="true">
@@ -136,10 +142,15 @@
       </div>
 
       <div id="expenseTopbarControls" class="expense-topbar-controls" hidden>
-        <button id="expenseAddBtn" class="btn btn-icon expense-add-button" type="button" data-i18n-title="expenses.addTitle" title="Add expense (A)" data-i18n-aria-label="expenses.add" aria-label="Add expense">
-          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
-          <span class="expense-add-label" data-i18n="expenses.add">Add expense</span>
-        </button>
+        <div class="expense-add-split">
+          <button id="expenseAddBtn" class="btn btn-icon expense-add-button" type="button" data-i18n-title="expenses.addTitle" title="Add expense (A)" data-i18n-aria-label="expenses.add" aria-label="Add expense">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
+            <span class="expense-add-label" data-i18n="expenses.add">Add expense</span>
+          </button>
+          <button id="expenseTemplatesBtn" class="btn btn-icon expense-add-button expense-templates-toggle" type="button" popovertarget="expenseTemplatesMenu" aria-controls="expenseTemplatesMenu" aria-expanded="false" data-i18n-title="expenses.templates" title="Expense templates" data-i18n-aria-label="expenses.templates" aria-label="Expense templates">
+            <span class="expense-templates-chevron" aria-hidden="true"></span>
+          </button>
+        </div>
         <button id="expenseSettleBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.settleTitle" title="Settle balances" data-i18n-aria-label="expenses.settle" aria-label="Settle balances">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#handshake"></use></svg>
         </button>
@@ -228,6 +239,7 @@
             <a href="#architecture" data-i18n="landing.architectureLink">Architecture</a>
             <a href="#workspace" data-i18n="landing.setupLink">Setup</a>
             <a href="#similar" data-i18n="landing.similarLink">Similar projects</a>
+            <a href="./guide.html" data-guide-link="" data-i18n="nav.guide">User guide</a>
             <a href="https://github.com/josephbirkner/zeitberg" data-i18n="landing.sourceLink">Source ↗</a>
             <select id="landingLanguage" class="landing-language-select" data-i18n-aria-label="settings.language" aria-label="Language">
               <option value="auto" data-i18n="settings.languageAutomaticShort">Auto</option>
@@ -249,116 +261,142 @@
                 <strong data-i18n="landing.toGit">&gt; Git</strong>
               </h1>
               <p class="landing-lede" data-i18n="landing.lede">
-                zeitberg runs entirely in your browser. It reads and writes versioned files directly in a Git repository
+                zeitberg runs in your browser. It reads and writes versioned files directly in a Git repository
                 you choose; zeitberg.io stores no workspace data.
               </p>
             </div>
+          </section>
+          <section id="workspace" class="landing-reference" aria-labelledby="workspaceTitle">
             <div id="connect" class="landing-connect-card">
-              <a id="demoLink" class="landing-button landing-button-primary demo-link" href="./time?demo=1" data-i18n="demo.try">Try the playground!</a>
-              <form id="loginForm" class="landing-login" autocomplete="off">
-                <div class="landing-login-head">
-                  <strong class="landing-login-title" data-i18n="landing.openWorkspace">Open workspace</strong>
-                  <span id="landingProviderStatus" class="landing-live"><i aria-hidden="true"></i><span id="landingProviderStatusText">GitHub API</span></span>
-                </div>
-                <label>
-                  <span data-i18n="landing.provider">Provider</span>
-                  <select id="providerInput" name="provider">
-                    <option value="github">GitHub</option>
-                    <option value="gitlab">GitLab.com</option>
-                    <option value="codeberg">Codeberg</option>
-                    <option value="forgejo" data-i18n="landing.selfHostedForgejo">Forgejo (self-hosted)</option>
-                    <option value="custom" data-i18n="landing.autoDetect">Auto-detect self-hosted</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="landing.workspaceRepository">Workspace repository</span>
-                  <input
-                    id="repositoryInput"
-                    name="repository"
-                    type="url"
-                    inputmode="url"
-                    placeholder="https://github.com/you/zeitberg-data"
-                    spellcheck="false"
-                    required
-                  />
-                </label>
-                <label>
-                  <span data-i18n="landing.branch">Branch / ref</span>
-                  <input id="refInput" name="ref" type="text" spellcheck="false" required />
-                </label>
-                <label>
-                  <span data-i18n="landing.accessToken">Provider access token</span>
-                  <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" />
-                </label>
+              <div class="landing-section-heading"><h2 id="workspaceTitle" class="setup-heading"><span data-i18n="landing.connectTitle">Connect a Git Repo Workspace.</span></h2></div>
+              <div id="setupCards" class="setup-cards">
+                <a id="demoLink" class="setup-card setup-playground demo-link" href="./time?demo=1">
+                  <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#arrow_forward"></use></svg>
+                  <strong data-i18n="demo.try">Try the playground!</strong><small data-i18n="demo.cardNote">Explore with sample data</small>
+                </a>
+                <button type="button" class="setup-card" data-provider="github">
+                  <span class="setup-provider-icons" aria-hidden="true">
+                    <img class="setup-provider-logo setup-provider-logo-github" src="./assets/providers/github.svg" alt="" width="24" height="24" />
+                    <img class="setup-region" src="./assets/region-us.svg" alt="" width="32" height="24" />
+                  </span>
+                  <strong data-i18n="onboarding.github">Connect with GitHub</strong><small data-i18n="onboarding.githubNote">US · Authorize and choose</small>
+                </button>
+                <button type="button" class="setup-card" data-provider="codeberg">
+                  <span class="setup-provider-icons" aria-hidden="true">
+                    <img class="setup-provider-logo" src="./assets/providers/codeberg.svg" alt="" width="24" height="24" />
+                    <img class="setup-region" src="./assets/region-eu.svg" alt="" width="32" height="24" />
+                  </span>
+                  <strong data-i18n="onboarding.codeberg">Connect with Codeberg</strong><small data-i18n="onboarding.codebergNote">EU · Authorize and choose</small>
+                </button>
+                <button type="button" class="setup-card" data-provider="gitlab">
+                  <span class="setup-provider-icons" aria-hidden="true">
+                    <img class="setup-provider-logo" src="./assets/providers/gitlab.svg" alt="" width="24" height="24" />
+                    <img class="setup-region" src="./assets/region-us.svg" alt="" width="32" height="24" />
+                  </span>
+                  <strong data-i18n="onboarding.gitlab">Connect with GitLab</strong><small data-i18n="onboarding.gitlabNote">US · Authorize and choose</small>
+                </button>
+                <button id="setupScan" type="button" class="setup-card" data-setup-action="scan">
+                  <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#qr_code_scanner"></use></svg>
+                  <strong data-i18n="onboarding.scan">Scan QR code</strong><small data-i18n="onboarding.scanNote">Camera or image</small>
+                </button>
+                <button id="setupLink" type="button" class="setup-card" data-setup-action="link">
+                  <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#share"></use></svg>
+                  <strong data-i18n="onboarding.link">Enter workspace URL</strong><small data-i18n="onboarding.linkNote">Open an invitation or repository</small>
+                </button>
+                <button id="setupCustom" type="button" class="setup-card" data-setup-action="custom">
+                  <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#widgets"></use></svg>
+                  <strong data-i18n="onboarding.custom">Custom connection</strong><small data-i18n="onboarding.customNote">Host, branch, or access token</small>
+                </button>
+              </div>
+              <p class="setup-footnote" data-context-help data-help-anchor=".setup-heading" data-i18n="onboarding.regions">Flags identify the provider’s home region, not a data-residency guarantee.</p>
+              <pre id="loginError" class="error" hidden></pre>
 
-                <label class="landing-remember">
-                  <input id="rememberInput" name="remember" type="checkbox" />
-                  <span data-i18n="landing.rememberToken">Remember this token on this device</span>
-                </label>
-
-                <div class="landing-login-actions">
-                  <button class="landing-button landing-button-primary" type="submit" data-i18n="landing.openWorkspace">Open workspace</button>
-                  <button id="loginOAuthBtn" class="landing-button" type="button" data-i18n="landing.useOAuth">Use OAuth</button>
-                  <button id="createWorkspaceBtn" class="landing-button" type="button" data-i18n="landing.createWorkspace">Create workspace</button>
-                  <button id="openSharedWorkspaceBtn" class="landing-button" type="button" data-i18n="landing.openSharedWorkspace">Open shared link / QR</button>
-                  <button id="clearSavedBtn" class="landing-button" type="button" data-i18n="landing.clearConnection">Clear saved connection</button>
-                </div>
-                <p class="landing-security-note" data-i18n="landing.security">
-                  The token stays in browser storage and is sent only to the selected repository provider.
-                </p>
-                <pre id="loginError" class="error" hidden></pre>
-              </form>
             </div>
-            <figure class="landing-landscape">
-              <img
-                src="./assets/zeitberg-landscape.svg"
-                data-i18n-alt="landing.landscapeAlt"
-                alt="A clock sun setting behind layered mountain peaks beside a coin moon."
-              />
+          </section>
+
+          <section class="landing-pricing landing-split-section" aria-labelledby="pricingTitle">
+            <div class="landing-section-heading"><h2 id="pricingTitle"><span data-i18n="landing.pricing">Pricing</span></h2></div>
+            <div>
+              <p class="landing-price"><span data-i18n="landing.allFeatures">All features</span><strong>$0.00</strong><span data-i18n="landing.forever">Forever.</span></p>
+              <p class="landing-pricing-note" data-i18n="landing.pricingNote">zeitberg runs on GitHub Pages and Scaleway’s free serverless tier. Private repositories are available on free provider plans.</p>
+              <p class="landing-license"><span data-i18n="landing.openSourceCode">Open-source code</span><span aria-hidden="true"> · </span><a href="https://github.com/josephbirkner/zeitberg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache 2.0 ↗</a></p>
+              <div class="landing-support">
+                <span data-i18n="landing.starPrompt">Finding it useful?</span>
+                <a class="landing-star" href="https://github.com/josephbirkner/zeitberg" target="_blank" rel="noopener noreferrer">
+                  <svg class="landing-star-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.78 5.63 6.22.91-4.5 4.38 1.06 6.19L12 17.19l-5.56 2.92 1.06-6.19L3 9.54l6.22-.91Z" /></svg>
+                  <span data-i18n="landing.starAction">Star on GitHub</span>
+                </a>
+              </div>
+              <p data-context-help data-help-anchor="#pricingTitle"><span data-i18n="landing.providerLimits">Provider limits apply. Codeberg offers limited private storage for contributors to free/libre software.</span> <a href="https://docs.codeberg.org/getting-started/faq/#how-about-private-repositories" target="_blank" rel="noreferrer" data-i18n="landing.providerPolicy">Codeberg’s policy ↗</a></p>
+            </div>
+          </section>
+
+          <section id="architecture" class="landing-architecture-section" aria-labelledby="architectureTitle">
+            <div class="landing-section-heading"><h2 id="architectureTitle" data-i18n="landing.architectureTitle">Architecture.</h2></div>
+            <figure class="landing-architecture">
+              <svg viewBox="0 0 1080 456" role="img" aria-labelledby="architectureDiagramTitle architectureDiagramDesc">
+                <title id="architectureDiagramTitle" data-i18n="landing.architectureTitle">Architecture.</title>
+                <desc id="architectureDiagramDesc" data-i18n="landing.architectureDescription">Your browser loads the app from GitHub Pages, uses Scaleway for GitHub sign-in, and reads and saves workspace data directly with your Git provider. GitLab and Codeberg sign-in is direct.</desc>
+                <defs><marker id="architectureArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L7 4 L1 7" fill="none" stroke="context-stroke" stroke-width="1.5" /></marker></defs>
+                <rect class="architecture-browser" x="4" y="24" width="288" height="408" rx="8" />
+                <text class="architecture-title" x="28" y="72" data-i18n="landing.architectureBrowser">Your browser</text>
+                <text class="architecture-brand" x="28" y="116">zeitberg</text>
+                <text class="architecture-detail" x="28" y="152" data-i18n="landing.architectureBrowserNote">The app runs here.</text>
+                <path class="architecture-divider" d="M28 180 H268" />
+                <text class="architecture-detail" x="28" y="220" data-i18n="landing.time">Time</text>
+                <text class="architecture-detail" x="28" y="252" data-i18n="landing.tasks">Tasks</text>
+                <text class="architecture-detail" x="28" y="284" data-i18n="landing.expenses">Expenses</text>
+                <path class="architecture-edge" d="M292 88 H660" />
+                <text class="architecture-edge-label" x="476" y="72" data-i18n="landing.architectureLoad">Load app</text>
+                <path class="architecture-edge" d="M292 228 H660" />
+                <text class="architecture-edge-label" x="476" y="212" data-i18n="landing.architectureAuth">GitHub sign-in</text>
+                <path class="architecture-edge architecture-data-edge" d="M292 368 H660" />
+                <text class="architecture-edge-label" x="476" y="352" data-i18n="landing.architectureData">Read / save data</text>
+                <rect class="architecture-node" x="664" y="24" width="412" height="128" rx="8" />
+                <text class="architecture-title" x="688" y="64">GitHub Pages</text>
+                <text class="architecture-detail" x="688" y="100" data-i18n="landing.architectureStatic">Static host · HTML, CSS, JavaScript</text>
+                <rect class="architecture-node" x="664" y="164" width="412" height="128" rx="8" />
+                <text class="architecture-title" x="688" y="204">Scaleway · Paris</text>
+                <text class="architecture-detail" x="688" y="240" data-i18n="landing.architectureRelay">GitHub authentication relay</text>
+                <rect class="architecture-node architecture-repository" x="664" y="304" width="412" height="128" rx="8" />
+                <text class="architecture-title" x="688" y="344" data-i18n="landing.architectureRepository">Your private Git repository</text>
+                <text class="architecture-detail" x="688" y="380">GitHub · GitLab · Codeberg</text>
+                <text class="architecture-detail" x="688" y="408" data-i18n="landing.architectureFiles">Workspace files and their history</text>
+              </svg>
+              <div class="architecture-mobile">
+                <div class="architecture-mobile-browser"><strong data-i18n="landing.architectureBrowser">Your browser</strong><span>zeitberg</span></div>
+                <ul class="architecture-mobile-destinations">
+                  <li><small data-i18n="landing.architectureLoad">Load app</small><strong>GitHub Pages</strong><span data-i18n="landing.architectureStatic">Static host · HTML, CSS, JavaScript</span></li>
+                  <li><small data-i18n="landing.architectureAuth">GitHub sign-in</small><strong>Scaleway · Paris</strong><span data-i18n="landing.architectureRelay">GitHub authentication relay</span></li>
+                  <li><small data-i18n="landing.architectureData">Read / save data</small><strong data-i18n="landing.architectureRepository">Your private Git repository</strong><span>GitHub · GitLab · Codeberg</span></li>
+                </ul>
+              </div>
+              <figcaption data-i18n="landing.architectureDirect">GitLab and Codeberg sign-in also goes directly to the provider. Workspace data never passes through the auth relay.</figcaption>
             </figure>
           </section>
 
-          <figure id="architecture" class="landing-architecture">
-            <img
-              class="landing-architecture-dark"
-              src="./assets/architecture.svg"
-              data-i18n-alt="landing.architectureAlt"
-              alt="Static host loads zeitberg in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
-            />
-            <img
-              class="landing-architecture-light"
-              src="./assets/architecture-light.svg"
-              data-i18n-alt="landing.architectureAlt"
-              alt="Static host loads zeitberg in your browser; the browser talks directly to a Git provider API, which reads and writes your private workspace repository."
-            />
-            <figcaption data-i18n="landing.architectureCaption">Credentials remain in browser storage. Requests go directly to the selected Git provider.</figcaption>
-          </figure>
-
-          <section id="workspace" class="landing-reference" aria-labelledby="workspaceTitle">
+          <section id="not-zoidberg" class="landing-not-zoidberg" aria-labelledby="notZoidbergTitle">
             <div class="landing-section-heading">
-              <h2 id="workspaceTitle" data-i18n="landing.workspaceTitle">Create a private data repository.</h2>
+              <h2 id="notZoidbergTitle" data-i18n="landing.notZoidbergTitle">Not to be confused.</h2>
+              <p data-i18n="landing.notZoidbergBody">
+                zeitberg is independent personal-organization software. Dr. Zoidberg is a fictional crustacean physician.
+                The two are entirely unrelated.
+              </p>
             </div>
-            <div class="landing-reference-grid">
-              <article>
-                <h3>GitHub</h3>
-                <p><span data-i18n="landing.readOnlyPrefix">Read-only tokens can browse. Saving requires</span> <strong data-i18n="landing.contentsPermission">Contents: Read &amp; write</strong>.</p>
-                <ol>
-                  <li data-i18n="landing.createPrivateRepository">Create a private repository.</li>
-                  <li data-i18n="landing.copyTemplate">Copy the workspace-template files into it.</li>
-                  <li data-i18n="landing.enterConnection">Enter its URL, branch, and PAT above.</li>
-                </ol>
-                <a class="landing-text-link" href="https://github.com/josephbirkner/zeitberg#workspace-setup" data-i18n="landing.detailedSetup">Detailed setup ↗</a>
-              </article>
-              <article>
-                <h3>GitLab · Codeberg</h3>
-                <ul>
-                  <li data-i18n="landing.connectExisting">Connect an existing private repository with a provider token.</li>
-                  <li data-i18n="landing.createOther">Create and initialize a private GitLab.com or Codeberg workspace above.</li>
-                  <li data-i18n="landing.pkce">PKCE OAuth activates when this deployment has public client IDs.</li>
-                  <li data-i18n="landing.cors">CORS-enabled self-hosted GitLab and Forgejo servers are detected explicitly.</li>
-                </ul>
-              </article>
-            </div>
+            <figure class="landing-zoidberg-meme">
+              <img
+                src="./assets/why-not-zeitberg-2.png"
+                width="1073"
+                height="823"
+                loading="lazy"
+                data-i18n-alt="landing.notZoidbergAlt"
+                alt="Dr. Zoidberg asks: Want your time tracking, TODOs, and expenses in Git? Why not Zeitberg?"
+              />
+              <figcaption data-context-help>
+                <span data-i18n="landing.notZoidbergAttribution">Futurama and Dr. Zoidberg belong to their respective rights holders; zeitberg is not affiliated with them.</span>
+                <a href="https://imgflip.com/memegenerator/Futurama-Zoidberg" data-i18n="landing.notZoidbergSource">Meme template on Imgflip ↗</a>
+              </figcaption>
+            </figure>
           </section>
 
           <section id="similar" class="landing-similar" aria-labelledby="similarTitle">
@@ -382,30 +420,6 @@
             </div>
           </section>
 
-          <section id="not-zoidberg" class="landing-not-zoidberg" aria-labelledby="notZoidbergTitle">
-            <div class="landing-section-heading">
-              <h2 id="notZoidbergTitle" data-i18n="landing.notZoidbergTitle">Not to be confused.</h2>
-              <p data-i18n="landing.notZoidbergBody">
-                zeitberg is independent personal-organization software. Dr. Zoidberg is a fictional crustacean physician.
-                The two are entirely unrelated.
-              </p>
-            </div>
-            <figure class="landing-zoidberg-meme">
-              <img
-                src="./assets/why-not-zeitberg-2.png"
-                width="1073"
-                height="823"
-                loading="lazy"
-                data-i18n-alt="landing.notZoidbergAlt"
-                alt="Dr. Zoidberg asks: Want your time tracking, TODOs, and expenses in Git? Why not Zeitberg?"
-              />
-              <figcaption>
-                <span data-i18n="landing.notZoidbergAttribution">Futurama and Dr. Zoidberg belong to their respective rights holders; zeitberg is not affiliated with them.</span>
-                <a href="https://imgflip.com/memegenerator/Futurama-Zoidberg" data-i18n="landing.notZoidbergSource">Meme template on Imgflip ↗</a>
-              </figcaption>
-            </figure>
-          </section>
-
           <footer class="landing-footer">
             <div>
               <img src="./assets/zeitberg-mark.svg" alt="" />
@@ -421,6 +435,7 @@
           <div class="loading-title" data-i18n="loading.title">Loading workspace</div>
           <progress id="loadProgress" max="1" value="0"></progress>
           <div id="loadProgressLabel" class="loading-label muted"></div>
+          <div id="workspaceLoadingList" class="workspace-loading-list" role="list"></div>
           <pre id="loadingError" class="error" hidden></pre>
           <div id="loadingActions" class="loading-actions" hidden>
             <button id="loadingRetryBtn" class="btn" type="button" data-i18n="loading.retry">Retry</button>
@@ -514,7 +529,7 @@
         <div class="dialog-head">
           <div>
             <div id="interfaceDialogHeading" class="dialog-title" data-i18n="settings.title">Interface</div>
-            <div class="dialog-meta muted" data-i18n="settings.meta">Preferences are stored in this browser independently of your workspaces.</div>
+            <div class="dialog-meta muted" data-context-help data-i18n="settings.meta">Preferences are stored in this browser independently of your workspaces.</div>
           </div>
           <button id="interfaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
@@ -537,63 +552,95 @@
         <div class="dialog-head">
           <div>
             <div id="workspaceDialogHeading" class="dialog-title" data-i18n="workspace.title">Workspaces</div>
-            <div class="dialog-meta muted" data-i18n="workspace.meta">Connections are stored in this browser. Credentials remain separate from workspace metadata.</div>
+            <div class="dialog-meta muted" data-context-help data-i18n="workspace.meta">Each view chooses its workspace independently. Disconnect removes only this browser’s connection, never the repository.</div>
           </div>
           <button id="workspaceDialogCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
           </button>
         </div>
 
+        <pre id="workspaceError" class="error" role="alert" hidden></pre>
         <div id="workspaceList" class="workspace-list" role="list"></div>
 
 
         <div id="workspaceAddSection" class="workspace-add-section">
           <div class="workspace-section-heading">
-            <strong data-i18n="workspace.add">Add workspace</strong>
-            <span class="muted" data-i18n="workspace.addMeta">Connect another repository without disconnecting the current one.</span>
+            <strong data-i18n="landing.workspaceTitle">Connect to a private data repository.</strong>
           </div>
 
-          <form id="workspaceCapabilityForm" class="workspace-capability-import-form">
-            <label>
-              <span data-i18n="workspace.capabilityLink">Capability link</span>
-              <input id="workspaceCapabilityLink" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://zeitberg.io/expenses?…#zb-cap=…" required />
-            </label>
-            <div class="workspace-capability-import-actions">
-              <button id="workspaceScanCapabilityBtn" class="btn btn-secondary" type="button">
-                <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#qr_code_scanner"></use></svg>
-                <span data-i18n="workspace.scanQr">Scan QR</span>
-              </button>
-              <button id="workspaceOpenCapabilityBtn" class="btn" type="submit" data-i18n="workspace.openCapability">Open link</button>
-            </div>
-          </form>
+          <div id="workspaceSetupCards" class="setup-cards"></div>
+          <p class="setup-footnote" data-context-help data-help-anchor="#workspaceAddSection .workspace-section-heading" data-i18n="onboarding.regions">Flags identify the provider’s home region, not a data-residency guarantee.</p>
 
-          <section id="workspaceQrScanner" class="workspace-qr-scanner" aria-labelledby="workspaceQrTitle" hidden>
-            <div class="workspace-qr-heading">
-              <div>
-                <strong id="workspaceQrTitle" data-i18n="workspace.scanQrTitle">Scan capability QR</strong>
-                <p class="muted" data-i18n="workspace.scanQrHelp">Point the rear camera at a QR code containing a zeitberg capability link.</p>
-              </div>
-              <button id="workspaceQrCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="workspace.stopScanning" title="Stop scanning" data-i18n-aria-label="workspace.stopScanning" aria-label="Stop scanning">
-                <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
-              </button>
-            </div>
-            <div class="workspace-qr-preview">
-              <video id="workspaceQrVideo" muted playsinline></video>
-              <div class="workspace-qr-reticle" aria-hidden="true"></div>
-            </div>
-            <div class="workspace-qr-fallback">
-              <span class="muted" data-i18n="workspace.qrImageHelp">No camera? Choose a QR image from this device.</span>
-              <label class="btn btn-secondary workspace-qr-file-button">
-                <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#qr_code_scanner"></use></svg>
-                <span data-i18n="workspace.chooseQrImage">Choose QR image</span>
-                <input id="workspaceQrFile" type="file" accept="image/*" />
-              </label>
-            </div>
-          </section>
-          <pre id="workspaceCapabilityError" class="error" hidden></pre>
 
-          <div class="workspace-add-divider"><span data-i18n="workspace.connectManually">or connect manually</span></div>
 
+
+        </div>
+      </div>
+    </dialog>
+
+              <dialog id="customConnection" class="dialog connection-dialog" aria-labelledby="customConnectionTitle"><div class="dialog-card">
+              <div class="dialog-head"><div id="customConnectionTitle" class="dialog-title" data-i18n="onboarding.custom">Custom connection</div><button type="button" class="btn btn-secondary btn-icon" data-connection-close data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button></div>
+              <pre id="customConnectionError" class="error" role="alert" hidden></pre>
+              <form id="loginForm" class="landing-login" autocomplete="off">
+                <div class="landing-login-head">
+                  <strong class="landing-login-title" data-i18n="landing.openWorkspace">Open workspace</strong>
+                  <span id="landingProviderStatus" class="landing-live"><i aria-hidden="true"></i><span id="landingProviderStatusText">GitHub API</span></span>
+                </div>
+                <label>
+                  <span data-i18n="landing.provider">Provider</span>
+                  <select id="providerInput" name="provider">
+                    <option value="github">GitHub</option>
+                    <option value="gitlab">GitLab.com</option>
+                    <option value="codeberg">Codeberg</option>
+                    <option value="forgejo" data-i18n="landing.selfHostedForgejo">Forgejo (self-hosted)</option>
+                    <option value="custom" data-i18n="landing.autoDetect">Auto-detect self-hosted</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="landing.workspaceRepository">Workspace repository</span>
+                  <input
+                    id="repositoryInput"
+                    name="repository"
+                    type="url"
+                    inputmode="url"
+                    placeholder="https://github.com/you/zeitberg-data"
+                    spellcheck="false"
+                    required
+                  />
+                </label>
+                <label>
+                  <span data-i18n="landing.branch">Branch / ref</span>
+                  <input id="refInput" name="ref" type="text" spellcheck="false" required />
+                </label>
+                <label>
+                  <span data-i18n="landing.accessToken">Provider access token</span>
+                  <input id="tokenInput" name="token" type="password" spellcheck="false" autocomplete="current-password" />
+                </label>
+                <label class="landing-workspace-path">
+                  <span data-i18n="workspace.configPath">Workspace configuration path</span>
+                  <input id="loginWorkspacePath" value="zeitberg.json" spellcheck="false" required />
+                </label>
+
+                <label class="landing-remember">
+                  <input id="rememberInput" name="remember" type="checkbox" />
+                  <span data-i18n="landing.rememberToken">Remember this token on this device</span>
+                </label>
+
+                <div class="landing-login-actions">
+                  <button class="landing-button landing-button-primary" type="submit" data-i18n="landing.openWorkspace">Open workspace</button>
+                  <button id="loginOAuthBtn" class="landing-button" type="button" data-i18n="landing.useOAuth">Use OAuth</button>
+                  <button id="createWorkspaceBtn" class="landing-button" type="button" data-i18n="landing.createWorkspace">Create workspace</button>
+                  <button id="openSharedWorkspaceBtn" class="landing-button" type="button" data-i18n="landing.openSharedWorkspace">Open shared link / QR</button>
+                  <button id="clearSavedBtn" class="landing-button" type="button" data-i18n="landing.clearConnection">Clear saved connection</button>
+                </div>
+                <p class="landing-security-note" data-i18n="landing.security">
+                  The token stays in browser storage and is sent only to the selected repository provider.
+                </p>
+              </form>
+              </div></dialog>
+          <dialog id="workspaceManualConnection" class="dialog connection-dialog" aria-labelledby="workspaceManualTitle"><div class="dialog-card">
+          <div class="dialog-head"><div id="workspaceManualTitle" class="dialog-title" data-i18n="onboarding.custom">Custom connection</div><button type="button" class="btn btn-secondary btn-icon" data-connection-close data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button></div>
+          <pre id="workspaceManualError" class="error" role="alert" hidden></pre>
           <form id="workspaceAddForm" class="workspace-add-form">
           <div class="grid dialog-grid workspace-add-grid">
             <label>
@@ -627,25 +674,46 @@
               <span data-i18n="landing.rememberToken">Remember this token on this device</span>
             </label>
           </div>
-          <pre id="workspaceError" class="error" hidden></pre>
           <div class="row dialog-actions workspace-dialog-actions">
-            <button id="workspaceShareBtn" class="btn btn-secondary" type="button" data-i18n="workspace.shareActive">Share active workspace</button>
             <button id="workspaceCreateBtn" class="btn btn-secondary" type="button" data-i18n="workspace.createPrivate">Create private workspace</button>
             <span class="topbar-spacer"></span>
             <button id="workspaceOAuthBtn" class="btn btn-secondary" type="button" data-i18n="landing.useOAuth">Use OAuth</button>
             <button class="btn" type="submit" data-i18n="workspace.connect">Connect</button>
           </div>
           </form>
-        </div>
-      </div>
-    </dialog>
-
+          </div></dialog>
+<dialog id="workspaceQrDialog" class="dialog connection-dialog" aria-labelledby="workspaceQrTitle"><div class="dialog-card">
+          <section id="workspaceQrScanner" class="workspace-qr-scanner" aria-labelledby="workspaceQrTitle" hidden>
+            <div class="workspace-qr-heading">
+              <div>
+                <strong id="workspaceQrTitle" data-i18n="workspace.scanQrTitle">Scan capability QR</strong>
+                <p class="muted" data-i18n="workspace.scanQrHelp">Point the rear camera at a QR code containing a zeitberg capability link.</p>
+              </div>
+              <button id="workspaceQrCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="workspace.stopScanning" title="Stop scanning" data-i18n-aria-label="workspace.stopScanning" aria-label="Stop scanning">
+                <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
+              </button>
+            </div>
+            <div class="workspace-qr-preview">
+              <video id="workspaceQrVideo" muted playsinline></video>
+              <div class="workspace-qr-reticle" aria-hidden="true"></div>
+            </div>
+            <div class="workspace-qr-fallback">
+              <span class="muted" data-i18n="workspace.qrImageHelp">No camera? Choose a QR image from this device.</span>
+              <label class="btn btn-secondary workspace-qr-file-button">
+                <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#qr_code_scanner"></use></svg>
+                <span data-i18n="workspace.chooseQrImage">Choose QR image</span>
+                <input id="workspaceQrFile" type="file" accept="image/*" />
+              </label>
+            </div>
+          </section>
+          <pre id="workspaceCapabilityError" class="error" hidden></pre>
+</div></dialog>
     <dialog id="workspaceEditDialog" class="dialog workspace-dialog" aria-labelledby="workspaceEditHeading">
         <form id="workspaceConfigForm" class="dialog-card workspace-config-form">
           <div class="dialog-head">
             <div>
               <div id="workspaceEditHeading" class="dialog-title" data-i18n="workspace.edit">Edit workspace</div>
-              <div id="workspaceConfigMeta" class="dialog-meta muted" data-i18n="workspace.configureMeta">Choose the shared workspace identity and the component documents this repository provides.</div>
+              <div id="workspaceConfigMeta" class="dialog-meta muted" data-context-help data-i18n="workspace.configureMeta">Choose the shared workspace identity and the component documents this repository provides.</div>
             </div>
             <button id="workspaceEditCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
               <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
@@ -731,7 +799,7 @@
 
           <pre id="workspaceConfigError" class="error" role="alert" hidden></pre>
           <div class="row dialog-actions workspace-config-actions">
-            <span id="workspaceConfigSaveNote" class="muted" data-i18n="workspace.initializeMissing">Missing documents are initialized; existing data is kept unchanged.</span>
+            <span id="workspaceConfigSaveNote" class="muted" data-context-help data-i18n="workspace.initializeMissing">Missing documents are initialized; existing data is kept unchanged.</span>
             <span class="topbar-spacer"></span>
             <button id="workspaceEditCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
             <button id="workspaceConfigSaveBtn" class="btn" type="submit" data-i18n="workspace.saveConfiguration">Save configuration</button>
@@ -739,12 +807,86 @@
         </form>
     </dialog>
 
+    <dialog id="providerChooser" class="dialog provider-chooser" aria-labelledby="providerChooserTitle">
+      <div class="dialog-card">
+        <div class="dialog-head">
+          <div><div id="providerChooserTitle" class="dialog-title"></div><p id="providerChooserNote" class="muted" data-context-help data-i18n="onboarding.chooserNote">Choose an existing repository or start a new private workspace.</p></div>
+          <button id="providerChooserClose" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
+        </div>
+        <pre id="providerChooserError" class="error" role="alert" hidden></pre>
+        <div id="providerSession" class="provider-session" hidden>
+          <span id="providerSessionNote" class="muted" role="status"></span>
+          <button id="providerSwitchAccount" type="button" class="btn btn-secondary" data-i18n="onboarding.switchAccount">Use another account</button>
+        </div>
+        <form id="providerAuthorizeForm" class="provider-authorize">
+          <p id="providerAuthorizeNote" class="muted"></p>
+          <label id="providerTokenField"><span data-i18n="landing.accessToken">Provider access token</span><input id="providerToken" type="password" autocomplete="off" /></label>
+          <label class="provider-check"><input id="providerRemember" type="checkbox" /><span data-i18n="landing.rememberToken">Remember this token on this device</span></label>
+          <div class="dialog-actions"><button id="providerAuthorize" class="btn" type="submit" data-i18n="onboarding.authorize">Continue to provider</button></div>
+        </form>
+        <section id="githubDevicePanel" class="provider-authorize" hidden aria-live="polite">
+          <div id="githubDeviceControls" hidden>
+          <p data-i18n="onboarding.deviceInstructions">Open GitHub and enter this code. Only approve a code you requested here.</p>
+          <label><span data-i18n="onboarding.deviceCode">One-time code</span><input id="githubDeviceCode" class="github-device-code" readonly autocomplete="off" spellcheck="false" /></label>
+          <div class="provider-device-actions">
+            <button id="githubDeviceCopy" type="button" class="btn btn-secondary" data-i18n="onboarding.copyCode">Copy code</button>
+            <a id="githubDeviceOpen" class="btn" href="https://github.com/login/device" target="_blank" rel="noopener noreferrer" data-i18n="onboarding.openGitHub">Open GitHub</a>
+          </div>
+          </div>
+          <p id="githubDeviceStatus" class="muted" role="status"></p>
+        </section>
+        <section id="providerRepositories" hidden>
+          <div id="providerGitHubAccess" class="provider-access-note" hidden>
+            <p id="providerGitHubAccessNote"></p>
+            <a id="providerGitHubInstall" class="btn btn-secondary" href="https://github.com/apps/zeitberg-io/installations/new" target="_blank" rel="noopener noreferrer" data-i18n="onboarding.githubManageAccess">Grant or update repository access</a>
+          </div>
+          <div class="provider-picker-toolbar">
+            <input id="providerRepositorySearch" type="search" data-i18n-placeholder="onboarding.search" placeholder="Filter loaded repositories…" data-i18n-aria-label="onboarding.search" aria-label="Filter loaded repositories" />
+            <button id="providerNewWorkspace" class="btn" type="button" data-i18n="landing.createWorkspace">Create workspace</button>
+          </div>
+          <label class="provider-check"><input id="providerWorkspacesOnly" type="checkbox" checked /><span data-i18n="onboarding.onlyWorkspaces">Zeitberg workspaces only</span></label>
+          <p class="muted" data-context-help data-help-anchor=".provider-picker-toolbar" data-i18n="onboarding.scanScope">Checks zeitberg.json on each repository’s default branch. Use Custom connection for other branches or paths.</p>
+          <p id="providerScanStatus" role="status" class="muted"></p>
+          <div id="providerRepositoryList" class="provider-repository-list"></div>
+          <div class="dialog-actions provider-scan-actions">
+            <button id="providerRefresh" class="btn btn-secondary" type="button" data-i18n="onboarding.refresh">Refresh repositories</button>
+            <button id="providerLoadMore" class="btn btn-secondary" type="button" data-i18n="onboarding.retryScan" hidden>Retry scan</button>
+            <button id="providerAddSelected" class="btn" type="button" disabled data-i18n="onboarding.addSelected">Add selected workspaces</button>
+          </div>
+        </section>
+        <form id="providerCreateForm" class="provider-create" hidden>
+          <p id="providerCreateStatus" class="muted" role="status"></p>
+          <label><span data-i18n="workspace.repositoryName">Repository name</span><input id="providerRepositoryName" value="zeitberg-data" required pattern="[A-Za-z0-9_.\-]+" /></label>
+          <label><span data-i18n="workspace.workspaceName">Workspace name</span><input id="providerWorkspaceName" required /></label>
+          <label><span data-i18n="workspace.timezone">Timezone</span><input id="providerTimezone" value="Europe/Berlin" required /></label>
+          <fieldset class="provider-components">
+            <legend data-i18n="onboarding.apps">Apps to enable</legend>
+            <div class="provider-component-options">
+              <label class="provider-check"><input type="checkbox" name="component" value="time" checked /><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#calendar_view_week"></use></svg><span data-i18n="nav.week">Week view</span></label>
+              <label class="provider-check"><input type="checkbox" name="component" value="tasks" checked /><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#checklist"></use></svg><span data-i18n="workspace.todosComponent">Tasks</span></label>
+              <label class="provider-check"><input type="checkbox" name="component" value="expenses" checked /><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#payments"></use></svg><span data-i18n="workspace.expensesComponent">Expenses</span></label>
+            </div>
+          </fieldset>
+          <div class="dialog-actions"><button id="providerCreateBack" class="btn btn-secondary" type="button" data-i18n="onboarding.back">Back to repositories</button><button class="btn" type="submit" data-i18n="workspace.createTitle">Create private workspace</button></div>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="workspaceLinkDialog" class="dialog" aria-labelledby="workspaceLinkTitle">
+      <form id="workspaceLinkForm" class="dialog-card">
+        <div class="dialog-head"><div id="workspaceLinkTitle" class="dialog-title" data-i18n="onboarding.link">Enter workspace URL</div><button id="workspaceLinkClose" type="button" class="btn btn-secondary btn-icon" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button></div>
+        <label><span data-i18n="onboarding.linkNote">Open an invitation or repository</span><input id="workspaceLinkValue" type="url" required autocomplete="off" spellcheck="false" /></label>
+        <pre id="workspaceLinkError" class="error" role="alert" hidden></pre>
+        <div class="dialog-actions"><button class="btn" type="submit" data-i18n="landing.openWorkspace">Open workspace</button></div>
+      </form>
+    </dialog>
+
     <dialog id="workspaceCreateDialog" class="dialog workspace-create-dialog" aria-labelledby="workspaceCreateDialogHeading">
       <form id="workspaceCreateForm" class="dialog-card workspace-create-card">
         <div class="dialog-head">
           <div>
             <div id="workspaceCreateDialogHeading" class="dialog-title" data-i18n="workspace.createTitle">Create private workspace</div>
-            <div class="dialog-meta muted" data-i18n="workspace.createMeta">Create and initialize a repository without a zeitberg backend.</div>
+            <div class="dialog-meta muted" data-context-help data-i18n="workspace.createMeta">Create and initialize a repository without a zeitberg backend.</div>
           </div>
           <button id="workspaceCreateCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg>
@@ -804,21 +946,31 @@
 
         <section class="workspace-share-option">
           <div>
-            <strong data-i18n="workspace.locatorTitle">Locator link</strong>
-            <p class="muted" data-i18n="workspace.locatorHelp">Contains the repository, branch, workspace identity, sub-app, and current view. The recipient authenticates independently.</p>
+            <div class="workspace-share-label" id="workspaceLocatorLabel"><strong data-i18n="workspace.locatorTitle">Link</strong></div>
+            <p class="muted" data-i18n="workspace.locatorSummary">Recipients sign in themselves.</p>
+            <p data-context-help data-help-anchor="#workspaceLocatorLabel" data-i18n="workspace.locatorHelp">Opens this workspace and view. No access token is included.</p>
           </div>
-          <button id="workspaceCopyLocatorBtn" class="btn btn-secondary" type="button" data-i18n="workspace.copyLocator">Copy locator link</button>
+          <button id="workspaceCopyLocatorBtn" class="btn btn-secondary" type="button" data-i18n="workspace.copyLocator">Copy link</button>
         </section>
 
         <section class="workspace-share-option workspace-capability-option">
           <div>
-            <strong data-i18n="workspace.capabilityTitle">Capability link</strong>
-            <p class="workspace-capability-warning" data-i18n="workspace.capabilityWarning">Anyone holding this link receives the token's repository access. Treat it as a bearer credential.</p>
-            <p class="muted" data-i18n="workspace.capabilityHelp">Uses this browser's current workspace credential. Ensure it has only the access you intend to share.</p>
+            <div class="workspace-share-label" id="workspaceInviteLabel"><strong data-i18n="workspace.capabilityTitle">Invite</strong></div>
+            <p class="workspace-capability-warning" data-i18n="workspace.capabilityWarning">Anyone with this link can access the workspace.</p>
+            <p data-context-help data-help-anchor="#workspaceInviteLabel" data-i18n="workspace.capabilityHelp">Uses the saved repository token. Only share the access you intend to grant.</p>
           </div>
-          <button id="workspaceCopyCapabilityBtn" class="btn btn-danger" type="button" data-i18n="workspace.copyCapability">Copy capability link</button>
+          <button id="workspaceCopyCapabilityBtn" class="btn" type="button" data-i18n="workspace.copyCapability">Copy invite</button>
         </section>
-        <pre id="workspaceShareError" class="error" hidden></pre>
+        <div id="workspaceShareAccessNote" class="workspace-share-unavailable" hidden>
+          <p id="workspaceShareAccessReason"></p>
+          <a id="workspaceShareTokenHelp" href="./guide.html#workspaces" target="_blank" rel="noopener" data-i18n="workspace.tokenSetup">Set up a repository token</a>
+        </div>
+        <pre id="workspaceShareError" class="error" role="alert" hidden></pre>
+        <div class="workspace-share-footer" id="workspaceInvitationFooter">
+          <span data-i18n="workspace.invitationLifetime">Invites expire after 30 days</span>
+          <p id="workspaceInvitationHelp" data-context-help data-i18n="workspace.invitationHelp">Revoking an invitation stops new imports. To remove access already granted, revoke the repository token.</p>
+        </div>
+        <div id="workspaceInvitationReceipts" hidden></div>
       </div>
     </dialog>
 
@@ -830,8 +982,17 @@
         </div>
 
         <div id="entryMeta" class="dialog-meta muted"></div>
+        <div id="entryError" class="error" role="alert" hidden></div>
 
         <div class="grid dialog-grid">
+          <label>
+            <span data-i18n="entry.start">Start</span>
+            <input id="entryStart" type="datetime-local" step="60" required />
+          </label>
+          <label>
+            <span data-i18n="entry.end">End</span>
+            <input id="entryEnd" type="datetime-local" step="60" required />
+          </label>
           <label class="col-span-2">
             <span data-i18n="entry.description">Description</span>
             <textarea id="entryDesc" rows="4"></textarea>
@@ -844,13 +1005,13 @@
           </label>
         </div>
 
-        <div class="row dialog-actions">
+        <div class="row dialog-actions editor-actions">
+          <button id="entrySaveBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
+          <button id="entryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
           <button id="entryDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n-aria-label="common.delete" aria-label="Delete">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#delete"></use></svg>
             <span data-i18n="common.delete">Delete</span>
           </button>
-          <button id="entryCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
-          <button id="entrySaveBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
@@ -911,9 +1072,9 @@
           </div>
         </details>
 
-        <div class="row dialog-actions">
-          <button id="todoCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+        <div class="row dialog-actions editor-actions">
           <button class="btn" type="submit" data-i18n="common.save">Save</button>
+          <button id="todoCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </dialog>
@@ -1072,23 +1233,29 @@
           </div>
         </details>
 
-        <div class="row dialog-actions">
+        <div class="row dialog-actions editor-actions">
+          <button id="expenseSubmitBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
+          <button id="expenseCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="expenseSaveTemplateBtn" class="btn btn-secondary expense-save-template" type="button" data-i18n-title="expenses.saveTemplate" title="Save as template" data-i18n-aria-label="expenses.saveTemplate" aria-label="Save as template">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#repeat"></use></svg>
+            <span data-i18n="expenses.saveTemplate">Save as template</span>
+          </button>
           <button id="expenseDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n-aria-label="common.delete" aria-label="Delete">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#delete"></use></svg>
             <span data-i18n="common.delete">Delete</span>
           </button>
-          <button id="expenseCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
-          <button id="expenseSubmitBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
         </div>
       </form>
     </dialog>
+
+    <div id="expenseTemplatesMenu" class="expense-templates-menu" popover="auto" role="region" data-i18n-aria-label="expenses.templates" aria-label="Expense templates"></div>
 
     <dialog id="expenseSettlementDialog" class="dialog expense-settlement-dialog" aria-labelledby="expenseSettlementDialogHeading">
       <div class="dialog-card expense-settlement-card">
         <div class="dialog-head">
           <div>
             <div id="expenseSettlementDialogHeading" class="dialog-title" data-i18n="expenses.settle">Settle balances</div>
-            <div class="dialog-meta muted" data-i18n="expenses.settleMeta">Suggested payments are calculated independently per currency.</div>
+            <div class="dialog-meta muted" data-context-help data-i18n="expenses.settleMeta">Suggested payments are calculated independently per currency.</div>
           </div>
           <button id="expenseSettlementCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
@@ -1101,7 +1268,7 @@
         <div class="dialog-head">
           <div>
             <div id="expenseInventoryTitle" class="dialog-title" data-i18n="expenses.inventory">Participants and categories</div>
-            <div id="expenseInventoryMeta" class="dialog-meta muted" data-i18n="expenses.inventoryMeta">Stable keys remain unchanged when names are edited.</div>
+            <div id="expenseInventoryMeta" class="dialog-meta muted" data-context-help data-i18n="expenses.inventoryMeta">Stable keys remain unchanged when names are edited.</div>
           </div>
           <button id="expenseInventoryCloseBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-aria-label="common.close" aria-label="Close"><svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#close"></use></svg></button>
         </div>
@@ -1184,38 +1351,41 @@
     <script type="importmap">
       {
         "imports": {
-          "./appstate.js": "./appstate.js?v=1.3.1",
-          "./autosave.js": "./autosave.js?v=1.3.1",
-          "./build-info.js": "./build-info.js?v=1.3.1",
-          "./version.js": "./version.js?v=1.3.1",
-          "./demo.js": "./demo.js?v=1.3.1",
-          "./work-time.js": "./work-time.js?v=1.3.1",
-          "./work-time.view.js": "./work-time.view.js?v=1.3.1",
-          "./cache.js": "./cache.js?v=1.3.1",
-          "./capability-scanner.js": "./capability-scanner.js?v=1.3.1",
-          "./config.js": "./config.js?v=1.3.1",
-          "./datasource.js": "./datasource.js?v=1.3.1",
-          "./expense.view.js": "./expense.view.js?v=1.3.1",
-          "./locale.js": "./locale.js?v=1.3.1",
-          "./model.js": "./model.js?v=1.3.1",
-          "./oauth.js": "./oauth.js?v=1.3.1",
-          "./project.view.js": "./project.view.js?v=1.3.1",
-          "./routing.js": "./routing.js?v=1.3.1",
-          "./search.view.js": "./search.view.js?v=1.3.1",
-          "./shell.view.js": "./shell.view.js?v=1.3.1",
-          "./store.js": "./store.js?v=1.3.1",
-          "./todo.view.js": "./todo.view.js?v=1.3.1",
-          "./utils.js": "./utils.js?v=1.3.1",
-          "./week.view.js": "./week.view.js?v=1.3.1",
-          "./workspace.js": "./workspace.js?v=1.3.1",
-          "./workspace.loader.js": "./workspace.loader.js?v=1.3.1",
-          "./workspace.sessions.js": "./workspace.sessions.js?v=1.3.1",
-          "./workspace.todos.js": "./workspace.todos.js?v=1.3.1",
-          "./session-binding.js": "./session-binding.js?v=1.3.1",
-          "qr-scanner": "./vendor/qr-scanner/qr-scanner.min.js?v=1.3.1"
+          "./appstate.js": "./appstate.js?v=1.4.0",
+          "./autosave.js": "./autosave.js?v=1.4.0",
+          "./build-info.js": "./build-info.js?v=1.4.0",
+          "./version.js": "./version.js?v=1.4.0",
+          "./demo.js": "./demo.js?v=1.4.0",
+          "./work-time.js": "./work-time.js?v=1.4.0",
+          "./work-time.view.js": "./work-time.view.js?v=1.4.0",
+          "./cache.js": "./cache.js?v=1.4.0",
+          "./capability-scanner.js": "./capability-scanner.js?v=1.4.0",
+          "./config.js": "./config.js?v=1.4.0",
+          "./datasource.js": "./datasource.js?v=1.4.0",
+          "./expense.view.js": "./expense.view.js?v=1.4.0",
+          "./locale.js": "./locale.js?v=1.4.0",
+          "./model.js": "./model.js?v=1.4.0",
+          "./oauth.js": "./oauth.js?v=1.4.0",
+          "./onboarding.js": "./onboarding.js?v=1.4.0",
+          "./invitations.js": "./invitations.js?v=1.4.0",
+          "./repository.discovery.js": "./repository.discovery.js?v=1.4.0",
+          "./project.view.js": "./project.view.js?v=1.4.0",
+          "./routing.js": "./routing.js?v=1.4.0",
+          "./search.view.js": "./search.view.js?v=1.4.0",
+          "./shell.view.js": "./shell.view.js?v=1.4.0",
+          "./store.js": "./store.js?v=1.4.0",
+          "./todo.view.js": "./todo.view.js?v=1.4.0",
+          "./utils.js": "./utils.js?v=1.4.0",
+          "./week.view.js": "./week.view.js?v=1.4.0",
+          "./workspace.js": "./workspace.js?v=1.4.0",
+          "./workspace.loader.js": "./workspace.loader.js?v=1.4.0",
+          "./workspace.sessions.js": "./workspace.sessions.js?v=1.4.0",
+          "./workspace.todos.js": "./workspace.todos.js?v=1.4.0",
+          "./session-binding.js": "./session-binding.js?v=1.4.0",
+          "qr-scanner": "./vendor/qr-scanner/qr-scanner.min.js?v=1.4.0"
         }
       }
     </script>
-    <script type="module" src="./app.js?v=1.3.1"></script>
+    <script type="module" src="./app.js?v=1.4.0"></script>
   </body>
 </html>

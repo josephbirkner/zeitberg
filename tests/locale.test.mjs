@@ -10,6 +10,34 @@ import {
 } from "../locale.js";
 import { Recurrence } from "../model.js";
 
+test("guide links follow the app language and keep their chapter destinations", (context) => {
+    const previousDocument = globalThis.Document;
+    globalThis.Document = class {};
+    context.after(() => {
+        if (previousDocument === undefined) delete globalThis.Document;
+        else globalThis.Document = previousDocument;
+    });
+    const links = ["", "connect"].map((section) => ({
+        attributes: { "data-guide-link": section },
+        getAttribute(name) { return this.attributes[name]; },
+        setAttribute(name, value) { this.attributes[name] = value; },
+    }));
+    const root = {
+        ownerDocument: { documentElement: {} },
+        querySelectorAll: (selector) => selector === "a[data-guide-link]" ? links : [],
+    };
+    const locale = new LocaleService("de");
+    for (const language of ["de", "en", "de"]) {
+        locale.setLocale(language);
+        locale.applyDocument(root);
+        const filename = language === "de" ? "guide.de.html" : "guide.html";
+        assert.equal(links[0].attributes.href, `./${filename}`);
+        assert.equal(links[1].attributes.href, `./${filename}#connect`);
+        assert.equal(links[0].attributes.hreflang, language);
+        assert.equal(root.ownerDocument.documentElement.lang, language);
+    }
+});
+
 test("English and German dictionaries expose the same complete key set", () => {
     assert.deepEqual(Object.keys(DE_MESSAGES).sort(), Object.keys(EN_MESSAGES).sort());
     assert.equal(DE_MESSAGES["landing.time"], "Zeiterfassung");
@@ -37,7 +65,7 @@ test("all declarative document localization bindings resolve in the fallback dic
 });
 
 test("all statically referenced view messages and plural families exist", async () => {
-    const modules = ["app.js", "search.view.js", "todo.view.js", "week.view.js"];
+    const modules = ["app.js", "onboarding.js", "search.view.js", "todo.view.js", "week.view.js"];
     for (const moduleName of modules) {
         const source = await readFile(new URL(`../${moduleName}`, import.meta.url), "utf8");
         for (const match of source.matchAll(/\.t\(\s*"([^"]+)"/g)) {

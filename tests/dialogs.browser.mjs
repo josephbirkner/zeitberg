@@ -48,6 +48,7 @@ async function inspectDialog(page, selector, name) {
             overflow: card.scrollWidth > card.clientWidth + 1, clipped, crosses,
             named: Boolean(element.getAttribute("aria-label") || document.getElementById(element.getAttribute("aria-labelledby"))?.textContent.trim()),
             actionsVisible: !actions || actions.top >= 0 && actions.bottom <= innerHeight + 1,
+            minimumTarget: document.documentElement.classList.contains("ui-narrow") || matchMedia("(pointer: coarse)").matches ? 44 : 36,
         };
     });
     await page.screenshot({ path: path.join(output, `${name}.png`) });
@@ -63,7 +64,7 @@ async function inspectDialog(page, selector, name) {
         assert.ok(Math.abs(date.height - category.height) < 1, `${name}: matching date/category heights`);
     }
     for (const cross of metrics.crosses) {
-        assert.ok(cross.width >= 44 && cross.height >= 44, `${name}: close touch target`);
+        assert.ok(cross.width >= metrics.minimumTarget && cross.height >= metrics.minimumTarget, `${name}: close target`);
         assert.ok(Math.abs(cross.dx) < 1 && Math.abs(cross.dy) < 1, `${name}: centered cross`);
     }
 }
@@ -108,6 +109,15 @@ try {
             await open();
             const dialog = page.locator(selector);
             await inspectDialog(page, selector, `${name}-${width}`);
+            if (name === "preferences") {
+                const help = dialog.locator(".context-help-trigger");
+                await help.click();
+                await dialog.locator(".context-help-panel:popover-open").waitFor();
+                await page.keyboard.press("Escape");
+                assert.equal(await dialog.isVisible(), true, "Escape closes help, not its parent dialog");
+                assert.equal(await dialog.locator(":popover-open").count(), 0);
+                assert.equal(await help.evaluate((node) => node === document.activeElement), true);
+            }
             if (name === "task") {
                 assert.equal(await page.locator("#todoDetails").evaluate((node) => node.open), false);
                 await page.locator("#todoDetails summary").click();
@@ -119,6 +129,13 @@ try {
                 await page.locator("#expenseDescription").fill("A shared dinner");
                 await page.locator("#expensePayerSummaryBtn").click();
                 await page.locator("#expensePayer").selectOption("__custom__");
+                const popupColors = await page.locator("#expensePayer option").first().evaluate((option) => {
+                    const style = getComputedStyle(option);
+                    return { background: style.backgroundColor, color: style.color, scheme: style.colorScheme };
+                });
+                assert.equal(popupColors.scheme, theme);
+                assert.equal(popupColors.background, theme === "dark" ? "rgb(18, 20, 26)" : "rgb(255, 253, 248)");
+                assert.equal(popupColors.color, theme === "dark" ? "rgb(241, 240, 235)" : "rgb(39, 42, 59)");
                 await inspectDialog(page, selector, `expense-payers-${width}`);
                 await page.locator("#expensePayerPanelCloseBtn").click();
                 await page.locator("#expenseSplitSummaryBtn").click();
@@ -135,11 +152,70 @@ try {
                 assert.equal(await page.locator("#expenseAmount").evaluate((node) => node === document.activeElement), true);
                 await inspectDialog(page, selector, `expense-error-${width}`);
             }
+            if (name === "expense-edit") {
+                const before = await page.locator("#expenseSaveTemplateBtn").boundingBox();
+                const label = await page.locator("#expenseSaveTemplateBtn span").textContent();
+                await page.locator("#expenseSaveTemplateBtn").click();
+                assert.equal(await page.locator("#expenseDialogError").isVisible(), false);
+                const after = await page.locator("#expenseSaveTemplateBtn").boundingBox();
+                for (const dimension of ["x", "y", "width", "height"]) {
+                    assert.ok(Math.abs(after[dimension] - before[dimension]) < 1,
+                        `Template confirmation must preserve button ${dimension}`);
+                }
+                assert.equal(await page.locator("#expenseSaveTemplateBtn span").textContent(), label);
+            }
             await page.keyboard.press("Escape");
             await dialog.waitFor({ state: name === "date" ? "detached" : "hidden" });
+            if (name === "expense-edit") {
+                await page.locator("#expenseTemplatesBtn").click();
+                const picker = page.locator("#expenseTemplatesMenu");
+                await picker.waitFor({ state: "visible" });
+                const bounds = await picker.evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight,
+                        overflow: element.scrollWidth > element.clientWidth + 1 };
+                });
+                assert.ok(bounds.left >= 0 && bounds.right <= bounds.width + 1 && bounds.bottom <= bounds.height + 1,
+                    `Template picker fits viewport: ${JSON.stringify(bounds)}`);
+                assert.equal(bounds.overflow, false);
+                const iconOffset = await picker.locator("[data-delete-template-id]").first().evaluate((button) => {
+                    const b = button.getBoundingClientRect();
+                    const icon = button.querySelector("svg").getBoundingClientRect();
+                    return { x: icon.x + icon.width / 2 - b.x - b.width / 2,
+                        y: icon.y + icon.height / 2 - b.y - b.height / 2 };
+                });
+                assert.ok(Math.abs(iconOffset.x) < 1 && Math.abs(iconOffset.y) < 1, "Centered template delete icon");
+                await page.keyboard.press("Escape");
+            }
         }
         console.log(`Interactive dialogs passed at ${width}×${height}, ${language}, ${theme}`);
     }
+    // CSS zoom scales viewport units too. Both fullscreen dialogs must still cover
+    // the physical viewport, with their action row reachable at either end of the range.
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const steps of [-2, 4, 4]) {
+        const direction = steps < 0 ? "#appZoomOutBtn" : "#appZoomInBtn";
+        for (let count = 0; count < Math.abs(steps); count++) await page.locator(direction).click();
+        const zoom = await page.locator("#appZoomLabel").textContent();
+        for (const [view, add, selector] of [["#menuTodoBtn", "#todoAddBtn", "#todoDialog"], ["#menuExpenseBtn", "#expenseAddBtn", "#expenseDialog"]]) {
+            await page.locator(view).click();
+            await page.locator(add).click();
+            const bounds = await page.locator(selector).evaluate((dialog) => {
+                const rect = dialog.getBoundingClientRect();
+                const card = dialog.querySelector(".dialog-card").getBoundingClientRect();
+                const actions = dialog.querySelector(".dialog-actions").getBoundingClientRect();
+                return { left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+                    cardWidth: card.width, cardHeight: card.height, actionTop: actions.top, actionBottom: actions.bottom,
+                    viewportWidth: innerWidth, viewportHeight: innerHeight };
+            });
+            assert.ok(Math.abs(bounds.left) <= 1 && Math.abs(bounds.top) <= 1, `${selector} at ${zoom}: aligned to viewport`);
+            for (const key of ["width", "cardWidth"]) assert.ok(Math.abs(bounds[key] - bounds.viewportWidth) <= 1, `${selector} at ${zoom}: full width`);
+            for (const key of ["height", "cardHeight"]) assert.ok(Math.abs(bounds[key] - bounds.viewportHeight) <= 1, `${selector} at ${zoom}: full height`);
+            assert.ok(bounds.actionTop >= 0 && bounds.actionBottom <= bounds.viewportHeight + 1, `${selector} at ${zoom}: actions reachable`);
+            await page.keyboard.press("Escape");
+        }
+    }
+    await page.locator("#appZoomResetBtn").click();
     // Optional task values survive collapsing, editing and saving; invalid recurrence stays
     // in the dialog instead of becoming a toast behind its backdrop.
     await page.setViewportSize({ width: 390, height: 844 });

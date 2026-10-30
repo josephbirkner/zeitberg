@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'">
+    <meta name="description" content="Instructions for setting up zeitberg, managing workspaces, tracking time, recording tasks and expenses, and saving changes.">
+    <title>zeitberg · User guide</title>
+    <link rel="alternate" hreflang="en" href="./guide.html">
+    <link rel="alternate" hreflang="de" href="./guide.de.html">
+    <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles/common.css">
+    <link rel="stylesheet" href="./styles/guide.css">
+    <script src="./theme-init.js"></script>
+</head>
+<body class="guide">
+    <a class="skip-link" href="#main">Skip to guide</a>
+    <header class="guide-header">
+        <a href="./" class="guide-brand"><img src="./assets/zeitberg-mark.svg" alt="">zeitberg</a>
+        <div class="guide-header-actions">
+            <nav class="guide-language" aria-label="Guide language"><a href="./guide.html" lang="en" hreflang="en" aria-current="page">English</a><a href="./guide.de.html" lang="de" hreflang="de">Deutsch</a></nav>
+            <a href="./?demo=1">Open playground</a>
+        </div>
+    </header>
+    <div class="guide-layout">
+        <nav aria-label="Guide chapters">
+            <a href="#start">Start here</a><a href="#connect">Connect your repository</a><a href="#workspaces">Workspaces & sharing</a><a href="#time">Time & leave</a><a href="#tasks">Tasks</a><a href="#expenses">Expenses</a><a href="#save">Save & recover</a><a href="#privacy">Privacy & access</a>
+        </nav>
+        <main id="main">
+            <section id="start">
+                <p class="guide-eyebrow">VERSION 1.4</p>
+                <h1>User guide</h1>
+                <p class="guide-lead">Setup and instructions for workspaces, time tracking, tasks, and shared expenses.</p>
+                <p>You can test the app in the <a href="./?demo=1">playground</a> without connecting a repository. It uses fictional data. Edits disappear when you reload, including edits you have saved.</p>
+                <p class="guide-note">All screenshots below use the fictional playground. Your workspace names, projects, and enabled apps will differ.</p>
+                <div class="guide-starts" aria-label="Playground examples">
+                    <a href="./time?demo=1"><strong>Time tracking</strong><span>Open the example week and leave settings.</span></a>
+                    <a href="./todos?demo=1"><strong>Tasks</strong><span>Open the example task list.</span></a>
+                    <a href="./expenses?demo=1"><strong>Expenses</strong><span>Open the example expense ledger.</span></a>
+                </div>
+            </section>
+            <section id="connect">
+                <h2>01 · Connect your repository</h2>
+                <p>A workspace is a Git repository containing a <code>zeitberg.json</code> configuration and your data. You need an account with a supported Git hosting provider, not a separate zeitberg account.</p>
+                <ol>
+                    <li>On the welcome page, choose <strong>GitHub</strong>, <strong>Codeberg</strong>, or <strong>GitLab</strong>.</li>
+                    <li>Review the provider’s access request. GitLab and Codeberg return you to zeitberg after authorization. GitHub shows a device code: open GitHub, enter that code, and authorize.</li>
+                    <li>Select one or more workspaces from the repository list and choose <strong>Add selected workspaces</strong>. Already connected repositories are marked. Or choose <strong>Create workspace</strong>: enter a repository name, display name, timezone, and apps. New repositories are private.</li>
+                    <li>Wait for initialization to finish. zeitberg opens the app after every configured connection has finished loading or reported an error.</li>
+                </ol>
+                <details open><summary>GitHub: authorization and installation are two separate steps</summary>
+                    <p>Authorization identifies you. Installing <strong>zeitberg.io</strong> grants access to repositories. In the chooser, use <strong>Grant or update repository access</strong> to install the app on your account or adjust its selected repositories. Return to zeitberg to restart discovery; <strong>Refresh repositories</strong> is also available.</p>
+                    <p>Repository creation is for your personal account and needs the app’s <strong>Repository creation: Read and write</strong> permission. If prompted, approve the permission update in GitHub. Repository Administration is not required.</p>
+                </details>
+                <details><summary>I cannot find my workspace</summary>
+                    <p>The scan automatically checks all repository pages; you can filter and select results while it runs. GitHub lists repositories accessible through your app installations, not every repository visible to your account. Check installation access if one is missing.</p>
+                    <p>Turn off the workspace-only filter to include repositories without a root <code>zeitberg.json</code>. Add them and use Edit workspace to finish configuration. For another branch, a nested configuration path, self-hosting, or PAT access, use <strong>Custom connection</strong>.</p>
+                </details>
+                <details><summary>Creation failed or the name is already taken</summary>
+                    <p>Do not keep creating repositories under new names. A timeout can happen after the provider accepted the request. Check the repository list and refresh first. If initialization was interrupted, the new connection is retained: reconnect and finish setup through workspace settings. A repository that belongs to someone else cannot be adopted by changing its name in zeitberg.</p>
+                </details>
+                <p>GitLab and Codeberg OAuth access can be broader than a single repository. Review the consent screen; use a suitably scoped token under Custom connection if you prefer.</p>
+            </section>
+            <section id="workspaces">
+                <h2>02 · Workspaces and sharing</h2>
+                <p>Open <strong>Workspaces</strong> in the sidebar to add, edit, reconnect, share, or disconnect a connection. Each card shows its status, enabled apps, and loaded data counts. Startup waits for every connection to load or report an error, with progress shown per workspace. A failed connection does not prevent healthy ones from opening; an attention indicator remains in the sidebar and on its card.</p>
+                <p>Choose an app in the sidebar, then use the workspace title at the top to switch between workspaces that provide that app. Time-entry search searches across connected workspaces by default; use its detailed options to select specific workspaces.</p>
+                <p>Use <strong>Edit workspace</strong> to change its configuration and enabled apps. Connection settings such as repository and credentials belong to this browser; the shared workspace configuration belongs to the repository.</p>
+                <div class="guide-table"><table><caption>Workspace row actions</caption><thead><tr><th>Control</th><th>Use it to…</th></tr></thead><tbody>
+                    <tr><td>Edit (pen)</td><td>Change the workspace name, timezone, and enabled apps. Confirming saves the shared configuration.</td></tr>
+                    <tr><td>Share</td><td>Copy a locator or capability link for this workspace.</td></tr>
+                    <tr><td>Open</td><td>Open the connection in a compatible app without disconnecting others.</td></tr>
+                    <tr><td>Reconnect (circular arrow)</td><td>Renew this connection’s credentials.</td></tr>
+                    <tr><td>Disconnect (red bin)</td><td>Remove this browser’s connection, not the repository.</td></tr>
+                </tbody></table></div>
+                <p>Tasks also offers <strong>All workspaces</strong>. Each task retains its origin; editing it saves back to that repository. When creating a task in the combined view, choose its workspace together with its project/section. Time calendars and expense balances stay separate.</p>
+                <h3>Share a link or QR code</h3>
+                <p>A normal view URL records navigation without a credential. A <strong>capability link</strong> also includes access credentials and lets its recipient connect directly. Use the workspace’s Share action, or add a connection by pasting a workspace link or scanning its QR code.</p>
+                <p>When encrypted invitation sharing is configured, Share creates a short link that expires after 30 days. Encryption happens in your browser; the service stores ciphertext, and the key stays in the URL fragment. You can revoke invitations from the same browser’s Share dialog. Revocation prevents new imports, not access already imported. OAuth account grants cannot be shared this way; use a dedicated repository token.</p>
+                <p class="guide-note">Treat capability links like passwords. Anyone holding one can use the token’s permissions, potentially beyond this workspace. Share privately, use narrowly scoped credentials where possible, and revoke access at the provider when it is no longer needed. Disconnecting in zeitberg does not revoke a token.</p>
+            </section>
+            <section id="time">
+                <h2>03 · Time tracking and leave</h2>
+                <p>The week view shows entries in day columns. Select an entry to reveal edit, split, delete, and resize controls. Drag its body to move it; use a gap’s plus button to add time. On a narrow screen, the day window slides with the previous/next buttons.</p>
+                <figure><img src="./assets/guide/time-desktop.png" alt="Playground week timeline with project-colored entries and daily work and leave annotations" loading="lazy" width="1440" height="1000"><figcaption>Time entries, work expectations, and leave in the same week.</figcaption></figure>
+                <p>Double-click an entry or press Enter to edit its times, description, and project. The description receives focus; Shift + Tab takes you to the end time directly above it. Suggestions reuse recent descriptions. The project controls whether time is billable. Select the week/date control to jump to a date; timeline zoom changes the hour scale.</p>
+                <div class="guide-table"><table><caption>Keyboard essentials</caption><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+                    <tr><td>← / →, ↑ / ↓</td><td>Move between days and entries</td></tr><tr><td>A / S / Escape</td><td>Add / split / normal mode</td></tr><tr><td>Enter / D</td><td>Edit or confirm / delete selected entry</td></tr><tr><td>Shift + ↑ / ↓</td><td>Change duration in normal mode</td></tr><tr><td>Ctrl + ↑ / ↓</td><td>Move an entry in normal mode; jump gaps in add mode</td></tr><tr><td>Ctrl + Z / Ctrl + Y</td><td>Undo / redo</td></tr><tr><td>Ctrl + K / Ctrl + G</td><td>Search / week view</td></tr><tr><td>Ctrl + S</td><td>Save pending changes</td></tr>
+                </tbody></table></div>
+                <p>Entries do not overlap. Moving into earlier entries compresses them to a minimum of 15 minutes, then moves them; later entries are moved forward. An edit that would cross the week boundary is rejected.</p>
+                <h3>Work hours, PTO, and overtime</h3>
+                <p>Click the overtime summary or a day’s work/leave annotation. Configure employers and schedules, then mark half-days or whole days as work, PTO, sick leave, TOIL, or public holiday. Public holidays are marked manually. Only billable time counts toward work totals.</p>
+                <p>The current week’s delta includes requirements only through today. Vacation totals distinguish <strong>Taken</strong>, <strong>Planned</strong>, and <strong>Unplanned</strong> for the current calendar year, with carry-over. Expand the PTO overview to see the dates behind the balance.</p>
+                <figure><a href="./assets/guide/leave-desktop.png"><img src="./assets/guide/leave-desktop.png" alt="Playground work requirements dialog showing daily first-half and second-half leave selectors for a fictional employer" loading="lazy" width="1440" height="1000"></a><figcaption>Mark a morning or afternoon separately, or use the bulk controls for several days. Click the image to enlarge.</figcaption></figure>
+                <details><summary>Example: record half a day of vacation</summary><ol>
+                    <li>In the playground week view, open the overtime summary.</li>
+                    <li>Find the employer and a future day you want to change. Choose Vacation for one half of the day; leave the other half as Work.</li>
+                    <li>Add a comment if useful and confirm. Review the weekday annotation and the year’s Planned/Unplanned vacation balance.</li>
+                </ol><p>PTO consumes vacation entitlement. TOIL is time off against your accumulated work balance; do not mark it as PTO merely because you are away from work.</p></details>
+            </section>
+            <section id="tasks">
+                <h2>04 · Tasks</h2>
+                <p>Choose Tasks and press the green <strong>Add task</strong> button. The due date starts at Today; change or clear it as needed. Enter the task title first, then optionally choose a shared project/section, recurrence, or further details.</p>
+                <figure><img src="./assets/guide/todos-desktop.png" alt="Fictional tasks grouped by project, with toolbar search and current/open filters" loading="lazy" width="1440" height="1000"><figcaption>Search and filters stay in the shared toolbar.</figcaption></figure>
+                <p>The clock filter shows current and overdue tasks; the checkmark filter hides completed tasks. Search in the top bar searches tasks while this app is open. Recurring tasks retain their recurrence when completed. Completing, editing, and deleting tasks use the same save indicator as time and expenses.</p>
+                <figure class="guide-mobile"><a href="./assets/guide/task-dialog-mobile.png"><img src="./assets/guide/task-dialog-mobile.png" alt="Mobile Add task dialog with a train-ticket task title, today's due date, project selection and collapsed optional details" loading="lazy" width="390" height="844"></a><figcaption>The task editor. Expand the details section to enter a description, recurrence, or labels.</figcaption></figure>
+                <details><summary>Why did a task disappear?</summary><p>Check the clock and checkmark filters first. Future tasks are hidden by the current/overdue filter; completed tasks are hidden by the open-only filter. Also check the search text, project filter, and workspace title before assuming a task was deleted.</p></details>
+            </section>
+            <section id="expenses">
+                <h2>05 · Shared expenses</h2>
+                <p>For repeat purchases, choose <strong>Save as template</strong> at the bottom of an expense editor. Its description becomes the template name. The arrow beside <strong>Add expense</strong> lists this workspace's templates and their delete buttons. Choosing one opens a new expense with today's date and the saved details; review it before adding. Templates use normal saving and undo/redo, and never affect balances themselves.</p>
+                <p>Set up participants and categories in the expense workspace. Press the green <strong>Add expense</strong> button, enter an amount and description, and review the date and category.</p>
+                <p>The usual case is one payer and an equal split. Expand <strong>Paid by</strong> to change or combine payers. Expand <strong>Split</strong> to choose who participates or use exact amounts, percentages, or shares. Remainders help keep allocations balanced. Currency is editable where it is displayed; project assignment and notes live under More details.</p>
+                <figure class="guide-mobile"><img src="./assets/guide/expense-dialog-mobile.png" alt="Narrow-screen expense editor with amount, currency, category, payer and split controls" loading="lazy" width="390" height="844"><figcaption>The expense editor with payer and split settings collapsed.</figcaption></figure>
+                <p>Read the preview before saving: it explains this expense’s allocation. The expense overview shows the wider balances and settlement suggestions. Applying the dialog changes the local document; the shared save action persists it to the repository.</p>
+                <figure><a href="./assets/guide/expenses-desktop.png"><img src="./assets/guide/expenses-desktop.png" alt="Fictional shared expense ledger with participant balances, category filters, and the Add expense action" loading="lazy" width="1440" height="1000"></a><figcaption>The ledger keeps participant balances visible while you review individual payments.</figcaption></figure>
+                <details><summary>Example: split €42 equally between four people</summary><ol>
+                    <li>Open Add expense in the playground. Enter <strong>42 EUR</strong> and <strong>Picnic by the lake</strong>.</li>
+                    <li>Under Paid by, keep Alex as the only payer. Under Split, include all four participants equally.</li>
+                    <li>Review the preview: each share is €10.50; each of the other three participants owes Alex €10.50.</li>
+                    <li>To exclude someone, change the participants in Split. For unequal shares, switch to percentages, exact amounts, or shares and check the remainder.</li>
+                </ol><p>Settlement suggestions are a plan for clearing recorded balances, not a bank transfer. Record a settlement only when the real payment has happened.</p></details>
+            </section>
+            <section id="save">
+                <h2>06 · Saving and recovery</h2>
+                <p><strong>Save Changes</strong> means there are applied edits waiting to be written. The button’s subtle fill and countdown show the time until autosave: 60 seconds after your latest edit. Every edit, undo, or redo restarts that timer. Click the button or press Ctrl+S to save immediately.</p>
+                <p>Autosave and manual save use the same pipeline across connected workspaces. Edits made while a save is in flight remain pending for the next save. Fields in an open dialog are not applied until you confirm it. A successful hosted save creates a Git commit; a local development save writes files without committing.</p>
+                <details open><summary>A save failed. What now?</summary>
+                    <p>Keep the tab open and read the save error. Transient failures retry after a delay; expired credentials require reconnecting the affected workspace. Pending edits remain dirty. Do not assume that reloading, disconnecting, or clearing browser data is a safe fix.</p>
+                    <p>Unsaved edits are journaled in IndexedDB where available. This helps recover after a reload but is not a backup or a Git commit. If draft storage is unavailable, heed the warning and save before leaving. Playground edits are deliberately never persisted.</p>
+                </details>
+                <p>Git history is the durable record. Browser undo is for your current editing session; it is not a replacement for reviewing or restoring an older repository commit.</p>
+                <h3>Reading the save control</h3>
+                <ul><li><strong>Save Changes + countdown:</strong> edits are pending. The fill progresses toward autosave; another edit restarts it.</li><li><strong>Saving:</strong> a write is in flight. New edits remain pending and are not silently marked saved.</li><li><strong>Saved:</strong> there are no pending applied edits across the open workspace sessions.</li><li><strong>Error or reconnect:</strong> inspect the affected workspace. Do not close the page to dismiss the problem.</li></ul>
+            </section>
+            <section id="privacy">
+                <h2>07 · Data storage and access</h2>
+                <p>The public site serves application code. Your workspace data stays in repositories you choose and is read and written directly through the provider API. Repository privacy and credential permissions control access—not a hidden link to the app.</p>
+                <p>GitHub device authorization uses a restricted HTTPS relay hosted on Scaleway in Paris because GitHub’s token endpoints do not support direct browser access. It transiently handles device codes and tokens, not workspace documents. GitLab and Codeberg authorization uses direct browser PKCE.</p>
+                <p>Credentials are kept in session storage by default. Remember opts into longer-lived browser storage. Treat devices with saved credentials as trusted; scripts running on the app origin can access those credentials. Provider access can be revoked in the provider’s settings.</p>
+                <p>Loaded chunks and unsaved drafts may also be cached in this browser’s IndexedDB. A private repository does not make a shared browser private. Clearing site data removes local credentials, caches, and recovery drafts; it does not delete your repository or revoke provider access.</p>
+                <h3>Reading, zoom, and language</h3>
+                <p>Use the sidebar’s Interface settings for English/German and its theme control for light/dark mode. The sidebar zoom buttons scale the whole app; the week toolbar’s zoom changes only the timeline. On narrow screens, editors fill the available screen even when app zoom differs from 100%. Browser keyboard shortcuts may take precedence over app shortcuts; the visible controls remain available.</p>
+                <p>The <a href="https://github.com/josephbirkner/zeitberg#readme" rel="noreferrer">repository README</a> covers development, self-hosting, and data formats. Report problems in <a href="https://github.com/josephbirkner/zeitberg/issues" rel="noreferrer">GitHub Issues</a>. Do not include tokens or private workspace data.</p>
+            </section>
+            <footer><a href="./">Back to zeitberg</a> · Screenshots contain fictional data only.</footer>
+        </main>
+    </div>
+</body>
+</html>

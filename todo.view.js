@@ -1413,7 +1413,7 @@ export class TodoView {
             sectionKey: null,
         };
         this.populateProjectControls(defaultAssignment);
-        this.dueDateInput.value = "";
+        this.dueDateInput.value = this.timeContext.formatDate(new Date());
         this.dueTimeInput.value = "";
         this.recurrenceInput.value = "";
         this.prioritySelect.value = "1";

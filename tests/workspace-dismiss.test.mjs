@@ -91,7 +91,6 @@ function harness(t, { component = "time", panel = "main", setup = false, connect
             close() { this.open = false; this.closes++; },
         },
         workspaceSettingsBtn: element(),
-        workspaceCapabilityLinkInput: element(),
         workspaceCapabilityErrorEl: element(),
         workspaceErrorEl: element(),
         workspaceQrScannerEl: element(),
@@ -99,7 +98,7 @@ function harness(t, { component = "time", panel = "main", setup = false, connect
         workspaceQrVideoEl: element(),
     };
     const controller = new WorkspaceController({
-        runtime, elements, routeController, buildCurrentRoute,
+        runtime, elements, routeController, buildCurrentRoute, configService: { localStorage: null },
         state: { activeTab: component },
         weekView: { pendingEdits }, todoView: { pendingEdits }, expenseView: { pendingEdits },
         onError() {},
@@ -124,7 +123,6 @@ for (const [component, panel] of [["time", "main"], ["time", "search"], ["todos"
                 h.routeController.write({ ...h.buildCurrentRoute(), panel: "workspaces" }, "replace");
             }
             h.controller.openWorkspaceSettings(entry === "push" ? "push" : "none");
-            h.elements.workspaceCapabilityLinkInput.value = "transient bearer link";
             h.elements.workspaceQrFileInput.value = "qr.png";
             let scannerDestroyed = false;
             h.controller.capabilityScanner.scanner = { destroy() { scannerDestroyed = true; } };
@@ -136,7 +134,6 @@ for (const [component, panel] of [["time", "main"], ["time", "search"], ["todos"
             assert.equal(h.elements.workspaceDialog.closes, 1);
             assert.equal(h.runtime.activeGlobalPanel, null);
             assert.equal(h.elements.workspaceSettingsBtn.attributes.has("aria-current"), false);
-            assert.equal(h.elements.workspaceCapabilityLinkInput.value, "");
             assert.equal(h.elements.workspaceQrFileInput.value, "");
             assert.equal(h.elements.workspaceQrScannerEl.hidden, true);
             assert.equal(scannerDestroyed, true);

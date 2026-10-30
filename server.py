@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -86,7 +87,7 @@ def _is_application_route(path: str, app_entry_path: str) -> bool:
         relative = path.removeprefix(prefix)
     else:
         relative = path.lstrip("/")
-    return relative.rstrip("/") in {"time", "todos", "expenses"}
+    return relative.rstrip("/") in {"time", "todos", "expenses"} or bool(re.fullmatch(r"join/[a-f0-9]{32}", relative))
 
 
 class Handler(SimpleHTTPRequestHandler):

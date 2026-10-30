@@ -51,8 +51,9 @@ test("one release token versions every static runtime dependency", async () => {
 
 test("OAuth client ids are explicit public deployment configuration", async () => {
     const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-    assert.match(html, /name="zeitberg-oauth-gitlab-client-id" content=""/);
-    assert.match(html, /name="zeitberg-oauth-codeberg-client-id" content=""/);
+    assert.match(html, /name="zeitberg-oauth-gitlab-client-id" content="[a-f0-9]{64}"/);
+    assert.match(html, /name="zeitberg-oauth-codeberg-client-id" content="[a-f0-9-]{36}"/);
+    assert.match(html, /name="zeitberg-oauth-github-client-id" content="Iv23liNvkhSh2mYH0oPw"/);
     assert.match(html, /id="loginOAuthBtn"/);
     assert.match(html, /id="workspaceCreateOAuthBtn"/);
 });
@@ -93,8 +94,10 @@ test("capability recipients are not presented with a confirmation dialog", async
 test("capability sharing reuses browser credentials and QR decoding remains local", async () => {
     const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
     assert.doesNotMatch(html, /id="workspaceShareToken"/);
-    assert.match(html, /id="workspaceCapabilityForm"/);
-    assert.match(html, /id="workspaceScanCapabilityBtn"/);
+    assert.match(html, /id="workspaceLinkForm"/);
+    assert.match(html, /data-setup-action="scan"/);
+    assert.match(html, /id="workspaceQrFile"/);
+    assert.doesNotMatch(html, /id="workspaceCapabilityForm"|id="workspaceShareBtn"/);
     assert.match(html, /"qr-scanner": "\.\/vendor\/qr-scanner\/qr-scanner\.min\.js\?v=/);
     await Promise.all([
         access(new URL("../vendor/qr-scanner/qr-scanner.min.js", import.meta.url)),
