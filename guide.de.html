@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'none'">
+    <meta name="description" content="Anleitung zur Einrichtung von zeitberg, zu Arbeitsbereichen, Zeiterfassung, Aufgaben, gemeinsamen Ausgaben und zum Speichern von Änderungen.">
+    <title>zeitberg · Anleitung</title>
+    <link rel="alternate" hreflang="en" href="./guide.html">
+    <link rel="alternate" hreflang="de" href="./guide.de.html">
+    <link rel="icon" href="./assets/zeitberg-mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles/common.css">
+    <link rel="stylesheet" href="./styles/guide.css">
+    <script src="./theme-init.js"></script>
+</head>
+<body class="guide">
+    <a class="skip-link" href="#main">Zur Anleitung springen</a>
+    <header class="guide-header">
+        <a href="./" class="guide-brand"><img src="./assets/zeitberg-mark.svg" alt="">zeitberg</a>
+        <div class="guide-header-actions">
+            <nav class="guide-language" aria-label="Sprache der Anleitung"><a href="./guide.html" lang="en" hreflang="en">English</a><a href="./guide.de.html" lang="de" hreflang="de" aria-current="page">Deutsch</a></nav>
+            <a href="./?demo=1">Demo öffnen</a>
+        </div>
+    </header>
+    <div class="guide-layout">
+        <nav aria-label="Kapitel">
+            <a href="#start">Überblick</a><a href="#connect">Repository verbinden</a><a href="#workspaces">Arbeitsbereiche &amp; Freigaben</a><a href="#time">Zeiterfassung &amp; Abwesenheiten</a><a href="#tasks">Aufgaben</a><a href="#expenses">Ausgaben</a><a href="#save">Speichern &amp; Wiederherstellen</a><a href="#privacy">Datenspeicherung &amp; Zugriff</a>
+        </nav>
+        <main id="main">
+            <section id="start">
+                <p class="guide-eyebrow">VERSION 1.4</p>
+                <h1>Anleitung</h1>
+                <p class="guide-lead">Einrichtung und Bedienung von Arbeitsbereichen, Zeiterfassung, Aufgaben und gemeinsamen Ausgaben.</p>
+                <p>In der <a href="./?demo=1">Demo</a> kannst du die Anwendung ohne Repository-Verbindung ausprobieren. Die Daten sind erfunden. Beim Neuladen gehen alle Änderungen verloren, auch wenn du sie zuvor gespeichert hast.</p>
+                <p class="guide-note">Die Screenshots zeigen die Demo mit englischer Oberfläche. Die Anleitung verwendet die deutschen Bezeichnungen. Namen, Projekte und aktivierte Apps können in deinen Arbeitsbereichen abweichen.</p>
+                <div class="guide-starts" aria-label="Demo-Beispiele">
+                    <a href="./time?demo=1"><strong>Zeiterfassung</strong><span>Beispielwoche und Abwesenheiten öffnen.</span></a>
+                    <a href="./todos?demo=1"><strong>Aufgaben</strong><span>Beispiel-Aufgabenliste öffnen.</span></a>
+                    <a href="./expenses?demo=1"><strong>Ausgaben</strong><span>Beispiel-Ausgabenübersicht öffnen.</span></a>
+                </div>
+            </section>
+            <section id="connect">
+                <h2>01 · Repository verbinden</h2>
+                <p>Ein Arbeitsbereich ist ein Git-Repository mit deinen Daten und der Konfigurationsdatei <code>zeitberg.json</code>. Du benötigst ein Konto bei einem unterstützten Git-Anbieter, aber kein zusätzliches zeitberg-Konto.</p>
+                <ol>
+                    <li>Wähle auf der Startseite <strong>GitHub</strong>, <strong>Codeberg</strong> oder <strong>GitLab</strong>.</li>
+                    <li>Prüfe die angeforderten Zugriffsrechte beim Anbieter. GitLab und Codeberg leiten dich nach der Freigabe zu zeitberg zurück. Bei GitHub zeigt zeitberg einen Gerätecode an: Öffne GitHub, gib den Code ein und bestätige die Autorisierung.</li>
+                    <li>Wähle einen oder mehrere Arbeitsbereiche aus der Repository-Liste und füge die Auswahl hinzu. Bereits verbundene Repositories sind markiert. Oder wähle <strong>Arbeitsbereich erstellen</strong>: Gib Repository-Namen, Anzeigenamen und Zeitzone an und wähle die Apps. Neue Repositories werden privat angelegt.</li>
+                    <li>Warte, bis die Einrichtung abgeschlossen ist. Die Oberfläche erscheint, sobald alle konfigurierten Verbindungen geladen wurden oder einen Fehler gemeldet haben.</li>
+                </ol>
+                <details open><summary>GitHub: Autorisierung und Installation sind getrennte Schritte</summary>
+                    <p>Die Autorisierung stellt fest, mit welchem Konto du angemeldet bist. Die Installation von <strong>zeitberg.io</strong> legt fest, auf welche Repositories die App zugreifen darf. Über die Aktion zum Erteilen oder Aktualisieren des Repository-Zugriffs kannst du die App installieren oder die Repository-Auswahl ändern. Bei der Rückkehr zu zeitberg startet die Suche erneut. Du kannst die Repository-Liste auch manuell aktualisieren.</p>
+                    <p>Repositories werden im persönlichen Konto erstellt. Dafür benötigt die GitHub-App die Berechtigung <strong lang="en">Repository creation: Read and write</strong>. Falls GitHub eine Berechtigungsaktualisierung anzeigt, musst du diese bestätigen. Die Berechtigung <span lang="en">Repository Administration</span> ist dafür nicht erforderlich.</p>
+                </details>
+                <details><summary>Mein Arbeitsbereich wird nicht gefunden</summary>
+                    <p>Die Suche prüft automatisch alle Repository-Seiten. Währenddessen kannst du Ergebnisse filtern und auswählen. GitHub zeigt nur Repositories an, die über deine App-Installationen zugänglich sind, nicht alle Repositories deines Kontos. Prüfe bei fehlenden Einträgen die Repository-Auswahl der Installation.</p>
+                    <p>Deaktiviere den Filter für Arbeitsbereiche, um auch Repositories ohne <code>zeitberg.json</code> im Hauptverzeichnis anzuzeigen. Füge sie hinzu und vervollständige die Konfiguration über Arbeitsbereich bearbeiten. Für einen anderen Branch, einen abweichenden Konfigurationspfad, einen eigenen Server oder einen persönlichen Zugriffstoken (PAT) verwende die benutzerdefinierte Verbindung.</p>
+                </details>
+                <details><summary>Erstellung fehlgeschlagen oder Name bereits vergeben</summary>
+                    <p>Prüfe zunächst die Repository-Liste und aktualisiere sie, statt die Erstellung unter neuen Namen zu wiederholen. Ein Timeout kann auftreten, nachdem der Anbieter das Repository bereits angelegt hat. Wurde nur die Initialisierung unterbrochen, bleibt die Verbindung erhalten: Verbinde sie erneut und schließe die Einrichtung in den Arbeitsbereich-Einstellungen ab. Ein fremdes Repository lässt sich nicht durch Umbenennen in zeitberg übernehmen.</p>
+                </details>
+                <p>OAuth-Zugriff bei GitLab und Codeberg kann über ein einzelnes Repository hinausgehen. Prüfe die Freigabe beim Anbieter. Alternativ kannst du einen entsprechend eingeschränkten Token über die benutzerdefinierte Verbindung verwenden.</p>
+            </section>
+            <section id="workspaces">
+                <h2>02 · Arbeitsbereiche und Freigaben</h2>
+                <p>Öffne <strong>Arbeitsbereiche</strong> in der Seitenleiste, um Verbindungen hinzuzufügen, zu bearbeiten, erneut zu verbinden, zu teilen oder zu trennen. Jede Karte zeigt Status, aktivierte Apps und geladene Datenmengen. Beim Start wartet zeitberg, bis jede Verbindung geladen ist oder einen Fehler gemeldet hat; der Fortschritt erscheint pro Arbeitsbereich. Andere Arbeitsbereiche bleiben bei einem Fehler nutzbar. Ein Warnsymbol in der Seitenleiste und auf der betroffenen Karte weist auf das Problem hin.</p>
+                <p>Wähle eine App in der Seitenleiste. Über den Arbeitsbereich-Titel oben wechselst du zwischen den Arbeitsbereichen, die diese App anbieten. Die Zeiteintragssuche durchsucht standardmäßig alle verbundenen Arbeitsbereiche mit Zeiterfassung. In den erweiterten Suchoptionen kannst du die Auswahl einschränken.</p>
+                <p>Unter <strong>Arbeitsbereich bearbeiten</strong> änderst du die Konfiguration und aktivierten Apps. Verbindungseinstellungen wie Repository und Zugangsdaten gelten für diesen Browser. Die gemeinsame Arbeitsbereich-Konfiguration wird dagegen im Repository gespeichert.</p>
+                <div class="guide-table"><table><caption>Aktionen in der Arbeitsbereich-Liste</caption><thead><tr><th>Bedienelement</th><th>Funktion</th></tr></thead><tbody>
+                    <tr><td>Bearbeiten (Stift)</td><td>Namen, Zeitzone und aktivierte Apps ändern. Beim Bestätigen wird die gemeinsame Konfiguration gespeichert.</td></tr>
+                    <tr><td>Teilen</td><td>Einen Link ohne oder mit Zugangsdaten kopieren.</td></tr>
+                    <tr><td>Öffnen</td><td>Den Arbeitsbereich in einer passenden App öffnen, ohne andere Verbindungen zu trennen.</td></tr>
+                    <tr><td>Erneut verbinden (Kreispfeil)</td><td>Die Zugangsdaten dieser Verbindung erneuern.</td></tr>
+                    <tr><td>Trennen (roter Papierkorb)</td><td>Die Verbindung dieses Browsers entfernen, nicht das Repository.</td></tr>
+                </tbody></table></div>
+                <p>Die Aufgabenansicht bietet zusätzlich <strong>Alle Arbeitsbereiche</strong>. Jede Aufgabe behält ihren ursprünglichen Arbeitsbereich; Änderungen werden dort gespeichert. Beim Anlegen wählst du den Arbeitsbereich zusammen mit Projekt und Abschnitt aus. Zeitkalender und Ausgabensalden bleiben pro Arbeitsbereich getrennt.</p>
+                <h3>Link oder QR-Code teilen</h3>
+                <p>Eine normale Ansichts-URL enthält den Navigationszustand, aber keine Zugangsdaten. Ein <strong>Capability-Link</strong> enthält zusätzlich Zugangsdaten und ermöglicht eine direkte Verbindung. Erstelle ihn über die Teilen-Aktion des Arbeitsbereichs. Eine neue Verbindung kannst du auch durch Einfügen eines Arbeitsbereich-Links oder Scannen seines QR-Codes hinzufügen.</p>
+                <p>Wenn der Einladungsdienst eingerichtet ist, erstellt Teilen einen kurzen Link, der nach 30 Tagen abläuft. Dein Browser verschlüsselt die Einladung; der Dienst speichert nur verschlüsselte Daten, der Schlüssel bleibt im URL-Fragment. Im Teilen-Dialog desselben Browsers kannst du Einladungen widerrufen. Das verhindert neue Importe, entzieht aber keinen bereits importierten Zugriff. OAuth-Kontoberechtigungen lassen sich so nicht teilen; verwende einen eigenen Repository-Token.</p>
+                <p class="guide-note">Behandle Capability-Links wie Passwörter. Wer den Link besitzt, kann die Rechte des Tokens nutzen, unter Umständen auch außerhalb dieses Arbeitsbereichs. Teile solche Links nur vertraulich, verwende möglichst eingeschränkte Tokens und widerrufe den Zugriff beim Anbieter, wenn er nicht mehr benötigt wird. Das Trennen einer Verbindung in zeitberg widerruft den Token nicht.</p>
+            </section>
+            <section id="time">
+                <h2>03 · Zeiterfassung und Abwesenheiten</h2>
+                <p>Die Wochenansicht zeigt Zeiteinträge in Tagesspalten. Wähle einen Eintrag aus, um ihn zu bearbeiten, zu teilen, zu löschen oder seine Dauer zu ändern. Ziehe den Inhalt eines Eintrags, um ihn zu verschieben. Über das Plus in einer Lücke legst du einen Eintrag an. Auf schmalen Bildschirmen verschieben die Vor-/Zurück-Schaltflächen den sichtbaren Tagesausschnitt.</p>
+                <figure><img src="./assets/guide/time-desktop.png" alt="Demo-Wochenansicht mit nach Projekt eingefärbten Zeiteinträgen und täglichen Arbeits- und Abwesenheitsangaben" loading="lazy" width="1440" height="1000"><figcaption>Zeiteinträge und Abwesenheiten in der Wochenansicht.</figcaption></figure>
+                <p>Ein Doppelklick oder die Eingabetaste öffnet Zeiten, Beschreibung und Projekt des ausgewählten Eintrags. Die Beschreibung erhält den Fokus; mit Umschalt + Tab erreichst du die Endzeit direkt darüber. Die Vorschläge stammen aus kürzlich verwendeten Beschreibungen. Das Projekt legt fest, ob die Zeit abrechenbar ist. Über die Wochen-/Datumsauswahl springst du zu einem Datum. Der Zeitachsen-Zoom ändert den Stundenmaßstab.</p>
+                <div class="guide-table"><table><caption>Wichtige Tastenkürzel</caption><thead><tr><th>Taste</th><th>Aktion</th></tr></thead><tbody>
+                    <tr><td>← / →, ↑ / ↓</td><td>Zwischen Tagen und Einträgen wechseln</td></tr><tr><td>A / S / Escape</td><td>Hinzufügen / Teilen / Normalmodus</td></tr><tr><td>Eingabe / D</td><td>Bearbeiten oder bestätigen / ausgewählten Eintrag löschen</td></tr><tr><td>Umschalt + ↑ / ↓</td><td>Dauer im Normalmodus ändern</td></tr><tr><td>Strg + ↑ / ↓</td><td>Eintrag im Normalmodus verschieben; im Hinzufügen-Modus Lücken überspringen</td></tr><tr><td>Strg + Z / Strg + Y</td><td>Rückgängig / wiederholen</td></tr><tr><td>Strg + K / Strg + G</td><td>Suche / Wochenansicht</td></tr><tr><td>Strg + S</td><td>Ausstehende Änderungen speichern</td></tr>
+                </tbody></table></div>
+                <p>Einträge dürfen sich nicht überlappen. Bei einer Kollision mit früheren Einträgen werden diese zunächst auf mindestens 15 Minuten verkürzt und anschließend verschoben. Spätere Einträge werden nach hinten verschoben. Änderungen über die Wochengrenze hinaus werden abgelehnt.</p>
+                <h3>Arbeitszeit, Urlaub und Überstunden</h3>
+                <p>Klicke auf die Überstundenanzeige oder die Arbeits-/Abwesenheitsangabe eines Tages. Lege Arbeitgeber und Arbeitszeitmodelle fest und markiere halbe oder ganze Tage als Arbeit, Urlaub, Krankheit, Feiertag oder Gleitzeit. Feiertage werden manuell eingetragen. Nur abrechenbare Zeiteinträge zählen zur geleisteten Arbeitszeit.</p>
+                <p>Die Differenz der laufenden Woche berücksichtigt die Sollzeit nur bis einschließlich heute. Der Urlaubssaldo unterscheidet für das aktuelle Kalenderjahr zwischen <strong>Genommen</strong>, <strong>Geplant</strong> und <strong>Ungeplant</strong> und berücksichtigt den Übertrag. In der ausklappbaren Urlaubsübersicht stehen die einzelnen Tage.</p>
+                <figure><a href="./assets/guide/leave-desktop.png"><img src="./assets/guide/leave-desktop.png" alt="Demo-Dialog zur Sollzeit mit getrennten Abwesenheitsfeldern für beide Tageshälften eines fiktiven Arbeitgebers" loading="lazy" width="1440" height="1000"></a><figcaption>Beide Tageshälften lassen sich getrennt bearbeiten. Die Sammelbearbeitung gilt für ausgewählte Tage. Zum Vergrößern auf das Bild klicken.</figcaption></figure>
+                <details><summary>Beispiel: einen halben Urlaubstag eintragen</summary><ol>
+                    <li>Öffne in der Demo-Wochenansicht die Überstundenanzeige.</li>
+                    <li>Wähle den Arbeitgeber und einen zukünftigen Tag. Setze eine Tageshälfte auf Urlaub und lasse die andere auf Arbeit.</li>
+                    <li>Ergänze bei Bedarf einen Kommentar und bestätige. Prüfe anschließend die Tagesangabe sowie geplanten und unverplanten Urlaub im Jahressaldo.</li>
+                </ol><p>Urlaub verbraucht Urlaubsanspruch. Gleitzeit verrechnet nicht gearbeitete Stunden mit dem Arbeitszeitkonto; sie verbraucht keinen Urlaub. Die Sollzeit bleibt bei Gleitzeit unverändert.</p></details>
+            </section>
+            <section id="tasks">
+                <h2>04 · Aufgaben</h2>
+                <p>Öffne die Aufgabenansicht und wähle die grüne Schaltfläche <strong>Aufgabe hinzufügen</strong>. Das Fälligkeitsdatum ist mit Heute vorbelegt; du kannst es ändern oder leeren. Gib den Titel ein und wähle bei Bedarf Projekt und Abschnitt, Wiederholung oder weitere Angaben.</p>
+                <figure><img src="./assets/guide/todos-desktop.png" alt="Fiktive Aufgaben nach Projekt gruppiert, mit Suche und Filtern für fällige und offene Aufgaben in der Werkzeugleiste" loading="lazy" width="1440" height="1000"><figcaption>Suche und Filter befinden sich in der oberen Werkzeugleiste.</figcaption></figure>
+                <p>Der Uhr-Filter zeigt aktuelle und überfällige Aufgaben. Der Haken-Filter blendet erledigte Aufgaben aus. Die Suche oben durchsucht in dieser Ansicht Aufgaben. Bei wiederkehrenden Aufgaben bleibt die Wiederholungsregel nach dem Erledigen erhalten. Erledigen, Bearbeiten und Löschen verwenden dieselbe Speicheranzeige wie Zeiten und Ausgaben.</p>
+                <figure class="guide-mobile"><a href="./assets/guide/task-dialog-mobile.png"><img src="./assets/guide/task-dialog-mobile.png" alt="Mobiler Aufgabeneditor mit Titel für eine Bahnfahrt, heutigem Fälligkeitsdatum, Projektauswahl und eingeklappten Zusatzangaben" loading="lazy" width="390" height="844"></a><figcaption>Klappe die Zusatzangaben auf, um Beschreibung, Wiederholung oder Labels einzugeben.</figcaption></figure>
+                <details><summary>Warum ist eine Aufgabe nicht mehr sichtbar?</summary><p>Prüfe zuerst Uhr- und Haken-Filter. Der Filter für aktuelle Aufgaben blendet zukünftige Aufgaben aus; der Filter für offene Aufgaben blendet erledigte aus. Prüfe außerdem Suchtext, Projektfilter und ausgewählten Arbeitsbereich, bevor du von einer gelöschten Aufgabe ausgehst.</p></details>
+            </section>
+            <section id="expenses">
+                <h2>05 · Gemeinsame Ausgaben</h2>
+                <p>Lege im Ausgaben-Arbeitsbereich Beteiligte und Kategorien an. Wähle die grüne Schaltfläche <strong>Ausgabe hinzufügen</strong>, gib Betrag und Beschreibung ein und prüfe Datum und Kategorie.</p>
+                <p>Standardmäßig zahlt eine Person, und der Betrag wird gleichmäßig aufgeteilt. Unter <strong>Bezahlt von</strong> änderst du die zahlende Person oder erfasst mehrere Zahlende. Unter <strong>Aufteilung</strong> wählst du Beteiligte, feste Beträge, Prozente oder Anteile. Restbeträge helfen, die Aufteilung auszugleichen. Die Währung lässt sich direkt neben dem Betrag ändern. Projektzuordnung und Notizen stehen unter Weitere Angaben.</p>
+                <figure class="guide-mobile"><img src="./assets/guide/expense-dialog-mobile.png" alt="Mobiler Ausgabeneditor mit Betrag, Währung, Kategorie sowie Einstellungen zu Zahlenden und Aufteilung" loading="lazy" width="390" height="844"><figcaption>Der Ausgabeneditor mit eingeklappten Einstellungen zu Zahlenden und Aufteilung.</figcaption></figure>
+                <p>Prüfe vor dem Bestätigen die Vorschau: Sie erklärt die Verteilung dieser Ausgabe. Die Übersicht zeigt die Gesamtsalden und Ausgleichsvorschläge. Das Bestätigen im Dialog ändert zunächst das lokale Dokument; die gemeinsame Speicherfunktion schreibt es anschließend ins Repository.</p>
+                <figure><a href="./assets/guide/expenses-desktop.png"><img src="./assets/guide/expenses-desktop.png" alt="Fiktive Ausgabenübersicht mit Salden der Beteiligten, Kategoriefiltern und Schaltfläche zum Hinzufügen einer Ausgabe" loading="lazy" width="1440" height="1000"></a><figcaption>Die Salden der Beteiligten stehen über der Ausgabenliste.</figcaption></figure>
+                <details><summary>Beispiel: 42 € gleichmäßig auf vier Personen aufteilen</summary><ol>
+                    <li>Öffne in der Demo Ausgabe hinzufügen. Gib <strong>42 EUR</strong> und als Beschreibung <strong>Picknick am See</strong> ein.</li>
+                    <li>Lasse Alex unter Bezahlt von als einzige zahlende Person stehen. Beziehe unter Aufteilung alle vier Personen gleichmäßig ein.</li>
+                    <li>Prüfe die Vorschau: Der Anteil pro Person beträgt 10,50 €. Die drei anderen Beteiligten schulden Alex jeweils 10,50 €.</li>
+                    <li>Um eine Person auszuschließen, ändere die Beteiligten unter Aufteilung. Für eine ungleiche Verteilung wähle Prozente, feste Beträge oder Anteile und prüfe den Rest.</li>
+                </ol><p>Ausgleichsvorschläge zeigen, wie sich die erfassten Salden begleichen lassen. Sie lösen keine Banküberweisung aus. Erfasse einen Ausgleich erst, wenn die tatsächliche Zahlung erfolgt ist.</p></details>
+            </section>
+            <section id="save">
+                <h2>06 · Speichern und Wiederherstellen</h2>
+                <p><strong>Änderungen speichern</strong> bedeutet, dass übernommene Änderungen noch nicht ins Repository geschrieben wurden. Füllstand und Countdown der Schaltfläche zeigen die Zeit bis zum automatischen Speichern: 60 Sekunden nach der letzten Änderung. Jede Änderung, auch Rückgängig oder Wiederholen, startet den Countdown neu. Zum sofortigen Speichern klicke die Schaltfläche oder drücke Strg+S.</p>
+                <p>Automatisches und manuelles Speichern verwenden denselben Ablauf für alle verbundenen Arbeitsbereiche. Änderungen während eines laufenden Speichervorgangs bleiben für den nächsten Vorgang offen. Eingaben in einem Dialog werden erst beim Bestätigen übernommen. Beim Speichern zu einem Git-Anbieter entsteht ein Commit. Im lokalen Entwicklungsbetrieb werden nur Dateien geschrieben, ohne Commit.</p>
+                <details open><summary>Speichern fehlgeschlagen – was tun?</summary>
+                    <p>Lasse den Tab offen und lies die Fehlermeldung. Bei vorübergehenden Fehlern wird das Speichern später erneut versucht. Bei abgelaufenen Zugangsdaten musst du den betroffenen Arbeitsbereich erneut verbinden. Ausstehende Änderungen bleiben als ungespeichert markiert. Neuladen, Trennen oder Löschen von Browserdaten kann diese Änderungen gefährden.</p>
+                    <p>Ungespeicherte Änderungen werden, soweit verfügbar, in IndexedDB zwischengespeichert. Das kann nach einem Neuladen bei der Wiederherstellung helfen, ist aber kein Backup und kein Git-Commit. Wird vor fehlendem Entwurfsspeicher gewarnt, speichere vor dem Verlassen der Seite. Demo-Änderungen werden bewusst nicht dauerhaft gespeichert.</p>
+                </details>
+                <p>Die Git-Historie enthält den dauerhaft gespeicherten Stand. Rückgängig im Browser gilt für die aktuelle Bearbeitungssitzung und ersetzt nicht das Prüfen oder Wiederherstellen älterer Repository-Commits.</p>
+                <h3>Speicheranzeige</h3>
+                <ul><li><strong>Änderungen speichern mit Countdown:</strong> Änderungen stehen aus. Eine weitere Änderung startet den Countdown neu.</li><li><strong>Speichern läuft:</strong> Daten werden geschrieben. Neuere Änderungen bleiben offen und werden nicht vorzeitig als gespeichert markiert.</li><li><strong>Gespeichert:</strong> In den geöffneten Arbeitsbereichen stehen keine übernommenen Änderungen mehr aus.</li><li><strong>Fehler oder erneute Verbindung nötig:</strong> Prüfe den betroffenen Arbeitsbereich. Schließe die Seite nicht, um die Meldung zu beseitigen.</li></ul>
+            </section>
+            <section id="privacy">
+                <h2>07 · Datenspeicherung und Zugriff</h2>
+                <p>Die öffentliche Website liefert den Anwendungscode aus. Deine Arbeitsbereich-Daten liegen in den gewählten Repositories und werden direkt über die API des Anbieters gelesen und geschrieben. Repository-Sichtbarkeit und Zugriffsrechte bestimmen, wer die Daten sehen kann, nicht ein unbekannter Link zur Anwendung.</p>
+                <p>Die GitHub-Geräteautorisierung verwendet einen eingeschränkten HTTPS-Vermittlungsdienst bei Scaleway in Paris, da GitHubs Token-Endpunkte keinen direkten Browserzugriff erlauben. Dieser verarbeitet Gerätecodes und Tokens vorübergehend, aber keine Arbeitsbereich-Dokumente. GitLab und Codeberg verwenden die direkte Browserautorisierung mit PKCE.</p>
+                <p>Zugangsdaten liegen standardmäßig im Sitzungsspeicher des Browsers. Mit der Option zum Merken werden sie längerfristig gespeichert. Verwende gespeicherte Zugangsdaten nur auf vertrauenswürdigen Geräten; Skripte auf derselben App-Origin können darauf zugreifen. Den Anbieterzugriff kannst du in dessen Einstellungen widerrufen.</p>
+                <p>Geladene Daten und ungespeicherte Entwürfe können außerdem in IndexedDB liegen. Ein privates Repository schützt nicht vor anderen Personen, die denselben Browser verwenden. Das Löschen der Website-Daten entfernt lokale Zugangsdaten, Zwischenspeicher und Wiederherstellungsentwürfe. Es löscht weder das Repository noch widerruft es den Zugriff beim Anbieter.</p>
+                <h3>Sprache, Darstellung und Zoom</h3>
+                <p>In den Oberflächeneinstellungen der Seitenleiste wählst du Deutsch oder Englisch; daneben wechselst du zwischen hellem und dunklem Design. Die Zoom-Schaltflächen der Seitenleiste skalieren die gesamte App. Der Zoom in der Wochen-Werkzeugleiste verändert nur die Zeitachse. Auf schmalen Bildschirmen füllen Editoren auch bei abweichendem App-Zoom die verfügbare Fläche. Browser-Tastenkürzel können Vorrang vor App-Kürzeln haben; verwende in diesem Fall die sichtbaren Bedienelemente.</p>
+                <p>Die <a href="https://github.com/josephbirkner/zeitberg#readme" rel="noreferrer">Repository-README</a> beschreibt Entwicklung, eigenes Hosting und Datenformate auf Englisch. Fehler kannst du in den <a href="https://github.com/josephbirkner/zeitberg/issues" rel="noreferrer">GitHub Issues</a> melden. Füge keine Tokens oder privaten Arbeitsbereich-Daten bei.</p>
+            </section>
+            <footer><a href="./">Zurück zu zeitberg</a> · Alle Screenshots enthalten ausschließlich erfundene Daten.</footer>
+        </main>
+    </div>
+</body>
+</html>

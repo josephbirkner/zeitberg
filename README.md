@@ -17,7 +17,7 @@
 
 ---
 
-zeitberg manages time, TODOs, and shared expenses. The public application is plain HTML, CSS, and JavaScript. It has no zeitberg-operated application server or database.
+zeitberg manages time, TODOs, and shared expenses. The application is plain HTML, CSS, and JavaScript, served by GitHub Pages. Workspace documents are not stored on a zeitberg server. Two small Scaleway services in Paris support GitHub sign-in and encrypted invitations; neither reads or writes workspace documents.
 
 You choose a Git repository as the workspace. The browser reads and writes versioned documents directly through the provider API. The repository remains independently inspectable, cloneable, and portable.
 
@@ -53,19 +53,22 @@ No direct equivalent surfaced in our review. The closest projects each overlap w
 
 ## Workspace setup
 
-GitHub, GitLab.com, Codeberg, and compatible CORS-enabled GitLab/Forgejo servers use the same workspace and save pipeline. GitHub retains its PAT flow. GitLab and Codeberg accept provider tokens now; their Authorization Code + PKCE buttons become active when the deployment's public OAuth client ids are configured.
+For setup and usage instructions with fictional screenshots, read the user guide in [English](https://zeitberg.io/guide.html) or [German](https://zeitberg.io/guide.de.html) (locally: `guide.html` and `guide.de.html`). App help links follow the selected interface language; both static pages also have an explicit language switch. Both versions use the same English-interface screenshots, with translated captions and alternative text. Keep their chapter IDs and coverage aligned when editing.
 
-1. Create a **private** repository for your data and initialize its default branch, for example with a README.
-2. Create an access token for that repository:
-   - GitHub: a fine-grained PAT with `Contents: Read-only` to browse or `Contents: Read & write` to save.
-   - GitLab: a PAT with API access, or the static PKCE flow when enabled on the deployment.
-   - Codeberg/Forgejo: a repository-scoped token with repository read/write access. Forgejo OAuth grants are currently broader than scoped PATs, which the onboarding dialog states before authorization.
-3. Visit [zeitberg.io](https://zeitberg.io), select the provider, enter the repository URL, branch, and token, then open the workspace.
-4. If `zeitberg.json` is missing or invalid, Workspace settings opens a structured setup editor. Choose the shared name, timezone, projects path, and enabled components, then save. zeitberg creates only missing component documents and keeps existing repository data untouched.
+GitHub, GitLab.com, Codeberg, and compatible CORS-enabled GitLab/Forgejo servers use the same workspace and save pipeline. GitHub supports device authorization when the deployment's authentication relay is configured, with PAT access retained under Custom connection. GitLab and Codeberg use direct browser Authorization Code + PKCE when their public client ids are configured.
+
+1. Visit [zeitberg.io](https://zeitberg.io) and choose **Connect with GitHub**, **Codeberg**, or **GitLab**.
+2. Review the provider's authorization request. GitHub also needs its App installed with access to the repositories you want to use.
+3. Select one or more discovered workspaces and choose **Add selected workspaces**, or choose **Create workspace**. Name it, choose its apps, and confirm. New repositories are private; the app initializes the required files for you.
+4. For a repository without a valid `zeitberg.json`, use the workspace editor to choose its shared name, timezone, projects path, and enabled components. Saving creates only missing component documents and preserves existing repository data.
+
+Prefer a scoped token or your own server? Use **Custom connection** with an existing initialized private repository, its branch, and a token. GitHub PATs need `Contents: Read-only` to browse or `Contents: Read & write` to save; GitLab needs API access; Codeberg/Forgejo supports repository-scoped read/write tokens. Forgejo OAuth grants are broader than scoped PATs, as explained before authorization. Workspace links and QR codes are additional entry points, not separate storage models.
 
 You may instead copy [`workspace-template`](./workspace-template) into the repository and edit `zeitberg.json` before connecting. Both onboarding paths use the same workspace model and canonical seed documents.
 
-Alternatively, choose **Create workspace** on the landing page. GitLab.com and Codeberg can create a private repository, initialize the checked-in [`workspace-template`](./workspace-template), validate its generated `zeitberg.json`, and open it without any zeitberg-operated backend. If a Forgejo-family server blocks browser cross-origin requests, connection preflight reports that limitation instead of treating it as malformed data.
+GitHub, GitLab.com, and Codeberg share the same canonical initialization builder, app selection, registry, and loading pipeline. GitHub creation targets the signed-in user's personal account and requires **Repository creation: Read and write**, not Administration. Install the GitHub App on that account and approve this permission; its repository access can remain scoped. Discovery automatically scans repository pages, marks existing connections, and allows filtering and multi-selection while scanning continues. The access link restarts discovery when you return, and **Refresh repositories** starts a fresh scan manually. A usable OAuth grant from an existing connection is reused for later scans and creation. If a Forgejo-family server blocks cross-origin requests, connection preflight reports that limitation instead of treating it as malformed data.
+
+Creation uses the provider's returned default branch. Once created, the connection and grant are retained before initialization so an interrupted seed can be repaired by reconnecting. Repository POSTs are never automatically retried after a timeout: inspect or refresh the repository list before trying again.
 
 A shell-based start looks like this after cloning this application repository:
 
@@ -80,13 +83,15 @@ git commit -m "Initialize zeitberg workspace"
 gh repo create YOUR_ACCOUNT/zeitberg-data --private --source=. --push
 ```
 
-The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Authenticated requests go directly from the browser to the selected provider API; the static host never receives the credential. OAuth grants retain their refresh token in the same per-workspace credential record and refresh shortly before expiry.
+The token is kept in session storage by default. Selecting **Remember this token** opts into local storage. Repository requests go directly from the browser to the selected provider API; the static host never receives the credential. Related OAuth connections reference a shared grant so token refresh is coordinated. GitHub device authorization and refresh pass through the authentication relay; GitLab and Codeberg authorization remain direct.
 
-After opening a workspace, use the first sidebar action beneath the zeitberg mark to manage connections. The browser keeps an ordered registry of repository URL, branch, bootstrap path, verified workspace ID, and display name. Each workspace token is stored separately, and switching repositories preserves unsaved drafts in a workspace-specific IndexedDB journal. Disconnecting one workspace does not log out or clear credentials for the others.
+After opening a workspace, use the first sidebar action beneath the zeitberg mark to manage connections. The browser keeps a registry of repository URL, branch, bootstrap path, verified workspace ID, and display name. PATs are connection-specific; OAuth connections can reference the same account grant. Switching repositories preserves unsaved drafts in a workspace-specific IndexedDB journal. Disconnecting one workspace does not log out or clear credentials for the others.
 
 ### Open workspaces and combined views
 
-Remembered connections with available credentials load into independent sessions. The workspace name appears as a page title above the toolbar. When there are multiple choices for the current module, the title becomes a keyboard- and touch-accessible dropdown; a single workspace is shown as plain text. Each module remembers its selected workspace during the session; switching preserves selections, scroll positions, unsaved changes, and undo history. Unavailable repositories are identified beside the title and do not contribute partial data to combined results.
+Remembered connections with available credentials load into independent sessions. One startup screen shows aggregate progress and a status line per connection; the application opens after every connection has loaded or reported a problem. Failures are flagged on the Workspaces action and on the affected card, without blocking healthy workspaces. Each card shows enabled apps, repository details, data counts, and compact edit/share/open/reconnect/disconnect actions.
+
+The workspace name appears as a page title above the toolbar. When there are multiple choices for the current module, the title becomes a keyboard- and touch-accessible dropdown; a single workspace is shown as plain text. Each module remembers its selected workspace during the session; switching preserves selections, scroll positions, unsaved changes, and undo history. Returning from the front page also selects a workspace that actually enables the requested module. Unavailable repositories do not contribute partial data to combined results.
 
 - **TODOs → All workspaces** shows origin-labelled tasks. Editing always targets the original repository. New tasks use one searchable **Workspace → Project → Section** field, remembering the last destination. Undo chooses the latest TODO edit across open workspaces; Redo follows the coordinated undo sequence. Selecting an individual workspace retains local history behavior.
 - **Time-entry search** searches every accessible time-enabled workspace by default. Its detailed filters include a workspace selector, and results display their origin. Opening a result selects the correct workspace and entry, even when repositories reuse local IDs. Browser routes restore the combined TODO view and explicit search scope.
@@ -95,14 +100,17 @@ Remembered connections with available credentials load into independent sessions
 
 Time calendars and expense ledgers remain separate documents; their hours and balances are never added across workspaces. No workspace data-format migration is required for multi-workspace browsing.
 
-The same screen can share the active workspace in two forms:
+Each workspace card has its own Share action:
 
 - A **locator link** contains only the provider, repository URL, branch, workspace file and ID, selected component, and current view state. Its recipient supplies a credential independently.
-- A **capability link** additionally carries a dedicated repository token in its URL fragment. The fragment is removed from the address bar before zeitberg performs authenticated network activity; zeitberg then remembers the credential in the browser and opens the workspace without interrupting the recipient. Because anyone holding the link receives the token's access, the sender must create a least-privilege, expiring token for only that repository, verify every repository/provider coordinate, and send the link as securely as the credential itself.
+- An **encrypted invitation** grants access using the connection's existing dedicated repository token. The browser encrypts the capability with AES-256-GCM; the invitation service stores only ciphertext. The short URL uses `/join/<id>#k=<key>`, keeping the decryption key in the fragment, outside service requests. Invitations expire after 30 days and can be revoked from the same browser's Share dialog. Revocation prevents new imports; revoke the token at its provider to remove access already imported. Broad OAuth account grants cannot be shared this way.
+- Existing **capability links** with the full capability in their fragment remain supported. The fragment is removed before authenticated activity; zeitberg remembers the imported credential and opens the workspace without a recipient confirmation dialog. Pasting a link or scanning its QR code uses the same validation and connection pipeline.
+
+Anyone holding an invitation or capability link receives the token's permissions. Use a dedicated, least-privilege, expiring repository token and share the link as carefully as that token. The [invitation service documentation](./serverless/invitations/README.md) describes encryption, expiry, revocation, deployment, and storage boundaries.
 
 Ordinary routes, locator links, workspace records, cache keys, and repository documents never contain credentials. Opening a capability link authorizes the provider host encoded by its sender without an additional recipient confirmation.
 
-The interface language is selected in Workspace settings. English and German share one first-party message catalog; the browser language supplies only the initial default, after which the explicit device preference wins. Dates, weekdays, numbers, durations, and currencies use `Intl` in the selected language while workspace calendar math continues to use the workspace's IANA timezone. Language changes do not alter route paths or write translated interface text into workspace documents.
+The interface language is selected in the sidebar's Interface settings. English and German share one first-party message catalog; the browser language supplies only the initial default, after which the explicit device preference wins. Dates, weekdays, numbers, durations, and currencies use `Intl` in the selected language while workspace calendar math continues to use the workspace's IANA timezone. Language changes do not alter route paths or write translated interface text into workspace documents.
 
 If a project is bound to another GitHub repository for issue synchronization, the token additionally needs `Issues: Read & write` for that repository. Workspaces without such a binding do not need issue access.
 
@@ -159,7 +167,7 @@ A workspace project can opt into GitHub issue persistence with an external refer
 
 Sections may identify their repository-scoped issue label through a `github-label` external reference. At initialization and explicit refresh, zeitberg loads open and closed issues, filters out pull requests, maps recognized section labels, and conditionally revalidates an IndexedDB cache. GitHub remains authoritative for issue title, description, labels, and state; schema-v4 `todos.json` stores only small scheduling overlays for those tasks.
 
-Edits remain local until an explicit task Save. That operation creates, updates, closes, or reopens issues first and then commits the compact TODO document, with optimistic conflict checks preventing a newer upstream edit from being overwritten. Project settings provide repository inspection and explicit connect/detach migration choices, so existing local tasks are never bulk-published silently. Local-server mode continues to write workspace files without making remote issue changes.
+Edits remain local until a manual save or autosave. That operation creates, updates, closes, or reopens issues first and then commits the compact TODO document, with optimistic conflict checks preventing a newer upstream edit from being overwritten. Project settings provide repository inspection and explicit connect/detach migration choices, so existing local tasks are never bulk-published silently. Local-server mode continues to write workspace files without making remote issue changes.
 
 ## Local development
 
@@ -219,7 +227,7 @@ The measured first-party production scope is explicit in `package.json`: `appsta
 
 Both `npm run test:browser` and `npm run coverage` also run the employer/leave dialog integration tests against a disposable workspace, including bulk edits, failed-save recovery, save/reload persistence, legacy-write protection and narrow layouts. They never write to your personal data repository.
 
-The dialog regression suite checks desktop, 320px/390px mobile and short landscape layouts in light/dark themes and English/German. It covers centered 44px close targets, clipping, sticky actions, expanded expense splits, inline validation, and preservation of optional task fields. Screenshots are written to a printed temporary directory. For Safari-engine checks, install WebKit with `npx playwright install webkit`, then run `node tests/dialogs.browser.mjs --webkit`.
+The dialog regression suite checks desktop, 320px/390px mobile and short landscape layouts in light/dark themes and English/German. It covers centered close controls, clipping, sticky actions, expanded expense splits, inline validation, and preservation of optional task fields. Screenshots are written to a printed temporary directory. For Safari-engine checks, install WebKit with `npx playwright install webkit`, then run `node tests/dialogs.browser.mjs --webkit`.
 
 The multi-workspace integration suite creates two disposable repositories with duplicate task and entry IDs. It exercises combined creation and history, origin-aware navigation, search scope restoration, delayed writes with newer edits in all three modules, failed-save recovery, idle autosave/reset/retry deadlines, close-page warnings, reduced-motion feedback, and narrow layouts. `workspace.sessions.js` and `workspace.todos.js` are browser-controller modules, tested through this real local HTTP workflow rather than included in the pure-logic Node coverage gate.
 
@@ -265,13 +273,17 @@ Editing, undo/redo, and saving use the normal application pipeline, but document
 
 For a reproducible scenario, add an optional seed, for example `/time?demo=1&demoSeed=docs-v1`. It survives module navigation and reloads; without it, a fresh seed is generated in memory on each visit. Each date has its own seed-derived stream, so a fixed seed keeps already-completed days consistent as the rolling window advances. Reproducing the whole dataset also requires the same reference clock.
 
-`npm run screenshots` starts an isolated server with local-workspace access disabled, freezes the browser clock to September 15, 2026, uses seed `docs-v1`, and captures desktop/mobile examples under `test-results/demo/`. The same scenario runs in CI and rejects repository requests and durable-storage access. No private data or screenshots of personal workspaces are used.
+`npm run screenshots` extends the existing `tests/demo.browser.mjs` integration scenario: it starts an isolated server with local-workspace access disabled, sets the browser reference clock to September 15, 2026, uses seed `docs-v1`, and captures desktop/mobile examples under `test-results/demo/`. Locale (`en-US`), timezone (`Europe/Berlin`), dark theme, 100% app zoom, and desktop/phone viewports (1440×1000 / 390×844) are pinned. Captures wait for fonts and disable animations/carets. The pictured state is asserted before capture; `capture-manifest.json` records the settings, browser version, and image inventory. The same scenario runs in CI and rejects repository requests and durable-storage access. No private data or screenshots of personal workspaces are used.
+
+To refresh the public guide images, run `npm run screenshots:publish`, inspect all six images in `assets/guide/`, and commit them with the UI change. They cover the week, daily leave, tasks, the task editor, expenses, and the expense editor. Publication happens only after the complete scenario passes. CI uploads `test-results/demo/` as a review artifact; it never commits screenshots automatically. The initial guide images were visually checked and captured through the browser against the fictional playground on October 29, 2026; the refresh command produces the fixed-reference-date baseline. The guide is plain static HTML, uses no credentials, and is included by the ordinary site builder.
+
+Before a release, run `npm test`, `npm run typecheck`, `npm run screenshots`, and `npm run build:site` (with a fresh output directory). The guide test checks chapter links, local assets, screenshot alt text, and integration-scenario coverage; CI also checks that the built site contains the guide and screenshots. Open `guide.html` at desktop and phone widths and review the CI images before publishing changes. The mocked provider onboarding tests cover UI state and errors, not real provider authorization: record real GitHub/GitLab/Codeberg smoke checks separately, never as documentation screenshots containing credentials or private data.
 
 ### Build identity and Pages release setup
 
 The landing-page footer displays the app version and served commit (plus a local-changes marker in development). `server.py` supplies checkout metadata; `npm run build:site` creates a new `dist/` artifact with embedded commit metadata and revision-specific cache keys. An unbuilt static checkout honestly says `unbuilt` rather than looking up an unrelated remote HEAD. The build refuses to overwrite an existing output directory; optionally supply a fresh path with `npm run build:site -- /path/to/new-directory`.
 
-At the 1.3 release, switch **Settings → Pages → Source** from branch publishing to **GitHub Actions**, then use `.github/workflows/pages.yml`. Its main-branch deployment publishes only the staged static files, including the matching build metadata. This follows GitHub’s [custom Pages workflow](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) model. Until then, the live Pages configuration is intentionally unchanged.
+The public site uses **GitHub Actions** publishing through `.github/workflows/pages.yml`. A push to `main` builds and deploys only the staged static files, including matching build metadata; release branches do not deploy. Forks should select **Settings → Pages → Source → GitHub Actions**. The authentication and invitation functions are deployed separately; their source is excluded from the static artifact.
 
 ### Provider connections
 
@@ -279,7 +291,7 @@ The public deployment serves this repository from [zeitberg.io](https://zeitberg
 
 Provider connectors retain the same architecture:
 
-- GitHub uses a fine-grained PAT and GitHub's REST/GraphQL APIs.
+- GitHub uses a fine-grained PAT or GitHub App user authorization, and GitHub's REST/GraphQL APIs.
 - GitLab uses its REST API, one atomic multi-action commit per save, and [Authorization Code + PKCE](https://docs.gitlab.com/api/oauth2/) when configured.
 - Codeberg/Forgejo uses its REST contents API and either a [scoped PAT](https://forgejo.org/docs/latest/user/token-scope/) or [public-client PKCE](https://forgejo.org/docs/latest/user/oauth2-provider/). Because Forgejo OAuth scopes are not fine-grained today, a repository-scoped PAT remains the least-privilege option.
 - custom HTTPS hosts are explicitly trusted, probed for GitLab/Forgejo compatibility and usable only when their CORS policy permits direct browser requests.
@@ -293,7 +305,7 @@ Codeberg: https://zeitberg.io/?oauth_provider=codeberg
 
 Enable Authorization Code with PKCE and do not place a client secret in this repository. Put the resulting public client ids into the `zeitberg-oauth-gitlab-client-id` and `zeitberg-oauth-codeberg-client-id` meta elements in [`index.html`](./index.html). Self-hosted deployments use their own origin in both callback URLs. The application validates short-lived session state, requires S256 PKCE, scrubs callback codes before token exchange, refreshes expiring grants, and loads no third-party runtime scripts.
 
-There is deliberately no GitHub App or OAuth broker today: GitHub's confidential OAuth and GitHub App flows require a server-held secret or private key, while the current fine-grained PAT flow remains fully static.
+The GitHub App's public client id is retained in the `zeitberg-oauth-github-client-id` meta element. Its device flow needs no client secret, but GitHub's device and token endpoints lack browser CORS support. A small [Scaleway relay](./serverless/github-auth/README.md) bridges only those authentication calls when `GITHUB_RELAY_URL` in `oauth.js` is configured. No callback URL is required for this device flow. User verification codes are displayed in the dialog; authorization happens on GitHub in another tab. Closing the dialog cancels polling. Grants are persisted only when a repository is connected, using the same session/remember choice and shared refresh pipeline as other providers. Workspace data never passes through the relay. GitLab and Codeberg keep their direct browser PKCE flows. GitHub repository creation uses the user grant directly against GitHub's API, outside the relay.
 
 ## License
 
@@ -306,6 +318,8 @@ The code for this project was written using large language models with extensive
 The zeitberg mark and landing landscape are original hand-authored SVGs. The mark's iOS and installable-web-app PNGs are reproducibly rasterized from [`assets/zeitberg-mark.svg`](./assets/zeitberg-mark.svg) by `npm run build:icons`. Interface icons use [Google Material Symbols](https://github.com/google/material-design-icons) under the [Apache License 2.0](./icons/LICENSE). The architecture graphic is an original SVG whose restrained visual language was informed by Kathryn Lavery's [Diagram Design](https://github.com/cathrynlavery/diagram-design) principles.
 
 No generative or diffusion-based image model was used for the mark, landing landscape, or architecture graphic.
+
+Provider logos retain their respective licenses and trademark ownership; see [provider asset credits](./assets/providers/LICENSE.txt).
 
 <p align="center">
   <a href="https://imgflip.com/memegenerator/Futurama-Zoidberg">

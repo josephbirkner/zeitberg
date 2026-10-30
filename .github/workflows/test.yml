@@ -37,6 +37,22 @@ jobs:
         run: npm run coverage
       - name: Type-check JavaScript
         run: npm run typecheck
+      - name: Verify static site and guide publication
+        run: |
+          npm run build:site
+          test -f dist/guide.html
+          test -f dist/guide.de.html
+          test -f dist/assets/guide/task-dialog-mobile.png
+      - name: Capture playground documentation examples
+        run: npm run screenshots
+      - name: Upload documentation screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playground-screenshots-${{ github.sha }}
+          path: test-results/demo/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7
