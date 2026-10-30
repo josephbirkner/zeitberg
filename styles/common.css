@@ -576,12 +576,6 @@ button:disabled {
   opacity: 0.42;
 }
 
-.btn.btn-icon {
-  min-width: var(--control-height);
-  padding: 0;
-  line-height: 1;
-}
-
 .btn-secondary {
   border-color: var(--border);
   background: var(--panel);
