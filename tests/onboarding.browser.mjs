@@ -174,6 +174,8 @@ try {
                 // from its workspace dialog must reveal the document, not just load it.
                 await page.locator("#appHomeLink").click();
                 await page.locator("#workspaceSettingsBtn").click();
+                await page.locator('#workspaceSetupCards [data-setup-action="custom"]').click();
+                await page.locator("#workspaceManualConnection[open]").waitFor();
                 await page.locator("#workspaceProvider").selectOption(provider);
                 await page.locator("#workspaceRepository").fill(`https://${host}/person/another-space`);
                 await page.locator("#workspaceToken").fill("another-token");

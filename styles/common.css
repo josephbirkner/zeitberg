@@ -47,6 +47,10 @@
   --surface-faint: rgba(255, 255, 255, 0.04);
   --surface-soft: rgba(255, 255, 255, 0.07);
   --timeline-line: rgba(255, 255, 255, 0.11);
+}
+
+/* Geometry is theme-independent so responsive overrides work in both themes. */
+:root {
   --radius: 8px;
   --control-radius: 6px;
   --dialog-radius: 10px;

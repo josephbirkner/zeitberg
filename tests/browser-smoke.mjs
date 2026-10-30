@@ -469,14 +469,13 @@ try {
         capabilityToken,
         baseUrl,
     );
-    await desktop.locator("#openSharedWorkspaceBtn").click();
-    await desktop.locator("#workspaceDialog[open]").waitFor();
-    assert.equal(await desktop.locator("#workspaceAddSection").isVisible(), true);
-    assert.equal(await desktop.locator("#workspaceScanCapabilityBtn").isVisible(), true);
-    await desktop.locator("#workspaceCapabilityLink").fill(capabilityLink);
-    await desktop.locator("#workspaceCapabilityForm").evaluate((form) => form.requestSubmit());
+    assert.equal(await desktop.locator('#setupCards [data-setup-action="scan"]').isVisible(), true);
+    await desktop.locator('#setupCards [data-setup-action="link"]').click();
+    await desktop.locator("#workspaceLinkDialog[open]").waitFor();
+    await desktop.locator("#workspaceLinkValue").fill(capabilityLink);
+    await desktop.locator("#workspaceLinkForm").evaluate((form) => form.requestSubmit());
     await desktop.locator("#workspaceConfigForm:not([hidden])").waitFor();
-    assert.equal(await desktop.locator("#workspaceCapabilityLink").inputValue(), "");
+    assert.equal(await desktop.locator("#workspaceLinkValue").inputValue(), "");
     const pastedCapabilityCredentials = await desktop.evaluate(() =>
         localStorage.getItem("zeitberg:workspace-credentials:local:v1"),
     );

@@ -287,7 +287,7 @@ try {
     const compactHeights = await page.evaluate(() => ["editorBadge", "expenseAddBtn"].map(
         (id) => document.getElementById(id).getBoundingClientRect().height,
     ));
-    assert.deepEqual(compactHeights, [34, 34]);
+    assert.deepEqual(compactHeights, [44, 44]);
     await page.screenshot({ path: path.join(temporary, "multi-workspace-narrow.png"), fullPage: true });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     assert.ok(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1));
@@ -316,7 +316,7 @@ try {
     const saveBox = await page.locator("#editorBadge").boundingBox();
     assert.ok(labelBox.y + labelBox.height <= countdownBox.y);
     assert.ok(countdownBox.y + countdownBox.height < saveBox.y + saveBox.height);
-    assert.equal(saveBox.height, 34);
+    assert.equal(saveBox.height, 44);
     assert.equal(await page.locator(".save-countdown").evaluate((element) => getComputedStyle(element).fontWeight), "400");
     assert.equal(await page.locator("#editorBadge").evaluate((element) => getComputedStyle(element).backgroundColor), "rgb(230, 170, 75)");
     await page.screenshot({ path: path.join(temporary, "autosave-pending-narrow.png"), fullPage: true });
