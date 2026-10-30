@@ -89,7 +89,7 @@ function repositoryPath(workspaceRoot, path) {
  * @param {ProjectList} projectList Parsed project inventory.
  * @param {Object[]} entries Normalized time-entry records.
  * @param {import("../model.js").TodoRaw[]} todos Normalized TODO records.
- * @param {import("../model.js").ExpenseRaw[]} expenses Normalized expense records.
+ * @param {Array<Pick<import("../model.js").ExpenseRaw, "id" | "project_key" | "section_key">>} expenses Expense or template assignments.
  * @returns {void}
  */
 function validateAssignments(projectList, entries, todos, expenses = []) {
@@ -212,7 +212,10 @@ async function validateWorkspace(options) {
         expectedDataPaths.add(expenseManifestPath);
     }
 
-    validateAssignments(projectList, entries, todoList.snapshotRaw(), expenseDocument.expenses.map((expense) => expense.toRaw()));
+    validateAssignments(projectList, entries, todoList.snapshotRaw(), [
+        ...expenseDocument.expenses,
+        ...expenseDocument.templates,
+    ]);
 
     const managedRoots = new Set([...expectedDataPaths].map((path) => path.split("/")[0]));
     const managedFiles = [];

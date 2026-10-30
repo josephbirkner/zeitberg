@@ -55,6 +55,62 @@ body.app-mode #expenseView {
   white-space: nowrap;
 }
 
+.expense-add-split { display: flex; flex: none; }
+.expense-add-split #expenseAddBtn { border-radius: 5px 0 0 5px; box-shadow: none; }
+.expense-add-split .expense-templates-toggle {
+  border-radius: 0 5px 5px 0;
+  border-left-color: color-mix(in srgb, var(--bg) 30%, transparent);
+  padding: 0;
+  width: var(--control-height);
+  box-shadow: none;
+}
+.expense-templates-chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+.expense-templates-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(320px, calc(var(--app-viewport-width) - 16px));
+  max-height: min(420px, calc(var(--app-viewport-height) - 110px));
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--dialog-bg);
+  color: var(--text);
+  box-shadow: 0 8px 24px #0003;
+}
+.expense-templates-menu > p { margin: 8px; font-size: var(--font-control); }
+.expense-template-row { display: flex; align-items: center; gap: 4px; }
+.expense-template-choice {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: var(--font-control);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.expense-template-choice:hover, .expense-template-choice:focus-visible {
+  background: color-mix(in srgb, var(--text) 8%, var(--panel));
+}
+.expense-template-row > .btn { flex: none; width: var(--control-height); height: var(--control-height); }
+.expense-save-template { display: inline-flex; align-items: center; gap: 6px; }
+.expense-save-template.is-saved:disabled { color: var(--accent-2); opacity: 1; }
+html.ui-narrow .expense-save-template { flex: 0 0 44px; width: 44px; padding: 0; justify-content: center; }
+html.ui-narrow .expense-save-template > span { display: none; }
+
 .expense-view {
   min-height: 0;
   background: color-mix(in srgb, var(--bg) 88%, var(--text) 12%);

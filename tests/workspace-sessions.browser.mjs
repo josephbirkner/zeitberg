@@ -271,8 +271,21 @@ try {
     await page.waitForFunction(() => document.getElementById("editorBadge").textContent === "Saved");
     assert.equal(JSON.parse(await readFile(expensePath, "utf8")).expenses.length, 1);
     // Switching retains the saved document without duplicating listeners.
+    await page.locator(".expense-row:not(.is-transfer)").first().dblclick();
+    await page.locator("#expenseSaveTemplateBtn").click();
+    await page.locator("#expenseCancelBtn").click();
     await selectWorkspace("Alpha");
+    await page.locator("#expenseTemplatesBtn").click();
+    assert.equal(await page.locator("#expenseTemplatesMenu .expense-template-choice").count(), 0);
+    await page.keyboard.press("Escape");
     await selectWorkspace("Beta");
+    await page.locator("#expenseTemplatesBtn").click();
+    assert.equal(await page.locator("#expenseTemplatesMenu .expense-template-choice").count(), 1);
+    await page.keyboard.press("Escape");
+    await page.locator("#editorBadge").click();
+    await page.waitForFunction(() => document.getElementById("editorBadge").textContent === "Saved");
+    assert.equal(JSON.parse(await readFile(expensePath, "utf8")).templates.length, 1);
+    assert.equal(JSON.parse(await readFile(path.join(directories[0], "data/expenses.json"), "utf8")).templates, undefined);
     assert.equal(await page.locator("#documentWorkspaceName").textContent(), "Beta");
     // The taller header must not obscure save feedback.
     assert.ok(await page.evaluate(() => Number(getComputedStyle(document.getElementById("dataError")).zIndex)

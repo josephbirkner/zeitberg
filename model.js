@@ -255,6 +255,11 @@ export function createDefaultExpenseCategories() {
  */
 
 /**
+ * @typedef {Omit<ExpenseRaw, "date" | "created_at" | "updated_at" | "source">} ExpenseTemplateRaw
+ * @description Reusable expense details with their own identity, but no transaction date or import provenance.
+ */
+
+/**
  * @typedef {Object} ExpenseTransferRaw
  * @description A direct settlement from one participant to another in one explicit currency.
  * @property {string} id
@@ -277,6 +282,7 @@ export function createDefaultExpenseCategories() {
  * @property {ExpenseParticipantRaw[]} [participants]
  * @property {ExpenseCategoryRaw[]} [categories]
  * @property {ExpenseRaw[]} [expenses]
+ * @property {ExpenseTemplateRaw[]} [templates]
  * @property {ExpenseTransferRaw[]} [transfers]
  */
 
@@ -2449,6 +2455,46 @@ export class ExpenseTransfer {
 }
 
 /**
+ * A workspace-local preset, validated with the same money and inventory rules as an expense.
+ * Templates never contribute to ledger balances; a dated copy is created only when used.
+ */
+export class ExpenseTemplate {
+    /**
+     * Normalizes reusable fields without retaining the source transaction's date or provenance.
+     * @param {ExpenseTemplateRaw} raw Template details and stable template id.
+     * @param {Set<string>} participantKeys Known participant identities, including archived ones.
+     * @param {Set<string>} categoryKeys Known category identities, including archived ones.
+     */
+    constructor(raw, participantKeys, categoryKeys) {
+        this.expense = new Expense({ ...raw, date: "2000-01-01", created_at: "", updated_at: "", source: null }, participantKeys, categoryKeys);
+        this.id = this.expense.id;
+        this.description = this.expense.description;
+        this.project_key = this.expense.project_key;
+        this.section_key = this.expense.section_key;
+    }
+
+    /**
+     * Returns an independent preset suitable for JSON persistence, without transaction metadata.
+     * @returns {ExpenseTemplateRaw}
+     */
+    toRaw() {
+        const { date, created_at, updated_at, source, ...details } = this.expense.toRaw();
+        return details;
+    }
+
+    /**
+     * Creates a detached editor model for a chosen day; saving it must allocate a fresh expense id.
+     * @param {string} date Workspace-local ISO date for the new expense.
+     * @returns {Expense}
+     */
+    forDate(date) {
+        return new Expense({ ...this.toRaw(), date },
+            new Set([...this.expense.payers, ...this.expense.allocations].map((line) => line.participant_key)),
+            new Set(this.expense.category_key ? [this.expense.category_key] : []));
+    }
+}
+
+/**
  * Owns a complete versioned expense ledger and enforces cross-record references and source identities.
  * The model is intentionally provider-neutral: source-specific reconstruction belongs in private import scripts, while this document retains only exact resulting money movements.
  */
@@ -2461,14 +2507,17 @@ export class ExpenseDocument {
      * @param {Expense[]} expenses Historical expense rows.
      * @param {ExpenseTransfer[]} transfers Historical settlement rows.
      * @param {string} generatedAt Last successful serialization timestamp.
+     * @param {ExpenseTemplate[]} [templates] Reusable presets, separate from financial records.
      */
-    constructor(participants, categories, expenses, transfers, generatedAt) {
+    constructor(participants, categories, expenses, transfers, generatedAt, templates = []) {
         this.schema_version = 1;
         this.generated_at = generatedAt;
         this.participants = participants;
         this.categories = categories;
         this.expenses = expenses;
         this.transfers = transfers;
+        this.templates = templates;
+        this.templatesById = new Map(templates.map((template) => [template.id, template]));
         this.participantsByKey = new Map(participants.map((participant) => [participant.key, participant]));
         this.categoriesByKey = new Map(categories.map((category) => [category.key, category]));
         this.expensesById = new Map(expenses.map((expense) => [expense.id, expense]));
@@ -2508,6 +2557,11 @@ export class ExpenseDocument {
         const transfers = (Array.isArray(rawObj.transfers) ? rawObj.transfers : []).map(
             (transfer) => new ExpenseTransfer(transfer, participantKeys),
         );
+        if (rawObj.templates !== undefined && !Array.isArray(rawObj.templates)) {
+            throw new Error("Expense templates must be an array.");
+        }
+        const templates = (rawObj.templates || []).map((template) => new ExpenseTemplate(template, participantKeys, categoryKeys));
+        ExpenseDocument.assertUnique(templates.map((template) => template.id), "template id");
         ExpenseDocument.assertUnique(expenses.map((expense) => expense.id), "expense id");
         ExpenseDocument.assertUnique(transfers.map((transfer) => transfer.id), "transfer id");
         ExpenseDocument.assertUnique(
@@ -2524,6 +2578,7 @@ export class ExpenseDocument {
             expenses,
             transfers,
             typeof rawObj.generated_at === "string" ? rawObj.generated_at : "",
+            templates,
         );
     }
 
@@ -2571,6 +2626,7 @@ export class ExpenseDocument {
             categories: this.categories.map((category) => category.toRaw()),
             expenses: this.expenses.map((expense) => expense.toRaw()),
             transfers: this.transfers.map((transfer) => transfer.toRaw()),
+            ...(this.templates.length ? { templates: this.templates.map((template) => template.toRaw()) } : {}),
         };
     }
 

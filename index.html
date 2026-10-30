@@ -142,10 +142,15 @@
       </div>
 
       <div id="expenseTopbarControls" class="expense-topbar-controls" hidden>
-        <button id="expenseAddBtn" class="btn btn-icon expense-add-button" type="button" data-i18n-title="expenses.addTitle" title="Add expense (A)" data-i18n-aria-label="expenses.add" aria-label="Add expense">
-          <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
-          <span class="expense-add-label" data-i18n="expenses.add">Add expense</span>
-        </button>
+        <div class="expense-add-split">
+          <button id="expenseAddBtn" class="btn btn-icon expense-add-button" type="button" data-i18n-title="expenses.addTitle" title="Add expense (A)" data-i18n-aria-label="expenses.add" aria-label="Add expense">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#add"></use></svg>
+            <span class="expense-add-label" data-i18n="expenses.add">Add expense</span>
+          </button>
+          <button id="expenseTemplatesBtn" class="btn btn-icon expense-add-button expense-templates-toggle" type="button" popovertarget="expenseTemplatesMenu" aria-controls="expenseTemplatesMenu" aria-expanded="false" data-i18n-title="expenses.templates" title="Expense templates" data-i18n-aria-label="expenses.templates" aria-label="Expense templates">
+            <span class="expense-templates-chevron" aria-hidden="true"></span>
+          </button>
+        </div>
         <button id="expenseSettleBtn" class="btn btn-secondary btn-icon" type="button" data-i18n-title="expenses.settleTitle" title="Settle balances" data-i18n-aria-label="expenses.settle" aria-label="Settle balances">
           <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#handshake"></use></svg>
         </button>
@@ -1231,6 +1236,10 @@
         <div class="row dialog-actions editor-actions">
           <button id="expenseSubmitBtn" class="btn" type="submit" data-i18n="common.save">Save</button>
           <button id="expenseCancelBtn" class="btn btn-secondary" type="button" data-i18n="common.cancel">Cancel</button>
+          <button id="expenseSaveTemplateBtn" class="btn btn-secondary expense-save-template" type="button" data-i18n-title="expenses.saveTemplate" title="Save as template" data-i18n-aria-label="expenses.saveTemplate" aria-label="Save as template">
+            <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#repeat"></use></svg>
+            <span data-i18n="expenses.saveTemplate">Save as template</span>
+          </button>
           <button id="expenseDeleteBtn" class="btn btn-danger dialog-delete-action" type="button" data-i18n-aria-label="common.delete" aria-label="Delete">
             <svg class="app-icon" aria-hidden="true"><use href="./icons/material-symbols.svg#delete"></use></svg>
             <span data-i18n="common.delete">Delete</span>
@@ -1238,6 +1247,8 @@
         </div>
       </form>
     </dialog>
+
+    <div id="expenseTemplatesMenu" class="expense-templates-menu" popover="auto" role="region" data-i18n-aria-label="expenses.templates" aria-label="Expense templates"></div>
 
     <dialog id="expenseSettlementDialog" class="dialog expense-settlement-dialog" aria-labelledby="expenseSettlementDialogHeading">
       <div class="dialog-card expense-settlement-card">

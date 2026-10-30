@@ -12,6 +12,9 @@ const EXPENSE_DOCUMENT_NAME = "expenses";
  * @property {HTMLElement} expenseList
  * @property {HTMLInputElement} searchInput
  * @property {HTMLButtonElement} expenseAddBtn
+ * @property {HTMLButtonElement} expenseTemplatesBtn
+ * @property {HTMLElement} expenseTemplatesMenu
+ * @property {HTMLButtonElement} expenseSaveTemplateBtn
  * @property {HTMLButtonElement} expenseSettleBtn
  * @property {HTMLButtonElement} expenseInventoryBtn
  * @property {HTMLButtonElement} editorBadge
@@ -117,7 +120,8 @@ const EXPENSE_DOCUMENT_NAME = "expenses";
  * @returns {boolean}
  */
 function expenseSnapshotsEqual(left, right) {
-    return JSON.stringify({ ...left, generated_at: "" }) === JSON.stringify({ ...right, generated_at: "" });
+    return JSON.stringify({ ...left, generated_at: "", templates: left.templates || [] }) ===
+        JSON.stringify({ ...right, generated_at: "", templates: right.templates || [] });
 }
 
 /**
@@ -309,6 +313,9 @@ export class ExpenseView {
         this.expenseList = options.elements.expenseList;
         this.searchInput = options.elements.searchInput;
         this.expenseAddBtn = options.elements.expenseAddBtn;
+        this.expenseTemplatesBtn = options.elements.expenseTemplatesBtn;
+        this.expenseTemplatesMenu = options.elements.expenseTemplatesMenu;
+        this.expenseSaveTemplateBtn = options.elements.expenseSaveTemplateBtn;
         this.expenseSettleBtn = options.elements.expenseSettleBtn;
         this.expenseInventoryBtn = options.elements.expenseInventoryBtn;
         this.editorBadge = options.elements.editorBadge;
@@ -377,6 +384,7 @@ export class ExpenseView {
         this.categoryFilterKey = "*";
         this.selectedRecordKey = null;
         this.editingExpenseId = null;
+        this.templateSaved = false;
         /** @type {import("./model.js").ExpensesFileRaw} */
         this.cleanSnapshot = this.store.snapshotRaw();
         this.dirty = false;
@@ -407,6 +415,16 @@ export class ExpenseView {
      */
     bindEvents() {
         this.expenseAddBtn.addEventListener("click", () => this.openCreateDialog());
+        this.expenseTemplatesBtn.addEventListener("click", (event) => {
+            event.preventDefault();
+            this.toggleTemplates();
+        });
+        this.expenseSaveTemplateBtn.addEventListener("click", () => this.saveTemplate());
+        this.expenseTemplatesMenu.addEventListener("click", (event) => this.handleTemplateClick(event));
+        this.expenseTemplatesMenu.addEventListener("keydown", (event) => this.handleTemplateKeydown(event));
+        this.expenseTemplatesMenu.addEventListener("toggle", () => {
+            this.expenseTemplatesBtn.setAttribute("aria-expanded", String(this.expenseTemplatesMenu.matches(":popover-open")));
+        });
         this.expenseSettleBtn.addEventListener("click", () => this.openSettlementDialog());
         this.expenseInventoryBtn.addEventListener("click", () => this.openInventoryDialog());
         this.searchInput.addEventListener("input", () => {
@@ -425,7 +443,10 @@ export class ExpenseView {
             this.closeExpenseDialog();
         });
         this.expenseForm.addEventListener("submit", (event) => this.handleExpenseSubmit(event));
-        this.expenseForm.addEventListener("input", () => this.clearExpenseDialogError());
+        this.expenseForm.addEventListener("input", () => {
+            this.clearExpenseDialogError();
+            this.setTemplateSaved(false);
+        });
         this.expensePayerSummaryBtn.addEventListener("click", () => this.toggleExpenseContextPanel("payer"));
         this.expenseSplitSummaryBtn.addEventListener("click", () => this.toggleExpenseContextPanel("split"));
         this.expensePayerPanelCloseBtn.addEventListener("click", () => this.setExpenseContextPanel(null));
@@ -494,6 +515,7 @@ export class ExpenseView {
      */
     setActive(isActive) {
         this.active = Boolean(isActive);
+        this.expenseTemplatesMenu.hidePopover();
         setVisible(this.expenseView, this.active);
         if (!this.active) return;
         this.render();
@@ -514,6 +536,8 @@ export class ExpenseView {
         this.busy = Boolean(isBusy);
         for (const control of [
             this.expenseAddBtn,
+            this.expenseTemplatesBtn,
+            this.expenseSaveTemplateBtn,
             this.expenseSettleBtn,
             this.expenseInventoryBtn,
             this.searchInput,
@@ -534,6 +558,7 @@ export class ExpenseView {
         ]) {
             control.disabled = this.busy;
         }
+        this.setTemplateSaved(this.templateSaved);
         this.updateSaveState();
     }
 
@@ -542,6 +567,7 @@ export class ExpenseView {
      * @returns {void}
      */
     reset() {
+        this.expenseTemplatesMenu.hidePopover();
         this.closeExpenseDialog();
         this.closeSettlementDialog();
         this.closeInventoryDialog();
@@ -703,6 +729,7 @@ export class ExpenseView {
      * @returns {void}
      */
     render() {
+        this.renderTemplates();
         this.renderBalances();
         this.renderCategoryFilters();
         const records = this.getVisibleRecords();
@@ -1127,6 +1154,8 @@ export class ExpenseView {
      */
     openCreateDialog() {
         if (this.busy) return;
+        this.setTemplateSaved(false);
+        this.expenseTemplatesMenu.hidePopover();
         const participants = this.store.getParticipants().filter((participant) => !participant.archived);
         if (!participants.length) {
             this.openInventoryDialog(true);
@@ -1174,13 +1203,16 @@ export class ExpenseView {
      * Imported expenses without editing-rule metadata are represented as exact splits.
      * @param {import("./model.js").Expense} expense Expense to edit.
      * @param {boolean} [focusSplit] Whether to focus the split controls instead of description.
+     * @param {boolean} [asNew] Open template details as a new expense instead of editing its identity.
      * @returns {void}
      */
-    openEditDialog(expense, focusSplit = false) {
+    openEditDialog(expense, focusSplit = false, asNew = false) {
         if (this.busy) return;
-        this.editingExpenseId = expense.id;
-        this.expenseDialogTitle.textContent = this.locale.t("expenses.editTitle");
-        this.expenseSubmitBtn.textContent = this.locale.t("common.save");
+        this.setTemplateSaved(false);
+        this.expenseTemplatesMenu.hidePopover();
+        this.editingExpenseId = asNew ? null : expense.id;
+        this.expenseDialogTitle.textContent = this.locale.t(asNew ? "expenses.add" : "expenses.editTitle");
+        this.expenseSubmitBtn.textContent = this.locale.t(asNew ? "expenses.createAction" : "common.save");
         this.clearExpenseDialogError();
         this.expenseDescription.value = expense.description;
         this.expenseDate.value = expense.date;
@@ -1203,7 +1235,7 @@ export class ExpenseView {
         this.updateCategoryHint();
         this.setExpenseContextPanel(focusSplit ? "split" : null);
         this.refreshExpenseComposer();
-        this.expenseDeleteBtn.hidden = false;
+        this.expenseDeleteBtn.hidden = asNew;
         if (!this.expenseDialog.open) this.expenseDialog.showModal();
         const target = focusSplit
             ? this.expenseSplitRows.querySelector(".expense-owed-input")
@@ -1883,6 +1915,7 @@ export class ExpenseView {
      */
     changeAllocationType(nextType) {
         if (nextType === this.expenseAllocationType.value) return;
+        this.setTemplateSaved(false);
         const amountState = this.getDraftAmountState();
         const includedBefore = new Set(this.getIncludedParticipantKeys());
         const currentAllocations = this.getDraftAllocations();
@@ -2539,6 +2572,127 @@ export class ExpenseView {
     }
 
     /**
+     * Saves the current validated form as a preset, leaving the expense and dialog draft unchanged.
+     * @returns {void}
+     */
+    saveTemplate() {
+        if (this.busy || this.templateSaved) return;
+        try {
+            const details = this.collectExpenseDetails();
+            if (this.applyMutation("Add expense template", () => this.store.createTemplate(details), this.selectedRecordKey,
+                (error) => this.showExpenseDialogError(error))) {
+                this.clearExpenseDialogError();
+                this.setTemplateSaved(true);
+            }
+        } catch (error) {
+            this.showExpenseDialogError(error);
+        }
+    }
+
+    /**
+     * Confirms template creation in the modal itself and prevents duplicate clicks until values change.
+     * @param {boolean} saved Whether these exact form values have already been saved as a template.
+     * @returns {void}
+     */
+    setTemplateSaved(saved) {
+        this.templateSaved = saved;
+        const label = this.locale.t(saved ? "expenses.templateCreated" : "expenses.saveTemplate");
+        this.expenseSaveTemplateBtn.disabled = this.busy || saved;
+        this.expenseSaveTemplateBtn.classList.toggle("is-saved", saved);
+        this.expenseSaveTemplateBtn.setAttribute("aria-label", label);
+        this.expenseSaveTemplateBtn.title = label;
+        this.expenseSaveTemplateBtn.querySelector("span").textContent = label;
+        this.expenseSaveTemplateBtn.querySelector("use").setAttribute("href", `./icons/material-symbols.svg#${saved ? "check" : "repeat"}`);
+    }
+
+    /**
+     * Rebuilds the active workspace's preset choices using text nodes, with separate delete actions.
+     * @returns {void}
+     */
+    renderTemplates() {
+        this.expenseTemplatesMenu.replaceChildren();
+        const templates = this.store.getDocument().templates;
+        if (!templates.length) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = this.locale.t("expenses.noTemplates");
+            this.expenseTemplatesMenu.append(empty);
+        }
+        for (const template of templates) {
+            const row = document.createElement("div");
+            row.className = "expense-template-row";
+            const use = document.createElement("button");
+            use.type = "button";
+            use.className = "expense-template-choice";
+            use.dataset.templateId = template.id;
+            use.textContent = template.description;
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "btn btn-icon btn-danger";
+            remove.dataset.deleteTemplateId = template.id;
+            remove.setAttribute("aria-label", this.locale.t("expenses.deleteTemplate", { name: template.description }));
+            remove.title = remove.getAttribute("aria-label");
+            remove.append(createMaterialIcon("delete"));
+            row.append(use, remove);
+            this.expenseTemplatesMenu.append(row);
+        }
+    }
+
+    /**
+     * Opens a light-dismiss preset picker anchored to the split button, accounting for app zoom.
+     * @returns {void}
+     */
+    toggleTemplates() {
+        if (this.busy) return;
+        if (this.expenseTemplatesMenu.matches(":popover-open")) {
+            this.expenseTemplatesMenu.hidePopover();
+            return;
+        }
+        this.renderTemplates();
+        const bounds = this.expenseTemplatesBtn.getBoundingClientRect();
+        const zoom = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-zoom")) || 1;
+        this.expenseTemplatesMenu.style.top = `${(bounds.bottom + 6) / zoom}px`;
+        this.expenseTemplatesMenu.style.right = `${Math.max(8, innerWidth - bounds.right) / zoom}px`;
+        this.expenseTemplatesMenu.showPopover();
+        this.expenseTemplatesMenu.querySelector("button")?.focus();
+    }
+
+    /**
+     * Uses or removes the exact preset selected in this workspace; deletions remain undoable.
+     * @param {MouseEvent} event Delegated picker click.
+     * @returns {void}
+     */
+    handleTemplateClick(event) {
+        if (this.busy || !(event.target instanceof Element)) return;
+        const button = event.target.closest("button");
+        if (!button) return;
+        const removeId = button.dataset.deleteTemplateId;
+        if (removeId) {
+            this.applyMutation("Delete expense template", () => this.store.deleteTemplate(removeId));
+            (this.expenseTemplatesMenu.querySelector("button") || this.expenseTemplatesBtn).focus();
+            return;
+        }
+        const template = this.store.getDocument().templatesById.get(button.dataset.templateId);
+        if (template) this.openEditDialog(template.forDate(this.timeContext.formatDate(new Date())), false, true);
+    }
+
+    /**
+     * Keeps arrow-key navigation inside the picker; Tab and native Escape retain standard popover behavior.
+     * @param {KeyboardEvent} event Key pressed in the picker.
+     * @returns {void}
+     */
+    handleTemplateKeydown(event) {
+        event.stopPropagation();
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const buttons = [...this.expenseTemplatesMenu.querySelectorAll("button")];
+        const index = buttons.indexOf(/** @type {HTMLButtonElement} */ (document.activeElement));
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+            : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+    }
+
+    /**
      * Deletes the expense currently open in the modal and relies on undo instead of confirmation.
      * @returns {void}
      */
@@ -3071,7 +3225,7 @@ export class ExpenseView {
     }
 
     /**
-     * Three-way merges a browser draft over newer repository content independently by participant, category, expense, and transfer identity.
+     * Three-way merges a browser draft over newer repository content independently by participant, category, expense, template, and transfer identity.
      * @param {import("./model.js").ExpensesFileRaw} baseline Document at the start of local editing.
      * @param {import("./model.js").ExpensesFileRaw} localDraft Locally edited document.
      * @param {import("./model.js").ExpensesFileRaw} remoteCurrent Newly loaded repository document.
@@ -3104,6 +3258,9 @@ export class ExpenseView {
                 localDraft.transfers || [],
                 remoteCurrent.transfers || [],
                 (row) => row.id,
+            ),
+            templates: mergeDraftCollection(
+                baseline.templates || [], localDraft.templates || [], remoteCurrent.templates || [], (row) => row.id,
             ),
         };
     }

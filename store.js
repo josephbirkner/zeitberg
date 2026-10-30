@@ -922,7 +922,7 @@ export class ExpenseStore {
      */
     setDocument(document) {
         const next = document instanceof ExpenseDocument ? document : ExpenseDocument.createEmpty();
-        for (const expense of next.expenses) {
+        for (const expense of [...next.expenses, ...next.templates]) {
             if (!this.projectStore.resolveAssignment(expense.project_key, expense.section_key)) {
                 const assignment = [expense.project_key, expense.section_key].filter(Boolean).join("/") || "(none)";
                 throw new Error(`Expense ${expense.id} references unknown project assignment ${assignment}.`);
@@ -1034,11 +1034,12 @@ export class ExpenseStore {
 
     /**
      * Generates a collision-resistant local identifier for an expense or transfer without requiring a server round trip.
-     * @param {"expense" | "transfer"} kind Record kind used as a readable id prefix.
+     * @param {"expense" | "transfer" | "template"} kind Record kind used as a readable id prefix.
      * @returns {string}
      */
     reserveId(kind) {
-        const collection = kind === "transfer" ? this.document.transfersById : this.document.expensesById;
+        const collection = kind === "template" ? this.document.templatesById
+            : kind === "transfer" ? this.document.transfersById : this.document.expensesById;
         let suffix = "";
         if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
             suffix = crypto.randomUUID();
@@ -1063,6 +1064,32 @@ export class ExpenseStore {
             participants: cloneJson(participants),
             categories: cloneJson(categories),
         });
+    }
+
+    /**
+     * Copies validated editor details into a reusable preset without changing any ledger record.
+     * @param {ExpenseDetails} details Current expense editor values; the date is not retained.
+     * @returns {import("./model.js").ExpenseTemplate} Newly created template.
+     */
+    createTemplate(details) {
+        const id = this.reserveId("template");
+        const next = this.snapshotRaw();
+        next.templates = [...(next.templates || []), { ...cloneJson(details), id }];
+        this.applySnapshot(next);
+        return this.document.templatesById.get(id);
+    }
+
+    /**
+     * Removes only a preset; past expenses created from it remain unchanged.
+     * @param {string} id Stable template identity.
+     * @returns {boolean} Whether the template existed.
+     */
+    deleteTemplate(id) {
+        if (!this.document.templatesById.has(id)) return false;
+        const next = this.snapshotRaw();
+        next.templates = (next.templates || []).filter((template) => template.id !== id);
+        this.applySnapshot(next);
+        return true;
     }
 
     /**

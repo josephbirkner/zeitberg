@@ -18,6 +18,7 @@
 
 ### Interface and documentation
 
+- Save expense templates from the editor and reuse them through the Add expense split button. Templates belong to their workspace, use today's date when applied, and support normal saves, draft recovery, and undo/redo.
 - Refine typography, spacing, toolbar sizing, editor actions, workspace cards, and the front page. Move secondary explanations into contextual help.
 - Fix full-screen task and expense dialogs at non-default app zoom, and restore a compatible workspace when entering an app from the front page.
 - Edit time-entry start and end times in the details dialog using the existing collision and week-boundary rules. Keep description focus and put Save before Cancel and Delete in keyboard order.

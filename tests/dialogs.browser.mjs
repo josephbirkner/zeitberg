@@ -145,8 +145,25 @@ try {
                 assert.equal(await page.locator("#expenseAmount").evaluate((node) => node === document.activeElement), true);
                 await inspectDialog(page, selector, `expense-error-${width}`);
             }
+            if (name === "expense-edit") {
+                await page.locator("#expenseSaveTemplateBtn").click();
+                assert.equal(await page.locator("#expenseDialogError").isVisible(), false);
+            }
             await page.keyboard.press("Escape");
             await dialog.waitFor({ state: name === "date" ? "detached" : "hidden" });
+            if (name === "expense-edit") {
+                await page.locator("#expenseTemplatesBtn").click();
+                const picker = page.locator("#expenseTemplatesMenu");
+                await picker.waitFor({ state: "visible" });
+                const bounds = await picker.evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight,
+                        overflow: element.scrollWidth > element.clientWidth + 1 };
+                });
+                assert.ok(bounds.left >= 0 && bounds.right <= bounds.width && bounds.bottom <= bounds.height, "Template picker fits viewport");
+                assert.equal(bounds.overflow, false);
+                await page.keyboard.press("Escape");
+            }
         }
         console.log(`Interactive dialogs passed at ${width}×${height}, ${language}, ${theme}`);
     }

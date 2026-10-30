@@ -302,6 +302,9 @@ export class App {
         this.expenseListEl = getRequiredElement("expenseList", HTMLElement);
         this.expenseTopbarControlsEl = getRequiredElement("expenseTopbarControls", HTMLElement);
         this.expenseAddBtn = getRequiredElement("expenseAddBtn", HTMLButtonElement);
+        this.expenseTemplatesBtn = getRequiredElement("expenseTemplatesBtn", HTMLButtonElement);
+        this.expenseTemplatesMenu = getRequiredElement("expenseTemplatesMenu", HTMLElement);
+        this.expenseSaveTemplateBtn = getRequiredElement("expenseSaveTemplateBtn", HTMLButtonElement);
         this.expenseSettleBtn = getRequiredElement("expenseSettleBtn", HTMLButtonElement);
         this.expenseInventoryBtn = getRequiredElement("expenseInventoryBtn", HTMLButtonElement);
         this.expenseDialog = getRequiredElement("expenseDialog", HTMLDialogElement);
@@ -590,6 +593,9 @@ export class App {
                 expenseList: this.expenseListEl,
                 searchInput: this.searchInput,
                 expenseAddBtn: this.expenseAddBtn,
+                expenseTemplatesBtn: this.expenseTemplatesBtn,
+                expenseTemplatesMenu: this.expenseTemplatesMenu,
+                expenseSaveTemplateBtn: this.expenseSaveTemplateBtn,
                 expenseSettleBtn: this.expenseSettleBtn,
                 expenseInventoryBtn: this.expenseInventoryBtn,
                 editorBadge: this.editorBadgeEl,
