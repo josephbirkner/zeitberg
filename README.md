@@ -21,14 +21,22 @@ zeitberg manages time, TODOs, and shared expenses. The application is plain HTML
 
 You choose a Git repository as the workspace. The browser reads and writes versioned documents directly through the provider API. The repository remains independently inspectable, cloneable, and portable.
 
-**Your data, your Git repo.**
+```mermaid
+flowchart LR
+    browser["Your browser<br/>zeitberg app"]
+    pages["GitHub Pages<br/>zeitberg.io"]
+    providers["GitHub / GitLab / Codeberg<br/>Private workspace repositories"]
+    auth["Scaleway, Paris<br/>GitHub authentication relay"]
+    invitations["Scaleway, Paris<br/>Encrypted invitation service"]
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./assets/architecture.svg" />
-    <img src="./assets/architecture-light.svg" alt="The static zeitberg application runs in the browser and connects directly through a Git provider API to a private workspace repository." />
-  </picture>
-</p>
+    browser -->|Load HTML, CSS and JavaScript| pages
+    browser <-->|Read documents and commit edits| providers
+    browser <-->|GitHub sign-in and refresh| auth
+    auth <-->|Device authorization and tokens| github["GitHub authorization"]
+    browser <-->|Encrypted invitations only| invitations
+```
+
+GitLab and Codeberg OAuth runs directly in the browser. Workspace documents go directly to the Git provider, never through Scaleway. Invitation keys stay in the link fragment; the invitation service stores only ciphertext, expiring after 30 days.
 
 ## What it gives you
 
@@ -36,7 +44,7 @@ You choose a Git repository as the workspace. The browser reads and writes versi
 | --- | --- |
 | **Time** | Responsive weekly timeline, keyboard and touch editing, search, billable totals, work-hour requirements, overtime accumulation, undo/redo, and manual or idle-triggered Git commits. |
 | **TODOs** | Shared projects and sections, recurring tasks, filters, completion history, durable drafts, imports, and optional GitHub issue linkage. |
-| **Expenses** | Exact multi-currency splits, participant balances, deterministic settlement suggestions, categories, shared project assignments, durable drafts, and atomic Git saves. |
+| **Expenses** | Exact multi-currency splits, reusable expense templates, participant balances, deterministic settlement suggestions, categories, shared project assignments, durable drafts, and atomic Git saves. |
 | **Workspace** | A versioned root manifest, portable JSON documents, stable project identities, private Git history, direct browser-to-provider persistence, and English/German UI. |
 | **Quality** | Bidirectional GitHub issue projects, deterministic unit tests, browser-level smoke tests, static type checking, and an enforced 90% production-logic line-coverage gate. |
 
