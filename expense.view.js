@@ -2601,7 +2601,8 @@ export class ExpenseView {
         this.expenseSaveTemplateBtn.classList.toggle("is-saved", saved);
         this.expenseSaveTemplateBtn.setAttribute("aria-label", label);
         this.expenseSaveTemplateBtn.title = label;
-        this.expenseSaveTemplateBtn.querySelector("span").textContent = label;
+        // Keep the visible label stable so confirmation does not shift adjacent actions.
+        this.expenseSaveTemplateBtn.querySelector("span").textContent = this.locale.t("expenses.saveTemplate");
         this.expenseSaveTemplateBtn.querySelector("use").setAttribute("href", `./icons/material-symbols.svg#${saved ? "check" : "repeat"}`);
     }
 

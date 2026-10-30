@@ -514,6 +514,14 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
 }
 
+/* Native popup menus cannot composite translucent control backgrounds reliably. */
+select option,
+select optgroup,
+datalist option {
+  background-color: var(--dialog-bg);
+  color: var(--text);
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -568,8 +576,10 @@ button:disabled {
   opacity: 0.42;
 }
 
-.btn:active {
-  transform: translateY(1px);
+.btn.btn-icon {
+  min-width: var(--control-height);
+  padding: 0;
+  line-height: 1;
 }
 
 .btn-secondary {

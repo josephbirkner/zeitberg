@@ -505,17 +505,13 @@ html.ui-narrow .expense-save-template > span { display: none; }
   align-items: center;
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .expense-flow-card:hover,
 .expense-flow-card:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
   background: var(--surface-soft);
-}
-
-.expense-flow-card:active {
-  transform: translateY(1px);
 }
 
 .expense-flow-card:disabled {

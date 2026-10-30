@@ -129,6 +129,13 @@ try {
                 await page.locator("#expenseDescription").fill("A shared dinner");
                 await page.locator("#expensePayerSummaryBtn").click();
                 await page.locator("#expensePayer").selectOption("__custom__");
+                const popupColors = await page.locator("#expensePayer option").first().evaluate((option) => {
+                    const style = getComputedStyle(option);
+                    return { background: style.backgroundColor, color: style.color, scheme: style.colorScheme };
+                });
+                assert.equal(popupColors.scheme, theme);
+                assert.equal(popupColors.background, theme === "dark" ? "rgb(18, 20, 26)" : "rgb(255, 253, 248)");
+                assert.equal(popupColors.color, theme === "dark" ? "rgb(241, 240, 235)" : "rgb(39, 42, 59)");
                 await inspectDialog(page, selector, `expense-payers-${width}`);
                 await page.locator("#expensePayerPanelCloseBtn").click();
                 await page.locator("#expenseSplitSummaryBtn").click();
@@ -146,8 +153,16 @@ try {
                 await inspectDialog(page, selector, `expense-error-${width}`);
             }
             if (name === "expense-edit") {
+                const before = await page.locator("#expenseSaveTemplateBtn").boundingBox();
+                const label = await page.locator("#expenseSaveTemplateBtn span").textContent();
                 await page.locator("#expenseSaveTemplateBtn").click();
                 assert.equal(await page.locator("#expenseDialogError").isVisible(), false);
+                const after = await page.locator("#expenseSaveTemplateBtn").boundingBox();
+                for (const dimension of ["x", "y", "width", "height"]) {
+                    assert.ok(Math.abs(after[dimension] - before[dimension]) < 1,
+                        `Template confirmation must preserve button ${dimension}`);
+                }
+                assert.equal(await page.locator("#expenseSaveTemplateBtn span").textContent(), label);
             }
             await page.keyboard.press("Escape");
             await dialog.waitFor({ state: name === "date" ? "detached" : "hidden" });
@@ -163,6 +178,13 @@ try {
                 assert.ok(bounds.left >= 0 && bounds.right <= bounds.width + 1 && bounds.bottom <= bounds.height + 1,
                     `Template picker fits viewport: ${JSON.stringify(bounds)}`);
                 assert.equal(bounds.overflow, false);
+                const iconOffset = await picker.locator("[data-delete-template-id]").first().evaluate((button) => {
+                    const b = button.getBoundingClientRect();
+                    const icon = button.querySelector("svg").getBoundingClientRect();
+                    return { x: icon.x + icon.width / 2 - b.x - b.width / 2,
+                        y: icon.y + icon.height / 2 - b.y - b.height / 2 };
+                });
+                assert.ok(Math.abs(iconOffset.x) < 1 && Math.abs(iconOffset.y) < 1, "Centered template delete icon");
                 await page.keyboard.press("Escape");
             }
         }
