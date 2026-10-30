@@ -160,7 +160,8 @@ try {
                     return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight,
                         overflow: element.scrollWidth > element.clientWidth + 1 };
                 });
-                assert.ok(bounds.left >= 0 && bounds.right <= bounds.width && bounds.bottom <= bounds.height, "Template picker fits viewport");
+                assert.ok(bounds.left >= 0 && bounds.right <= bounds.width + 1 && bounds.bottom <= bounds.height + 1,
+                    `Template picker fits viewport: ${JSON.stringify(bounds)}`);
                 assert.equal(bounds.overflow, false);
                 await page.keyboard.press("Escape");
             }

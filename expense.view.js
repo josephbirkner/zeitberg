@@ -2651,9 +2651,13 @@ export class ExpenseView {
         this.renderTemplates();
         const bounds = this.expenseTemplatesBtn.getBoundingClientRect();
         const zoom = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-zoom")) || 1;
-        this.expenseTemplatesMenu.style.top = `${(bounds.bottom + 6) / zoom}px`;
-        this.expenseTemplatesMenu.style.right = `${Math.max(8, innerWidth - bounds.right) / zoom}px`;
+        const top = (bounds.bottom + 6) / zoom;
+        this.expenseTemplatesMenu.style.top = `${top}px`;
+        this.expenseTemplatesMenu.style.maxHeight = `${Math.max(44, Math.min(420, innerHeight / zoom - top - 8))}px`;
         this.expenseTemplatesMenu.showPopover();
+        const width = this.expenseTemplatesMenu.getBoundingClientRect().width / zoom;
+        const left = Math.max(8 / zoom, Math.min(bounds.right / zoom - width, (innerWidth - 8) / zoom - width));
+        this.expenseTemplatesMenu.style.left = `${left}px`;
         this.expenseTemplatesMenu.querySelector("button")?.focus();
     }
 

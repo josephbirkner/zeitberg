@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -199,9 +200,12 @@ async function writeBrowserCoverage(entries) {
 
 const port = await reservePort();
 const baseUrl = `http://127.0.0.1:${port}`;
+const fixtureRoot = await mkdtemp(path.join(tmpdir(), "zeitberg-browser-smoke-"));
+const fixtureWorkspace = path.join(fixtureRoot, "workspace");
+await cp(path.join(APP_ROOT, "workspace-template"), fixtureWorkspace, { recursive: true });
 const server = spawn(
     "python3",
-    ["server.py", "--workspace", "workspace-template", "--host", "127.0.0.1", "--port", String(port)],
+    ["server.py", "--workspace", fixtureWorkspace, "--host", "127.0.0.1", "--port", String(port)],
     { cwd: APP_ROOT, stdio: ["ignore", "pipe", "pipe"] },
 );
 let serverOutput = "";
@@ -537,6 +541,10 @@ try {
     assert.deepEqual(browserErrors, []);
     const desktopCoverage = await desktop.coverage.stopJSCoverage();
 
+    // The narrow first-use scenario needs a blank ledger, independently of desktop save/reload checks.
+    for (const file of ["data/expenses.json", "data/index/expenses-manifest.json"]) {
+        await copyFile(path.join(APP_ROOT, "workspace-template", file), path.join(fixtureWorkspace, file));
+    }
     const narrow = await browser.newPage({ viewport: { width: 375, height: 667 } });
     await narrow.coverage.startJSCoverage({ resetOnNavigation: false });
     const narrowErrors = [];
