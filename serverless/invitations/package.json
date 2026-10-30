@@ -1,0 +1,10 @@
+{
+    "name": "zeitberg-encrypted-invitations",
+    "version": "1.0.0",
+    "private": true,
+    "type": "commonjs",
+    "main": "handler.js",
+    "dependencies": {
+        "@aws-sdk/client-s3": "3.1160.0"
+    }
+}

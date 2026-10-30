@@ -1,0 +1,6 @@
+{
+    "name": "zeitberg-github-auth",
+    "private": true,
+    "type": "commonjs",
+    "engines": { "node": ">=22" }
+}
