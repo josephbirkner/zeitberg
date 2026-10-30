@@ -313,6 +313,8 @@ export class ShellView {
         this.uiZoom = this.normalizeAppZoom(value);
         this.uiZoomMode = mode === "auto" ? "auto" : "manual";
         document.body.style.setProperty("zoom", String(this.uiZoom));
+        // Viewport units do not shrink with CSS zoom; top-layer dialogs must compensate.
+        document.documentElement.style.setProperty("--app-zoom", String(this.uiZoom));
         const zoomPercent = this.locale.formatNumber(Math.round(this.uiZoom * 100));
         this.elements.appZoomLabelEl.textContent = `${zoomPercent}%`;
         this.elements.appZoomResetBtn.title =
@@ -411,6 +413,9 @@ export class ShellView {
      * @returns {void}
      */
     showLoadingScreen(label) {
+        for (const dialog of document.querySelectorAll(".connection-dialog[open]")) {
+            if (dialog instanceof HTMLDialogElement) dialog.close();
+        }
         document.body.classList.remove("app-ready");
         setVisible(this.elements.sidebarEl, false);
         setVisible(this.elements.topbarEl, false);
@@ -495,6 +500,9 @@ export class ShellView {
      * @returns {void}
      */
     setError(el, message) {
+        const localError = el.id === "loginError" ? document.querySelector("#customConnection[open] #customConnectionError")
+            : el.id === "workspaceError" ? document.querySelector("#workspaceManualConnection[open] #workspaceManualError") : null;
+        if (localError instanceof HTMLElement) el = localError;
         const localized = this.locale.localizeError(message);
         if (!localized) {
             el.textContent = "";
@@ -810,7 +818,7 @@ export class ShellView {
                 ? this.todoSummary
                 : this.state.activeTab === "expenses"
                   ? this.expenseSummary
-                  : this.repositorySummary;
+                  : "";
     }
 
 }

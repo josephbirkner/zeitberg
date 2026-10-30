@@ -89,6 +89,11 @@ test("--no-local serves provider login and SPA routes without workspace APIs", a
         assert.equal(component.headers.get("cache-control"), "no-store");
         assert.match(await component.text(), /id="loginSection"/);
 
+        const invitation = await fetch(`${baseUrl}/join/${"a".repeat(32)}`, { redirect: "manual" });
+        assert.equal(invitation.status, 200);
+        assert.equal(invitation.headers.get("cache-control"), "no-store");
+        assert.match(await invitation.text(), /id="loginSection"/);
+
         const callback = await fetch(`${baseUrl}/?oauth_provider=gitlab&code=test&state=test`, {
             redirect: "manual",
         });

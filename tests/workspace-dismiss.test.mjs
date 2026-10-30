@@ -99,7 +99,7 @@ function harness(t, { component = "time", panel = "main", setup = false, connect
         workspaceQrVideoEl: element(),
     };
     const controller = new WorkspaceController({
-        runtime, elements, routeController, buildCurrentRoute,
+        runtime, elements, routeController, buildCurrentRoute, configService: { localStorage: null },
         state: { activeTab: component },
         weekView: { pendingEdits }, todoView: { pendingEdits }, expenseView: { pendingEdits },
         onError() {},

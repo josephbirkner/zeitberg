@@ -48,6 +48,7 @@ async function inspectDialog(page, selector, name) {
             overflow: card.scrollWidth > card.clientWidth + 1, clipped, crosses,
             named: Boolean(element.getAttribute("aria-label") || document.getElementById(element.getAttribute("aria-labelledby"))?.textContent.trim()),
             actionsVisible: !actions || actions.top >= 0 && actions.bottom <= innerHeight + 1,
+            minimumTarget: document.documentElement.classList.contains("ui-narrow") || matchMedia("(pointer: coarse)").matches ? 44 : 36,
         };
     });
     await page.screenshot({ path: path.join(output, `${name}.png`) });
@@ -63,7 +64,7 @@ async function inspectDialog(page, selector, name) {
         assert.ok(Math.abs(date.height - category.height) < 1, `${name}: matching date/category heights`);
     }
     for (const cross of metrics.crosses) {
-        assert.ok(cross.width >= 44 && cross.height >= 44, `${name}: close touch target`);
+        assert.ok(cross.width >= metrics.minimumTarget && cross.height >= metrics.minimumTarget, `${name}: close target`);
         assert.ok(Math.abs(cross.dx) < 1 && Math.abs(cross.dy) < 1, `${name}: centered cross`);
     }
 }
@@ -108,6 +109,15 @@ try {
             await open();
             const dialog = page.locator(selector);
             await inspectDialog(page, selector, `${name}-${width}`);
+            if (name === "preferences") {
+                const help = dialog.locator(".context-help-trigger");
+                await help.click();
+                await dialog.locator(".context-help-panel:popover-open").waitFor();
+                await page.keyboard.press("Escape");
+                assert.equal(await dialog.isVisible(), true, "Escape closes help, not its parent dialog");
+                assert.equal(await dialog.locator(":popover-open").count(), 0);
+                assert.equal(await help.evaluate((node) => node === document.activeElement), true);
+            }
             if (name === "task") {
                 assert.equal(await page.locator("#todoDetails").evaluate((node) => node.open), false);
                 await page.locator("#todoDetails summary").click();
@@ -140,6 +150,32 @@ try {
         }
         console.log(`Interactive dialogs passed at ${width}×${height}, ${language}, ${theme}`);
     }
+    // CSS zoom scales viewport units too. Both fullscreen dialogs must still cover
+    // the physical viewport, with their action row reachable at either end of the range.
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const steps of [-2, 4, 4]) {
+        const direction = steps < 0 ? "#appZoomOutBtn" : "#appZoomInBtn";
+        for (let count = 0; count < Math.abs(steps); count++) await page.locator(direction).click();
+        const zoom = await page.locator("#appZoomLabel").textContent();
+        for (const [view, add, selector] of [["#menuTodoBtn", "#todoAddBtn", "#todoDialog"], ["#menuExpenseBtn", "#expenseAddBtn", "#expenseDialog"]]) {
+            await page.locator(view).click();
+            await page.locator(add).click();
+            const bounds = await page.locator(selector).evaluate((dialog) => {
+                const rect = dialog.getBoundingClientRect();
+                const card = dialog.querySelector(".dialog-card").getBoundingClientRect();
+                const actions = dialog.querySelector(".dialog-actions").getBoundingClientRect();
+                return { left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+                    cardWidth: card.width, cardHeight: card.height, actionTop: actions.top, actionBottom: actions.bottom,
+                    viewportWidth: innerWidth, viewportHeight: innerHeight };
+            });
+            assert.ok(Math.abs(bounds.left) <= 1 && Math.abs(bounds.top) <= 1, `${selector} at ${zoom}: aligned to viewport`);
+            for (const key of ["width", "cardWidth"]) assert.ok(Math.abs(bounds[key] - bounds.viewportWidth) <= 1, `${selector} at ${zoom}: full width`);
+            for (const key of ["height", "cardHeight"]) assert.ok(Math.abs(bounds[key] - bounds.viewportHeight) <= 1, `${selector} at ${zoom}: full height`);
+            assert.ok(bounds.actionTop >= 0 && bounds.actionBottom <= bounds.viewportHeight + 1, `${selector} at ${zoom}: actions reachable`);
+            await page.keyboard.press("Escape");
+        }
+    }
+    await page.locator("#appZoomResetBtn").click();
     // Optional task values survive collapsing, editing and saving; invalid recurrence stays
     // in the dialog instead of becoming a toast behind its backdrop.
     await page.setViewportSize({ width: 390, height: 844 });

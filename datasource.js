@@ -8,6 +8,45 @@ const GRAPHQL_UNKNOWN_CHUNK_BYTES = 64 * 1024;
 const HOSTED_CHUNK_CONCURRENCY = 6;
 
 /**
+ * Flattens provider validation messages, including GitLab's field-to-errors objects.
+ * Limits nesting and collection size so an unexpected response stays a bounded diagnostic.
+ * @param {unknown} value Provider response or nested validation value.
+ * @param {number} [depth] Current nesting depth.
+ * @returns {string} Readable provider detail without object coercion.
+ */
+function providerErrorDetail(value, depth = 0) {
+    if (depth > 4 || value == null) return "";
+    if (typeof value === "string") {
+        if (depth === 0) {
+            try { return providerErrorDetail(JSON.parse(value), depth + 1); } catch { /* Plain text response. */ }
+        }
+        return value;
+    }
+    if (Array.isArray(value)) return value.slice(0, 10).map((item) => providerErrorDetail(item, depth + 1)).filter(Boolean).join("; ");
+    if (typeof value === "object") {
+        const messages = ["message", "error_description", "error", "errors"].filter((key) => value[key] != null);
+        const fields = messages.length ? messages : Object.keys(value).slice(0, 10);
+        return fields.map((key) => {
+            const detail = providerErrorDetail(value[key], depth + 1);
+            return detail && !messages.length ? `${key}: ${detail}` : detail;
+        }).filter(Boolean).join("; ");
+    }
+    return String(value);
+}
+
+/**
+ * Replaces an aborted, timed-out hosted request with actionable text; writes are never retried automatically.
+ * @param {unknown} error Fetch or body-reading failure.
+ * @returns {unknown} A readable timeout or the original non-timeout failure.
+ */
+function hostedRequestError(error) {
+    if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) {
+        return new Error("The provider request timed out. Check the repository before retrying: the operation may already have succeeded.");
+    }
+    return error;
+}
+
+/**
  * Represents one non-successful response from a hosted Git provider.
  * Keeping the numeric status separate from the display message lets optional workspace documents distinguish a genuine 404 from transport and authorization failures without parsing prose.
  */
@@ -19,10 +58,11 @@ export class ProviderApiError extends Error {
      * @param {string} detail Provider-supplied diagnostic text with credentials already excluded.
      */
     constructor(provider, status, detail) {
-        const suffix = String(detail || "").replace(/\s+/g, " ").trim().slice(0, 500);
+        const suffix = providerErrorDetail(detail).replace(/\s+/g, " ").trim().slice(0, 500);
         super(`${provider} API error ${status}${suffix ? `: ${suffix}` : ""}`);
         this.name = "ProviderApiError";
         this.status = status;
+        this.detail = suffix;
     }
 }
 
@@ -542,7 +582,7 @@ export class DataSource {
 
     /**
      * Creates a private repository for onboarding when the selected provider supports a fully static public-client flow.
-     * GitHub and local sources retain their existing manual setup; GitLab and Forgejo override this operation.
+     * Hosted providers override this operation; local sources do not create repositories.
      * @param {string} name Repository name/path.
      * @param {string} [description] Optional repository description.
      * @returns {Promise<{repositoryUrl: string, repoInfo: any}>}
@@ -696,11 +736,7 @@ export class GitHubDataSource extends DataSource {
      * @returns {Promise<any>}
      */
     async fetchJson(url) {
-        const resp = await fetch(url, { headers: this.buildHeaders("application/vnd.github+json"), cache: "no-store" });
-        if (!resp.ok) {
-            throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
-        }
-        return await resp.json();
+        return await this.fetchJsonRequest(url, {});
     }
 
     /**
@@ -714,16 +750,42 @@ export class GitHubDataSource extends DataSource {
         const opts = options || {};
         const headers = this.buildHeaders(opts.accept || "application/vnd.github+json");
         /** @type {RequestInit} */
-        const init = { method: opts.method || "GET", headers, cache: "no-store" };
+        const init = { method: opts.method || "GET", headers, cache: "no-store", credentials: "omit", redirect: "error", signal: AbortSignal.timeout(20000) };
         if (opts.body !== undefined && opts.body !== null) {
             init.body = JSON.stringify(opts.body);
             init.headers = { ...headers, "Content-Type": "application/json" };
         }
-        const resp = await fetch(url, init);
-        if (!resp.ok) {
-            throw new Error(`GitHub API error ${resp.status}: ${await resp.text()}`);
+        try {
+            const resp = await fetch(url, init);
+            if (!resp.ok) throw new ProviderApiError("GitHub", resp.status, await resp.text());
+            return await resp.json();
+        } catch (error) {
+            throw hostedRequestError(error);
         }
-        return await resp.json();
+    }
+
+    /**
+     * Creates a private repository in the authenticated user's personal account.
+     * An initial README gives the shared Git commit pipeline a real base commit.
+     * Requires Repository creation permission; never retries an uncertain write.
+     * @param {string} name New repository name, without an owner prefix.
+     * @param {string} [description] Human-readable repository description.
+     * @returns {Promise<{repositoryUrl: string, repoInfo: any}>}
+     */
+    async createPrivateRepository(name, description = "Private zeitberg workspace") {
+        const repo = String(name || "").trim();
+        if (!/^[A-Za-z0-9_.-]{1,100}$/.test(repo) || [".", ".."].includes(repo)) {
+            throw new Error("Use letters, numbers, dots, dashes, or underscores for the repository name.");
+        }
+        const repository = await this.fetchJsonRequest("https://api.github.com/user/repos", {
+            method: "POST", body: { name: repo, description, private: true, auto_init: true },
+        });
+        const repositoryUrl = String(repository?.html_url || "");
+        const coordinates = parseHostedRepositoryUrl(repositoryUrl, "forgejo");
+        if (coordinates.origin !== "https://github.com" || repository.private !== true || !repository.default_branch || coordinates.repo !== repo) {
+            throw new Error("GitHub returned unexpected repository metadata. Check your repositories before retrying.");
+        }
+        return { repositoryUrl, repoInfo: repository };
     }
 
     /**
@@ -1271,6 +1333,7 @@ class HostedFileDataSource extends DataSource {
         this.token = String(token || "");
         this.providerLabel = providerLabel;
         this.apiRoot = "";
+        this.requestTimeoutMs = 30000;
     }
 
     /**
@@ -1301,23 +1364,18 @@ class HostedFileDataSource extends DataSource {
     async buildApiError(response) {
         let detail = "";
         try {
-            const text = await response.text();
-            if (text) {
-                try {
-                    const payload = JSON.parse(text);
-                    detail = String(payload?.message || payload?.error_description || payload?.error || text);
-                } catch {
-                    detail = text;
-                }
-            }
-        } catch {
+            detail = await response.text();
+        } catch (error) {
+            const failure = hostedRequestError(error);
+            if (failure !== error) throw failure;
             // Status and provider still produce a useful error when a response body is unavailable.
         }
         return new ProviderApiError(this.providerLabel, response.status, detail);
     }
 
     /**
-     * Performs one authenticated provider request and distinguishes browser transport/CORS failures from HTTP errors.
+     * Performs one authenticated provider request with a deadline covering headers and body consumption.
+     * Transport failures, timeouts, and HTTP errors remain distinct; potentially successful writes are never retried here.
      * @param {string} endpoint API-root-relative path beginning with a slash.
      * @param {{method?: string, body?: Object, accept?: string, allowNotFound?: boolean}} [options] Request controls.
      * @returns {Promise<Response | null>}
@@ -1326,7 +1384,7 @@ class HostedFileDataSource extends DataSource {
         if (!this.token) throw new Error(`Enter a ${this.providerLabel} access token.`);
         const headers = { ...this.buildHeaders(), Accept: options.accept || "application/json" };
         /** @type {RequestInit} */
-        const init = { method: options.method || "GET", headers, cache: "no-store" };
+        const init = { method: options.method || "GET", headers, cache: "no-store", signal: AbortSignal.timeout(this.requestTimeoutMs) };
         if (options.body !== undefined) {
             init.body = JSON.stringify(options.body);
             init.headers = { ...headers, "Content-Type": "application/json" };
@@ -1334,7 +1392,9 @@ class HostedFileDataSource extends DataSource {
         let response;
         try {
             response = await fetch(`${this.apiRoot}${endpoint}`, init);
-        } catch {
+        } catch (error) {
+            const failure = hostedRequestError(error);
+            if (failure !== error) throw failure;
             throw new Error(
                 `The browser could not reach ${new URL(this.apiRoot).host}. Check the network and whether that host permits cross-origin API requests.`,
             );
@@ -1354,7 +1414,11 @@ class HostedFileDataSource extends DataSource {
         const response = await this.request(endpoint, options);
         if (!response) return null;
         if (response.status === 204) return {};
-        return await response.json();
+        try {
+            return await response.json();
+        } catch (error) {
+            throw hostedRequestError(error);
+        }
     }
 
     /**
@@ -1366,7 +1430,11 @@ class HostedFileDataSource extends DataSource {
     async requestText(endpoint, options = {}) {
         const response = await this.request(endpoint, { accept: options.accept || "text/plain" });
         if (!response) throw new Error(`${this.providerLabel} returned an empty response.`);
-        return await response.text();
+        try {
+            return await response.text();
+        } catch (error) {
+            throw hostedRequestError(error);
+        }
     }
 
     /**

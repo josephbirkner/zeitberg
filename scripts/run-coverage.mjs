@@ -35,4 +35,5 @@ const workTimeBrowserStatus = await run(process.execPath, [fileURLToPath(new URL
 const sessionBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/workspace-sessions.browser.mjs", import.meta.url))]);
 const demoBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/demo.browser.mjs", import.meta.url))]);
 const dialogBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/dialogs.browser.mjs", import.meta.url))]);
-if (coverageStatus !== 0 || browserStatus !== 0 || workTimeBrowserStatus !== 0 || sessionBrowserStatus !== 0 || demoBrowserStatus !== 0 || dialogBrowserStatus !== 0) process.exitCode = 1;
+const onboardingBrowserStatus = await run(process.execPath, [fileURLToPath(new URL("../tests/onboarding.browser.mjs", import.meta.url))]);
+if (coverageStatus !== 0 || browserStatus !== 0 || workTimeBrowserStatus !== 0 || sessionBrowserStatus !== 0 || demoBrowserStatus !== 0 || dialogBrowserStatus !== 0 || onboardingBrowserStatus !== 0) process.exitCode = 1;

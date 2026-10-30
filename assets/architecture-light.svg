@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 620" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 120 1440 500" role="img" aria-labelledby="title description">
   <title id="title">zeitberg static workspace architecture</title>
   <desc id="description">The public static application runs in the browser and reads and writes a private workspace through the chosen Git provider API. There is no zeitberg backend.</desc>
   <defs>
@@ -23,7 +23,6 @@
 
   <rect width="1440" height="620" fill="#f7f7f4" />
   <rect x="60" y="145" width="1320" height="365" fill="url(#dots)" opacity="0.72" />
-  <text x="64" y="86" class="title">Your data, your Git repo.</text>
 
   <g transform="translate(70 250)">
     <rect width="245" height="132" rx="9" fill="#e9ebed" stroke="#7a879a" stroke-width="2" />

@@ -50,6 +50,48 @@ export function createMaterialIcon(name, className = "app-icon") {
 }
 
 /**
+ * Turns supplementary copy into keyboard- and touch-accessible help popovers.
+ * The original element (and its ID) is retained so locale updates and dynamic
+ * descriptions keep working. Native auto popovers provide Escape, light-dismiss,
+ * and top-layer placement even inside modal dialogs. Repeated calls are harmless.
+ * @param {Document | HTMLElement} root Document or newly mounted UI to enhance.
+ * @returns {void}
+ */
+export function initializeContextHelp(root) {
+    for (const content of root.querySelectorAll("[data-context-help]:not([data-help-ready])")) {
+        if (!(content instanceof HTMLElement)) continue;
+        content.dataset.helpReady = "true";
+        const wrapper = document.createElement("span");
+        wrapper.className = "context-help";
+        const panel = document.createElement("div");
+        panel.id = `help-${content.id || crypto.randomUUID()}`;
+        panel.className = "context-help-panel";
+        panel.setAttribute("popover", "auto");
+        panel.setAttribute("role", "note");
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "context-help-trigger";
+        trigger.dataset.i18nAriaLabel = "common.moreInfo";
+        trigger.setAttribute("aria-label", "More information");
+        trigger.setAttribute("popovertarget", panel.id);
+        trigger.append(createMaterialIcon("info"));
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "context-help-close";
+        close.dataset.i18nAriaLabel = "common.close";
+        close.setAttribute("aria-label", "Close");
+        close.setAttribute("popovertarget", panel.id);
+        close.setAttribute("popovertargetaction", "hide");
+        close.append(createMaterialIcon("close"));
+        content.replaceWith(wrapper);
+        panel.append(close, content);
+        wrapper.append(trigger, panel);
+        const anchor = content.dataset.helpAnchor && root.querySelector(content.dataset.helpAnchor);
+        if (anchor) anchor.append(wrapper);
+    }
+}
+
+/**
  * Converts a value to a string, preserving empty strings.
  * Normalizes nullish values to an empty string for text content.
  * @param {unknown} value

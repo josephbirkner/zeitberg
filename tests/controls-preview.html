@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zeitberg controls — fictional UI fixture</title>
+    <script type="importmap">{"imports":{"qr-scanner":"/vendor/qr-scanner/qr-scanner.min.js"}}</script>
+    <style>
+        .preview-controls { position: relative; z-index: 20; padding: 12px; display: flex; flex-wrap: wrap; gap: 12px; }
+        .preview-controls label { flex: 1 1 180px; }
+        #providerChooser, #workspaceDialog, #workspaceShareDialog { position: relative; inset: auto; margin: 12px auto; }
+        html.ui-narrow #providerChooser { height: auto; }
+        html.ui-narrow #providerChooser > .dialog-card { min-height: 620px; max-height: none; }
+    </style>
+</head>
+<body>
+    <nav class="preview-controls" aria-label="Visual fixture controls">
+        <label>Preview state<select id="previewState">
+            <option value="workspaces">Workspace management</option>
+            <option value="loading">Workspace loading</option>
+            <option value="share">Share workspace</option>
+            <option value="share-oauth">Share workspace (OAuth)</option>
+            <option value="create">Create workspace</option>
+            <option value="repositories">Repository picker</option>
+            <option value="device">Device authorization</option>
+        </select></label>
+        <label>Preview theme<select id="previewTheme"><option value="dark">Dark</option><option value="light">Light</option></select></label>
+        <label>Language<select id="previewLanguage"><option value="en">English</option><option value="de">Deutsch</option></select></label>
+    </nav>
+    <script type="module" src="./controls-preview.mjs"></script>
+</body>
+</html>

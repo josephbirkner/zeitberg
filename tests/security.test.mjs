@@ -51,8 +51,9 @@ test("one release token versions every static runtime dependency", async () => {
 
 test("OAuth client ids are explicit public deployment configuration", async () => {
     const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-    assert.match(html, /name="zeitberg-oauth-gitlab-client-id" content=""/);
-    assert.match(html, /name="zeitberg-oauth-codeberg-client-id" content=""/);
+    assert.match(html, /name="zeitberg-oauth-gitlab-client-id" content="[a-f0-9]{64}"/);
+    assert.match(html, /name="zeitberg-oauth-codeberg-client-id" content="[a-f0-9-]{36}"/);
+    assert.match(html, /name="zeitberg-oauth-github-client-id" content="Iv23liNvkhSh2mYH0oPw"/);
     assert.match(html, /id="loginOAuthBtn"/);
     assert.match(html, /id="workspaceCreateOAuthBtn"/);
 });

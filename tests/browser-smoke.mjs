@@ -300,9 +300,18 @@ try {
     assert.equal(await desktop.locator("#todoView").isVisible(), true);
     await desktop.locator("#todoCurrentFilterBtn").click();
     await desktop.locator("#todoOpenFilterBtn").click();
+    assert.equal(await desktop.locator("#todoAddBtn .expense-add-label").isVisible(), true);
+    const todoActionStyle = await desktop.locator("#todoAddBtn").evaluate((button) => ({
+        background: getComputedStyle(button).backgroundColor,
+        height: button.getBoundingClientRect().height,
+    }));
     await desktop.locator("#todoAddBtn").click();
     assert.equal(await desktop.locator("#todoDialog").evaluate((dialog) => dialog.open), true);
     await assertNoHorizontalDialogOverflow(desktop.locator("#todoDialog .dialog-card"));
+    const today = await desktop.evaluate(() => new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date()));
+    assert.equal(await desktop.locator("#todoDueDate").inputValue(), today);
     await desktop.locator("#todoCancelBtn").click();
 
     await openComponent(desktop, baseUrl, "expenses");
@@ -314,12 +323,15 @@ try {
         const settleStyle = settle ? getComputedStyle(settle) : null;
         return {
             background: style.backgroundColor,
+            height: button.getBoundingClientRect().height,
             settleBackground: settleStyle?.backgroundColor || "",
             width: button.getBoundingClientRect().width,
             settleWidth: settle?.getBoundingClientRect().width || 0,
         };
     });
     assert.notEqual(expenseActionStyle.background, expenseActionStyle.settleBackground);
+    assert.equal(expenseActionStyle.background, todoActionStyle.background);
+    assert.equal(expenseActionStyle.height, todoActionStyle.height);
     assert.ok(expenseActionStyle.width > expenseActionStyle.settleWidth);
     const expenseActionChannels = (expenseActionStyle.background.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
     assert.ok(

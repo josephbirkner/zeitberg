@@ -3,10 +3,30 @@ import test from "node:test";
 
 import {
     consumeOAuthCallback,
+    getOAuthProvider,
     OAUTH_PENDING_KEY,
+    readOAuthClientId,
     refreshOAuthCredential,
     startOAuthAuthorization,
 } from "../oauth.js";
+
+test("GitHub registration uses a separate device flow, never the PKCE redirect transport", () => {
+    const original = globalThis.HTMLMetaElement;
+    class Metadata { content = "Iv23liNvkhSh2mYH0oPw"; }
+    globalThis.HTMLMetaElement = Metadata;
+    try {
+        const document = { querySelector: (selector) => {
+            assert.equal(selector, 'meta[name="zeitberg-oauth-github-client-id"]');
+            return new Metadata();
+        } };
+        assert.equal(readOAuthClientId(document, "github"), "Iv23liNvkhSh2mYH0oPw");
+        assert.equal(readOAuthClientId(document, "custom"), "");
+        assert.throws(() => getOAuthProvider("github"), /GitLab.com and Codeberg only/);
+    } finally {
+        if (original === undefined) delete globalThis.HTMLMetaElement;
+        else globalThis.HTMLMetaElement = original;
+    }
+});
 
 /**
  * Minimal Storage implementation used to verify that OAuth state remains session-scoped.
@@ -32,6 +52,28 @@ class MemoryStorage {
     }
 }
 
+test("provider-first OAuth round-trips browse intent without a repository or embedded credential", async (context) => {
+    const sessionStorage = new MemoryStorage();
+    let destination;
+    const origin = "http://localhost:8000";
+    await startOAuthAuthorization({ crypto: globalThis.crypto, sessionStorage, location: { origin, assign: (url) => { destination = new URL(url); } } }, "codeberg", "public-id", {
+        mode: "browse", repositoryUrl: "", workspacePath: "zeitberg.json", ref: "main", remember: true,
+    });
+    const pending = JSON.parse(sessionStorage.getItem(OAUTH_PENDING_KEY));
+    assert.equal(pending.intent.mode, "browse");
+    assert.equal(pending.intent.repositoryUrl, "");
+    const callback = new URL(pending.redirect_uri);
+    callback.searchParams.set("code", "one-time");
+    callback.searchParams.set("state", destination.searchParams.get("state"));
+    context.mock.method(globalThis, "fetch", async () => Response.json({ access_token: "test-access", refresh_token: "test-refresh", token_type: "Bearer", expires_in: 7200 }));
+    const result = await consumeOAuthCallback({ sessionStorage, location: callback, history: { replaceState: (_state, _title, url) => { callback.href = new URL(url, origin).href; } } });
+    assert.equal(result.intent.mode, "browse");
+    assert.equal(result.credential.accessToken, "test-access");
+    assert.equal(result.intent.remember, true);
+    assert.equal(sessionStorage.getItem(OAUTH_PENDING_KEY), null);
+    assert.equal(callback.searchParams.has("code"), false);
+});
+
 test("GitLab OAuth uses S256 PKCE and restores a session-bound onboarding intent", async (context) => {
     const sessionStorage = new MemoryStorage();
     let authorizationUrl = "";
@@ -51,6 +93,7 @@ test("GitLab OAuth uses S256 PKCE and restores a session-bound onboarding intent
         ref: "main",
         workspacePath: "zeitberg.json",
         remember: false,
+        returnPath: "/expenses?v=1&category=*",
     };
 
     await startOAuthAuthorization(/** @type {any} */ (startWindow), "gitlab", "public-client-id", intent);

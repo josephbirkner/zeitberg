@@ -28,12 +28,15 @@ import { ShellView } from "./shell.view.js";
 import {
     getRequiredElement,
     getSourceMode,
+    initializeContextHelp,
     safeText,
     setVisible,
     TimeContext,
 } from "./utils.js";
 import { LocaleService, resolveLocale } from "./locale.js";
 import { consumeOAuthCallback } from "./oauth.js";
+import { OnboardingController } from "./onboarding.js";
+import { consumeInvitationLink, InvitationService } from "./invitations.js";
 import {
     consumeCapabilityLink,
     getApplicationBasePath,
@@ -63,9 +66,14 @@ export class App {
         this.oauthCallbackRequested = oauthCallbackRequested;
         /** @type {import("./routing.js").CapabilityLink | null} */
         this.capabilityImport = null;
+        /** @type {{id: string, key: string} | null} Scrubbed encrypted invitation. */
+        this.invitationImport = null;
         this.capabilityImportStartupError = "";
         try {
-            if (!this.isDemoMode) this.capabilityImport = consumeCapabilityLink(window, this.routeController.basePath);
+            if (!this.isDemoMode) {
+                this.invitationImport = consumeInvitationLink(window, this.routeController.basePath);
+                this.capabilityImport = consumeCapabilityLink(window, this.routeController.basePath);
+            }
         } catch (error) {
             this.capabilityImportStartupError = safeText(error);
         }
@@ -85,6 +93,7 @@ export class App {
               ? [navigator.language]
               : [];
         this.locale = new LocaleService(resolveLocale(this.localePreference, this.browserLanguages));
+        initializeContextHelp(document);
         this.locale.applyDocument(document);
         this.isLocalMode = this.initialRoute.workspace?.provider === "local" || getSourceMode() === "local";
         const persistedConfig = this.configService.loadConfig();
@@ -220,6 +229,9 @@ export class App {
         this.entryDeleteBtn = getRequiredElement("entryDeleteBtn", HTMLButtonElement);
         this.entryCancelBtn = getRequiredElement("entryCancelBtn", HTMLButtonElement);
         this.entryMetaEl = getRequiredElement("entryMeta", HTMLElement);
+        this.entryStartInput = getRequiredElement("entryStart", HTMLInputElement);
+        this.entryEndInput = getRequiredElement("entryEnd", HTMLInputElement);
+        this.entryErrorEl = getRequiredElement("entryError", HTMLElement);
         this.entryAssignmentInput = getRequiredElement("entryAssignment", HTMLInputElement);
         this.entryAssignmentListEl = getRequiredElement("entryAssignmentList", HTMLDataListElement);
         this.entryDescInput = getRequiredElement("entryDesc", HTMLTextAreaElement);
@@ -473,6 +485,9 @@ export class App {
                 entryDeleteBtn: this.entryDeleteBtn,
                 entryCancelBtn: this.entryCancelBtn,
                 entryMeta: this.entryMetaEl,
+                entryStart: this.entryStartInput,
+                entryEnd: this.entryEndInput,
+                entryError: this.entryErrorEl,
                 entryAssignment: this.entryAssignmentInput,
                 entryAssignmentList: this.entryAssignmentListEl,
                 entryDesc: this.entryDescInput,
@@ -685,6 +700,7 @@ export class App {
 
         const application = this;
         const workspaceRuntime = {
+            get sessions() { return application.sessions; },
             get activeGlobalPanel() {
                 return application.activeGlobalPanel;
             },
@@ -841,12 +857,14 @@ export class App {
             onToast: (message, timeout, tone) => this.shell.toast(message, timeout, tone),
             onBusy: (busy) => this.shell.setBusy(busy),
             onShowLogin: () => this.shell.showLoginScreen(),
+            onCreationProgress: (message) => this.shell.setProgress(0, 1, message),
             onRefreshNavigation: () => this.refreshSidebarNavigation(),
             onReload: () => this.reloadData(),
             onConnect: (token, connectionInfo) => this.connectWithToken(token, connectionInfo),
             onWriteRoute: (mode) => this.writeCurrentRoute(mode),
             buildCurrentRoute: () => this.buildCurrentRoute(),
             onLogout: (clearCredential) => this.logout(clearCredential),
+            onGitHubAuthorize: (intent) => this.onboarding.open("github", intent),
         });
         this.workspaceLoader = new WorkspaceLoader({
             runtime: workspaceRuntime,
@@ -864,7 +882,9 @@ export class App {
             todoView: this.todoView,
             expenseView: this.expenseView,
             workspaceController: this.workspaceController,
-            onProgress: (loaded, total, label) => this.shell.setProgress(loaded, total, label),
+            onProgress: (loaded, total, label) => this.sessions
+                ? this.sessions.reportLoadingProgress(this.activeWorkspaceConnection?.id || "", loaded, total, label)
+                : this.shell.setProgress(loaded, total, label),
             onToast: (message, timeout, tone) => this.shell.toast(message, timeout, tone),
             onSearchDirty: () => this.shell.markSearchDirty(),
             onRepositorySummaryChanged: () => this.shell.refreshRepoLabel(),
@@ -998,6 +1018,9 @@ export class App {
         });
         this.shell.initializeAppearance();
         this.sessions = new WorkspaceSessions(this);
+        this.loginWorkspacePathInput = getRequiredElement("loginWorkspacePath", HTMLInputElement);
+        this.loginWorkspacePathInput.value = this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath || "zeitberg.json";
+        this.onboarding = new OnboardingController(this);
         this.applyLocale(this.localePreference, false);
     }
 
@@ -1540,7 +1563,8 @@ export class App {
             try {
                 const result = await this.oauthCallbackPromise;
                 if (!result) throw new Error("The provider authorization callback is incomplete.");
-                await this.workspaceController.handleOAuthCallbackResult(result);
+                if (result.intent.mode === "browse") await this.onboarding.resume(result);
+                else await this.workspaceController.handleOAuthCallbackResult(result);
             } catch (error) {
                 this.shell.showLoginScreen();
                 this.shell.setError(this.loginErrorEl, safeText(error));
@@ -1553,8 +1577,14 @@ export class App {
             this.shell.setError(this.loginErrorEl, this.capabilityImportStartupError);
             return;
         }
-        if (this.capabilityImport) {
+        if (this.capabilityImport || this.invitationImport) {
             try {
+                if (this.invitationImport) {
+                    this.shell.showLoadingScreen(this.locale.t("workspace.openingInvitation"));
+                    const invitation = this.invitationImport;
+                    this.invitationImport = null;
+                    this.capabilityImport = await new InvitationService().resolve(invitation, this.routeController.basePath);
+                }
                 await this.workspaceController.importCapability();
             } catch (error) {
                 this.shell.showLoginScreen();
@@ -1590,6 +1620,10 @@ export class App {
                 this.shell.setError(this.loginErrorEl, safeText(err));
             });
         } else {
+            if (this.pendingRoute && this.workspaceRegistry.list().length > 1) {
+                this.shell.showLoadingScreen(this.locale.t("workspaceSessions.loading"));
+                if (await this.sessions.recoverInitialFailure(this.locale.t("workspaceSessions.reconnect"))) return;
+            }
             this.shell.setAuthStatus(this.locale.t("status.notLoggedIn"));
             this.shell.showLoginScreen();
         }
@@ -1634,12 +1668,15 @@ export class App {
     async navigateToTab(tab) {
         if (this.workspaceSetup) return;
         if (this.workspace) {
-            if (this.appSection.hidden) {
-                this.state.setActiveTab(tab);
+            // The session-aware switch also selects a workspace that enables this
+            // component. Resuming from the landing page must use the same path.
+            const resuming = this.appSection.hidden;
+            this.shell.setTab(tab);
+            if (resuming) {
                 this.shell.showApplicationScreen();
+                // Hidden screens deliberately suppress route writes. Record the
+                // resumed document only after the compatible workspace is visible.
                 this.writeCurrentRoute("push");
-            } else {
-                this.shell.setTab(tab);
             }
             if (tab === "search") queueMicrotask(() => this.searchInput.focus());
             return;
@@ -1789,7 +1826,7 @@ export class App {
         }
 
         const expectedWorkspaceId = String(this.pendingRoute?.workspace?.expectedWorkspaceId || "");
-        const workspacePath = String(this.pendingRoute?.workspace?.workspacePath || this.config.workspacePath || "zeitberg.json");
+        const workspacePath = this.loginWorkspacePathInput.value.trim();
         let locator;
         try {
             locator = buildHostedWorkspaceLocator(
@@ -1807,6 +1844,11 @@ export class App {
         this.workspaceRegistry.setActive(connection.id);
         this.configService.saveWorkspaceRegistry(this.workspaceRegistry);
         this.configService.saveWorkspaceCredential(connection.id, tok, remember);
+        if (this.sessions.current) {
+            this.tokenInput.value = "";
+            await this.workspaceController.switchWorkspace(connection.id, this.pendingRoute ? { ...this.pendingRoute, workspace: connection.toLocator() } : null);
+            return;
+        }
         this.workspaceController.activateWorkspaceConnection(connection, tok);
         if (!this.pendingRoute) {
             this.pendingRoute = {
@@ -1887,6 +1929,7 @@ export class App {
      * @returns {Promise<boolean>}
      */
     async reloadData() {
+        this.sessions.beginLoading();
         this.shell.showLoadingScreen(
             this.locale.t(this.isLocalMode ? "loading.prepareLocal" : "loading.prepareRepository"),
         );
@@ -1932,7 +1975,7 @@ export class App {
                 this.weekView.reset();
                 this.searchView.reset();
             }
-            void this.sessions.loaded();
+            await this.sessions.loaded();
             const requestedRoute = this.pendingRoute;
             if (!requestedRoute && !this.workspace?.hasComponent("time_tracking")) {
                 this.state.setActiveTab(this.workspace?.hasComponent("todos") ? "todos" : "expenses");
@@ -1947,6 +1990,7 @@ export class App {
             }
             return true;
         } catch (err) {
+            if (await this.sessions.recoverInitialFailure(err)) return true;
             this.shell.showLoadingError(safeText(err));
             return false;
         } finally {
@@ -1962,9 +2006,7 @@ export class App {
      * @returns {Promise<void>}
      */
     async connectWithToken(token, connectionInfo = null) {
-        const usableToken = this.activeWorkspaceConnection
-            ? (await this.workspaceController.loadUsableWorkspaceCredential(this.activeWorkspaceConnection)) || token
-            : token;
+        const usableToken = token;
         this.token = usableToken;
         this.state.setToken(usableToken);
         this.dataSource = createHostedDataSource(this.config, usableToken);
@@ -1985,6 +2027,11 @@ export class App {
         );
         this.shell.setBusy(true);
         try {
+            const refreshedToken = this.activeWorkspaceConnection
+                ? (await this.workspaceController.loadUsableWorkspaceCredential(this.activeWorkspaceConnection)) || token : token;
+            this.token = refreshedToken;
+            this.state.setToken(refreshedToken);
+            this.dataSource.setToken(refreshedToken);
             const { repoInfo, userInfo } = connectionInfo || (await this.dataSource.checkConnection());
             const repoLabel = repoInfo?.full_name
                 ? repoInfo.full_name
@@ -2002,6 +2049,7 @@ export class App {
             setVisible(this.projectsBtn, true);
             await this.reloadData();
         } catch (err) {
+            if (await this.sessions.recoverInitialFailure(err)) return;
             this.state.ghUser = null;
             this.shell.setAuthStatus(this.locale.t("status.notLoggedIn"));
             this.shell.showLoginScreen();
@@ -2080,5 +2128,8 @@ export class App {
     }
 }
 
-const app = new App();
-void app.start();
+// Importing the controller in Node tests must not bootstrap a browser application.
+if (typeof document !== "undefined") {
+    const app = new App();
+    void app.start();
+}

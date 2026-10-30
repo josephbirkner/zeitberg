@@ -6,10 +6,15 @@ const OAUTH_PENDING_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_REFRESH_SKEW_MS = 60 * 1000;
 const OAUTH_CALLBACK_PARAMETERS = new Set(["code", "error", "error_description", "oauth_provider", "scope", "state"]);
 
+// Deployment-owned endpoint only; never take an authentication relay URL from a
+// workspace, capability link or stored credential, which could exfiltrate tokens.
+export const GITHUB_RELAY_URL = "https://zeitbergauthjktlgxby-githubauth.functions.fnc.fr-par.scw.cloud/";
+export const GITHUB_CLIENT_ID = "Iv23liNvkhSh2mYH0oPw";
+
 /**
  * @typedef {Object} OAuthIntent
  * @description Credential-free onboarding state retained in session storage while the browser visits a provider authorization page.
- * @property {"connect" | "create"} mode
+ * @property {"connect" | "create" | "browse"} mode
  * @property {string} repositoryUrl
  * @property {string} ref
  * @property {string} workspacePath
@@ -18,6 +23,7 @@ const OAUTH_CALLBACK_PARAMETERS = new Set(["code", "error", "error_description",
  * @property {string} [repositoryName]
  * @property {string} [workspaceName]
  * @property {string} [timezone]
+ * @property {string} [returnPath] Credential-free local route to restore after reconnecting a different workspace.
  */
 
 /**
@@ -27,7 +33,7 @@ const OAUTH_CALLBACK_PARAMETERS = new Set(["code", "error", "error_description",
  * @property {string} accessToken
  * @property {string} refreshToken
  * @property {number} expiresAt
- * @property {"gitlab" | "codeberg"} provider
+ * @property {"github" | "gitlab" | "codeberg"} provider
  * @property {string} clientId
  * @property {string} redirectUri
  * @property {string} tokenType
@@ -67,13 +73,15 @@ export function getOAuthProvider(provider) {
 
 /**
  * Reads a public OAuth application client id from first-party document metadata.
- * Client ids are intentionally configuration rather than secrets; an empty value keeps OAuth disabled while PAT onboarding remains functional.
+ * Client ids are public configuration, not secrets. A configured id does not imply
+ * that its provider's authorization flow is implemented or browser-compatible;
+ * callers must separately check supported flows before enabling OAuth controls.
  * @param {Document} documentObject Application document.
  * @param {string} provider Provider identifier.
  * @returns {string}
  */
 export function readOAuthClientId(documentObject, provider) {
-    const name = provider === "gitlab" ? "zeitberg-oauth-gitlab-client-id" : provider === "codeberg" ? "zeitberg-oauth-codeberg-client-id" : "";
+    const name = ["github", "gitlab", "codeberg"].includes(provider) ? `zeitberg-oauth-${provider}-client-id` : "";
     if (!name) return "";
     const element = documentObject.querySelector(`meta[name="${name}"]`);
     return element instanceof HTMLMetaElement ? element.content.trim() : "";
@@ -129,14 +137,18 @@ function equalState(left, right) {
 function normalizeOAuthIntent(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("OAuth onboarding state is missing.");
     const raw = /** @type {Record<string, unknown>} */ (value);
-    const mode = raw.mode === "create" ? "create" : raw.mode === "connect" ? "connect" : "";
+    const mode = raw.mode === "create" ? "create" : raw.mode === "connect" ? "connect" : raw.mode === "browse" ? "browse" : "";
     const repositoryUrl = String(raw.repositoryUrl || "").trim().slice(0, 2048);
     const ref = String(raw.ref || "main").trim().slice(0, 256);
     const workspacePath = String(raw.workspacePath || "zeitberg.json").trim().slice(0, 512);
+    const returnPath = String(raw.returnPath || "").slice(0, 8192);
+    if (returnPath && (!returnPath.startsWith("/") || returnPath.startsWith("//") || returnPath.includes("\\") || returnPath.includes("#"))) {
+        throw new Error("OAuth return route must be a local credential-free path.");
+    }
     if (!mode || !ref || !workspacePath) throw new Error("OAuth onboarding state is incomplete.");
     if (mode === "connect" && !repositoryUrl) throw new Error("OAuth onboarding state has no repository.");
     return {
-        mode: /** @type {"connect" | "create"} */ (mode),
+        mode: /** @type {"connect" | "create" | "browse"} */ (mode),
         repositoryUrl,
         ref,
         workspacePath,
@@ -145,6 +157,7 @@ function normalizeOAuthIntent(value) {
         repositoryName: String(raw.repositoryName || "").trim().slice(0, 128),
         workspaceName: String(raw.workspaceName || "").trim().slice(0, 128),
         timezone: String(raw.timezone || "").trim().slice(0, 128),
+        returnPath,
     };
 }
 
@@ -225,7 +238,7 @@ async function buildTokenError(response, provider) {
 /**
  * Converts one provider token response into the storage model shared by initial grants and refreshes.
  * @param {any} payload Provider response JSON.
- * @param {"gitlab" | "codeberg"} provider Provider identifier.
+ * @param {"github" | "gitlab" | "codeberg"} provider Provider identifier.
  * @param {string} clientId Public OAuth application id.
  * @param {string} redirectUri Registered callback URI.
  * @param {string} [fallbackRefreshToken] Existing refresh token when a refresh response omits it.
@@ -348,6 +361,12 @@ export async function refreshOAuthCredential(credential) {
     if (!credential.refreshToken || !credential.provider || !credential.clientId || !credential.redirectUri) {
         throw new Error("The OAuth session expired and cannot be refreshed. Authenticate again.");
     }
+    if (credential.provider === "github") {
+        if (credential.clientId !== GITHUB_CLIENT_ID) throw new Error("Unknown GitHub OAuth application. Authenticate again.");
+        const payload = await requestGitHubRelay(GITHUB_RELAY_URL, { action: "refresh", refresh_token: credential.refreshToken });
+        if (payload.error) throw new Error("The GitHub session could not be refreshed. Authenticate again.");
+        return normalizeTokenResponse(payload, "github", GITHUB_CLIENT_ID, "https://github.com/login/device", credential.refreshToken);
+    }
     const provider = getOAuthProvider(credential.provider);
     const body = new URLSearchParams({
         client_id: credential.clientId,
@@ -377,3 +396,108 @@ export async function refreshOAuthCredential(credential) {
 }
 
 export { OAUTH_PENDING_KEY };
+
+/**
+ * Sends one bounded request to the deployment's relay. Tokens stay in POST bodies
+ * and no cookies, redirects or cached responses are used. Error bodies are never
+ * reflected into the UI because an intermediary may include sensitive details.
+ * @param {string} relayUrl Trusted first-party deployment configuration.
+ * @param {Record<string, string>} body Fixed device, token or refresh request.
+ * @param {AbortSignal} [signal] Cancellation when the login dialog closes.
+ * @returns {Promise<any>}
+ */
+async function requestGitHubRelay(relayUrl, body, signal) {
+    if (!relayUrl || new URL(relayUrl).protocol !== "https:") throw new Error("GitHub authorization relay is not configured.");
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (signal?.aborted) throw new DOMException("Authorization cancelled", "AbortError");
+    signal?.addEventListener("abort", abort, { once: true });
+    const timeout = setTimeout(abort, 20_000);
+    try {
+        const response = await fetch(relayUrl, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+            credentials: "omit", redirect: "error", cache: "no-store", signal: controller.signal,
+        });
+        if (response.status === 429) return { error: "rate_limited" };
+        if (!response.ok) throw new Error("GitHub authorization relay is unavailable. Please try again.");
+        const result = await response.json();
+        if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("Invalid GitHub authorization response.");
+        return result;
+    } catch (error) {
+        if (signal?.aborted) throw new DOMException("Authorization cancelled", "AbortError");
+        throw new Error("GitHub authorization could not reach the relay. Please try again.");
+    } finally {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
+    }
+}
+
+/**
+ * Waits between polls without blocking the UI; cancellation clears the timer and
+ * listener immediately so closing the dialog cannot leave hidden polling behind.
+ * @param {number} milliseconds Provider-directed polling delay.
+ * @param {AbortSignal} signal Dialog lifetime.
+ * @returns {Promise<void>}
+ */
+function waitForDevicePoll(milliseconds, signal) {
+    return new Promise((resolve, reject) => {
+        if (signal.aborted) { reject(new DOMException("Authorization cancelled", "AbortError")); return; }
+        const abort = () => { clearTimeout(timer); reject(new DOMException("Authorization cancelled", "AbortError")); };
+        const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, milliseconds);
+        signal.addEventListener("abort", abort, { once: true });
+    });
+}
+
+/**
+ * Performs GitHub device authorization through the small CORS relay, then returns
+ * the same credential model as PKCE. Pending device codes stay in memory only.
+ * The caller displays the user code and an explicit link to GitHub; no popup or
+ * redirect is required. Respect slow_down, rate limits, expiry and cancellation.
+ */
+export class GitHubDeviceFlow {
+    /**
+     * Binds trusted deployment settings and injectable timing for deterministic tests.
+     * @param {string} [relayUrl] Relay URL from source-controlled deployment config.
+     * @param {{now?: () => number, wait?: (ms: number, signal: AbortSignal) => Promise<void>}} [timing] Test clock and delay.
+     */
+    constructor(relayUrl = GITHUB_RELAY_URL, { now = Date.now, wait = waitForDevicePoll } = {}) {
+        this.relayUrl = relayUrl;
+        this.now = now;
+        this.wait = wait;
+    }
+
+    /**
+     * Starts one grant and polls until explicitly authorized, denied, expired or cancelled.
+     * @param {(code: string) => void} showCode Displays the public one-time user verification code.
+     * @param {AbortSignal} signal Dialog lifecycle cancellation signal.
+     * @returns {Promise<OAuthCredential>}
+     */
+    async authorize(showCode, signal) {
+        const device = await requestGitHubRelay(this.relayUrl, { action: "device" }, signal);
+        if (device.error || device.verification_uri !== "https://github.com/login/device" ||
+            typeof device.device_code !== "string" || !/^[A-Za-z0-9_.-]{1,8192}$/.test(device.device_code) ||
+            typeof device.user_code !== "string" || !/^[A-Z0-9-]{4,32}$/.test(device.user_code) ||
+            !Number.isFinite(device.expires_in) || device.expires_in <= 0) {
+            throw new Error("GitHub device authorization could not be started. Please try again.");
+        }
+        const expires = this.now() + Math.min(device.expires_in, 900) * 1000;
+        let interval = Math.max(5, Number(device.interval) || 5) * 1000;
+        if (signal.aborted) throw new DOMException("Authorization cancelled", "AbortError");
+        showCode(device.user_code);
+        while (this.now() < expires) {
+            await this.wait(Math.min(interval, expires - this.now()), signal);
+            if (signal.aborted) throw new DOMException("Authorization cancelled", "AbortError");
+            if (this.now() >= expires) break;
+            const payload = await requestGitHubRelay(this.relayUrl, { action: "token", device_code: device.device_code }, signal);
+            if (payload.error === "authorization_pending") continue;
+            if (payload.error === "slow_down") { interval += 5000; continue; }
+            if (payload.error === "rate_limited") { interval = Math.max(interval, 60_000); continue; }
+            if (payload.error === "access_denied") throw new Error("GitHub authorization was declined.");
+            if (payload.error === "expired_token") break;
+            if (payload.error) throw new Error("GitHub authorization failed. Please start again.");
+            if (signal.aborted) throw new DOMException("Authorization cancelled", "AbortError");
+            return normalizeTokenResponse(payload, "github", GITHUB_CLIENT_ID, "https://github.com/login/device");
+        }
+        throw new Error("The GitHub authorization code expired. Please start again.");
+    }
+}

@@ -4,16 +4,18 @@ import {
     parseGitHubRepository,
 } from "./config.js";
 import { CapabilityScanner } from "./capability-scanner.js";
-import { createHostedDataSource, LocalDataSource } from "./datasource.js";
+import { InvitationService, parseInvitationLink } from "./invitations.js";
+import { createHostedDataSource, LocalDataSource, ProviderApiError } from "./datasource.js";
 import { createDefaultExpenseCategories, ExpenseDocument, ExpenseManifest, Workspace } from "./model.js";
-import { readOAuthClientId, refreshOAuthCredential, startOAuthAuthorization } from "./oauth.js";
+import { GITHUB_RELAY_URL, readOAuthClientId, refreshOAuthCredential, startOAuthAuthorization } from "./oauth.js";
 import {
     formatAppRoute,
     formatCapabilityLink,
     normalizeWorkspaceRouteLocator,
     parseCapabilityLink,
+    parseAppRoute,
 } from "./routing.js";
-import { cloneJson, safeText, setVisible } from "./utils.js";
+import { cloneJson, safeText, setVisible, createMaterialIcon } from "./utils.js";
 
 /**
  * Carries a repository bootstrap problem from the loading pipeline into the workspace editor.
@@ -129,6 +131,7 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {Workspace | null} workspace
  * @property {Object | null} workspaceConfigBaseRaw
  * @property {import("./config.js").WorkspaceRegistry} workspaceRegistry
+ * @property {import("./workspace.sessions.js").WorkspaceSessions} [sessions]
  * @property {{reason: "missing" | "invalid_json" | "invalid", path: string, detail: string, raw: Object | null} | null} workspaceSetup
  */
 
@@ -220,6 +223,7 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {(element: HTMLElement, message: unknown) => void} onError
  * @property {(message: string, timeout?: number, tone?: "error" | "success") => void} onToast
  * @property {(isBusy: boolean) => void} onBusy
+ * @property {(message: string) => void} [onCreationProgress] Reports the current repository-onboarding stage.
  * @property {() => void} onShowLogin
  * @property {() => void} onRefreshNavigation
  * @property {() => Promise<boolean>} onReload
@@ -227,6 +231,7 @@ export function buildWorkspaceDraftNamespace(isLocalMode, activeConnection, work
  * @property {(mode?: "push" | "replace") => void} onWriteRoute
  * @property {() => import("./routing.js").AppRoute} buildCurrentRoute
  * @property {(clearCredential?: boolean) => void} onLogout
+ * @property {(intent: import("./oauth.js").OAuthIntent) => void} [onGitHubAuthorize] Opens the reusable device authorization dialog without redirecting.
  */
 
 /**
@@ -241,8 +246,17 @@ export class WorkspaceController {
      */
     constructor(options) {
         this.runtime = options.runtime;
+        /** @type {WorkspaceController | null} Isolated controller owning the open editor. */
+        this.editorTarget = null;
+        /** @type {WorkspaceController | null} Isolated controller owning the share surface. */
+        this.shareTarget = null;
+        this.reconnectId = "";
         this.isLocalMode = options.isLocalMode;
         this.configService = options.configService;
+        this.invitations = new InvitationService({ storage: this.configService.localStorage });
+        this.invitationBusy = false;
+        /** @type {{connectionId: string, capability: string, link: string} | null} In-memory clipboard retry, never persisted. */
+        this.preparedInvitation = null;
         this.locale = options.locale;
         this.routeController = options.routeController;
         this.state = options.state;
@@ -254,6 +268,7 @@ export class WorkspaceController {
         this.setError = options.onError;
         this.toast = options.onToast;
         this.setBusy = options.onBusy;
+        this.creationProgress = options.onCreationProgress;
         this.showLoginScreen = options.onShowLogin;
         this.refreshSidebarNavigation = options.onRefreshNavigation;
         this.reloadData = options.onReload;
@@ -261,6 +276,7 @@ export class WorkspaceController {
         this.writeCurrentRoute = options.onWriteRoute;
         this.buildCurrentRoute = options.buildCurrentRoute;
         this.logout = options.onLogout;
+        this.onGitHubAuthorize = options.onGitHubAuthorize;
         this.capabilityScanner = new CapabilityScanner({
             elements: {
                 container: this.elements.workspaceQrScannerEl,
@@ -348,7 +364,7 @@ export class WorkspaceController {
      */
     refreshOAuthControls() {
         const configure = (button, provider) => {
-            const supported = provider === "gitlab" || provider === "codeberg";
+            const supported = provider === "gitlab" || provider === "codeberg" || (provider === "github" && Boolean(GITHUB_RELAY_URL));
             const clientId = supported ? readOAuthClientId(document, provider) : "";
             button.hidden = !supported;
             button.disabled = supported && !clientId;
@@ -378,7 +394,7 @@ export class WorkspaceController {
         const providerInput = isSettings ? this.elements.workspaceProviderInput : this.elements.providerInput;
         const repositoryInput = isSettings ? this.elements.workspaceRepositoryInput : this.elements.repositoryInput;
         const refInput = isSettings ? this.elements.workspaceRefInput : this.elements.refInput;
-        const pathInput = isSettings ? this.elements.workspacePathInput : null;
+        const pathInput = isSettings ? this.elements.workspacePathInput : document.querySelector("#loginWorkspacePath");
         const rememberInput = isSettings ? this.elements.workspaceRememberInput : this.elements.rememberInput;
         const errorElement = isSettings ? this.elements.workspaceErrorEl : this.elements.loginErrorEl;
         this.setError(errorElement, "");
@@ -387,10 +403,23 @@ export class WorkspaceController {
                 providerInput.value,
                 repositoryInput.value,
                 refInput.value,
-                pathInput?.value || this.runtime.pendingRoute?.workspace?.workspacePath || this.runtime.config.workspacePath,
+                (pathInput instanceof HTMLInputElement ? pathInput.value : "") || this.runtime.pendingRoute?.workspace?.workspacePath || this.runtime.config.workspacePath,
                 this.runtime.pendingRoute?.workspace?.expectedWorkspaceId || "",
             );
             const clientId = readOAuthClientId(document, locator.provider);
+            const reconnecting = isSettings && this.reconnectId && this.runtime.workspace;
+            if (reconnecting && [...(this.runtime.sessions?.sessions.values() || [])].some((session) => session.dirty || session.saving)) {
+                throw new Error(this.locale.t("workspace.saveBeforeReconnect"));
+            }
+            if (locator.provider === "github" && this.onGitHubAuthorize) {
+                this.onGitHubAuthorize({
+                    mode: "connect", repositoryUrl: locator.repositoryUrl, ref: locator.ref,
+                    workspacePath: locator.workspacePath, expectedWorkspaceId: locator.expectedWorkspaceId,
+                    remember: rememberInput.checked,
+                    returnPath: reconnecting ? formatAppRoute(this.buildCurrentRoute(), this.routeController.basePath) : "",
+                });
+                return;
+            }
             await startOAuthAuthorization(
                 window,
                 locator.provider,
@@ -402,6 +431,7 @@ export class WorkspaceController {
                     workspacePath: locator.workspacePath,
                     expectedWorkspaceId: locator.expectedWorkspaceId,
                     remember: rememberInput.checked,
+                    returnPath: reconnecting ? formatAppRoute(this.buildCurrentRoute(), this.routeController.basePath) : "",
                 },
                 this.routeController.basePath,
             );
@@ -554,28 +584,36 @@ export class WorkspaceController {
      * This shares the exact same initialization builder as adoption of an existing repository, preventing the two onboarding paths from drifting.
      * @param {string} workspaceName Human-readable workspace name.
      * @param {string} timezone IANA timezone identifier.
+     * @param {string[]} [enabledComponents] Canonical component ids selected for the new workspace.
      * @returns {Promise<{files: import("./datasource.js").SaveFile[], workspace: Workspace}>}
      */
-    async loadWorkspaceTemplateFiles(workspaceName, timezone) {
-        const workspace = Workspace.createDefault(
+    async loadWorkspaceTemplateFiles(workspaceName, timezone, enabledComponents = ["time", "tasks", "expenses"]) {
+        let workspace = Workspace.createDefault(
             crypto.randomUUID(),
             String(workspaceName || "").trim(),
             String(timezone || "").trim(),
         );
+        const raw = JSON.parse(workspace.toJson());
+        if (!enabledComponents.length || enabledComponents.some((id) => !Object.prototype.hasOwnProperty.call(raw.components, id))) {
+            throw new Error(this.locale.t("onboarding.chooseApps"));
+        }
+        raw.components = Object.fromEntries(enabledComponents.map((id) => [id, raw.components[id]]));
+        workspace = Workspace.fromRaw(raw);
         const files = await this.buildWorkspaceInitializationFiles(workspace, "zeitberg.json", true);
         return { files, workspace };
     }
 
     /**
-     * Creates, initializes, registers, and opens one private GitLab or Codeberg workspace using a PAT or OAuth grant.
+     * Creates, initializes, registers, and opens one private hosted workspace using a PAT or OAuth grant.
      * All post-creation loading uses the ordinary data-source and registry path, ensuring assisted onboarding does not become a second application mode.
-     * @param {"gitlab" | "codeberg"} provider Hosted provider.
+     * @param {"github" | "gitlab" | "codeberg"} provider Hosted provider.
      * @param {string} repositoryName New repository name.
      * @param {string} workspaceName New workspace display name.
      * @param {string} timezone IANA timezone.
      * @param {string} accessToken PAT or OAuth access token.
      * @param {boolean} remember Whether browser credential storage survives restarts.
      * @param {import("./config.js").WorkspaceCredentialRecord | null} [oauthCredential] Refreshable OAuth record, when applicable.
+     * @param {string[]} [enabledComponents] Canonical component ids to initialize.
      * @returns {Promise<void>}
      */
     async createAndOpenWorkspace(
@@ -586,39 +624,50 @@ export class WorkspaceController {
         accessToken,
         remember,
         oauthCredential = null,
+        enabledComponents = ["time", "tasks", "expenses"],
     ) {
         const placeholderUrl =
-            provider === "gitlab"
+            provider === "github" ? "https://github.com/zeitberg-onboarding/placeholder" : provider === "gitlab"
                 ? "https://gitlab.com/zeitberg-onboarding/placeholder"
                 : "https://codeberg.org/zeitberg-onboarding/placeholder";
         const placeholderLocator = buildHostedWorkspaceLocator(provider, placeholderUrl, "main", "zeitberg.json");
         const creationConfig = configForRouteWorkspace(this.runtime.config, placeholderLocator);
         const creationSource = createHostedDataSource(creationConfig, accessToken);
-        const { files, workspace } = await this.loadWorkspaceTemplateFiles(workspaceName, timezone);
+        this.creationProgress?.(this.locale.t("workspace.preparingFiles"));
+        const { files, workspace } = await this.loadWorkspaceTemplateFiles(workspaceName, timezone, enabledComponents);
         let repositoryUrl = "";
         try {
+            this.creationProgress?.(this.locale.t("workspace.creatingRepository"));
             const created = await creationSource.createPrivateRepository(repositoryName);
             repositoryUrl = created.repositoryUrl;
             const locator = buildHostedWorkspaceLocator(
                 provider,
                 repositoryUrl,
-                "main",
+                String(created.repoInfo?.default_branch || "main"),
                 "zeitberg.json",
                 workspace.workspace_id,
             );
-            const initializedSource = createHostedDataSource(configForRouteWorkspace(this.runtime.config, locator), accessToken);
-            await initializedSource.saveFiles(files, "Initialize zeitberg workspace");
-
             const connection = this.runtime.workspaceRegistry.upsert(locator, {
                 displayName: workspace.name,
                 expectedWorkspaceId: workspace.workspace_id,
             });
-            this.runtime.workspaceRegistry.setActive(connection.id);
             this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
             if (oauthCredential) {
                 this.configService.saveWorkspaceOAuthCredential(connection.id, oauthCredential, remember);
             } else {
                 this.configService.saveWorkspaceCredential(connection.id, accessToken, remember);
+            }
+            // Retain the new connection and grant even if seeding is interrupted.
+            // Reconnecting can then repair the existing repository instead of creating another one.
+            this.creationProgress?.(this.locale.t("workspace.initializingRepository", { repository: repositoryUrl }));
+            const initializedSource = createHostedDataSource(configForRouteWorkspace(this.runtime.config, locator), accessToken);
+            await initializedSource.saveFiles(files, "Initialize zeitberg workspace");
+            this.creationProgress?.(this.locale.t("workspace.openingRepository"));
+            if (this.runtime.sessions?.current) {
+                this.closeWorkspaceCreateDialog();
+                this.closeWorkspaceSettings("none");
+                await this.switchWorkspace(connection.id);
+                return;
             }
             this.activateWorkspaceConnection(connection, accessToken);
             this.runtime.pendingRoute = {
@@ -639,6 +688,13 @@ export class WorkspaceController {
                         error: this.locale.localizeError(error),
                     }),
                 );
+            }
+            if (error instanceof ProviderApiError && [400, 409, 422].includes(error.status) &&
+                /(?:name|path|repository).*already (?:been )?(?:taken|exists)|already exists.*(?:name|repository)/i.test(error.detail)) {
+                throw new Error(this.locale.t("workspace.repositoryNameTaken", { name: repositoryName }));
+            }
+            if (provider === "github" && error instanceof ProviderApiError && error.status === 403) {
+                throw new Error(`${this.locale.t("onboarding.githubCreatePermission")} ${this.locale.localizeError(error)}`);
             }
             throw error;
         }
@@ -706,6 +762,24 @@ export class WorkspaceController {
         this.runtime.workspaceRegistry.setActive(connection.id);
         this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
         this.configService.saveWorkspaceOAuthCredential(connection.id, credential, intent.remember);
+        // Existing stores belong to their session: never run the initial-login
+        // loader against them when authorizing a different repository.
+        if (this.runtime.sessions?.current) {
+            if (intent.returnPath) await this.runtime.sessions.reconnect(connection);
+            else await this.switchWorkspace(connection.id);
+            return;
+        }
+        if (intent.returnPath) {
+            const route = parseAppRoute(new URL(intent.returnPath, window.location.origin), this.routeController.basePath);
+            if (route.workspace) {
+                const previous = this.runtime.workspaceRegistry.upsert(route.workspace);
+                const token = await this.loadUsableWorkspaceCredential(previous);
+                this.activateWorkspaceConnection(previous, token);
+                this.runtime.pendingRoute = route;
+                await this.connectWithToken(token);
+                return;
+            }
+        }
         this.activateWorkspaceConnection(connection, credential.accessToken);
         this.runtime.pendingRoute = {
             version: 1,
@@ -978,6 +1052,7 @@ export class WorkspaceController {
      * @returns {Promise<void>}
      */
     async handleWorkspaceConfigurationSubmit(event) {
+        if (this.editorTarget && this.editorTarget !== this) return this.editorTarget.handleWorkspaceConfigurationSubmit(event);
         event.preventDefault();
         this.setError(this.elements.workspaceConfigErrorEl, "");
         let workspace;
@@ -1045,7 +1120,7 @@ export class WorkspaceController {
 
     /**
      * Creates one consistently styled action for a workspace registry row.
-     * Action names and connection ids are stored in data attributes so one delegated list listener can handle rows rebuilt after reordering.
+     * Action names and connection ids are stored in data attributes so one delegated list listener can handle rows rebuilt after connection/status changes.
      * @param {string} label Visible action label.
      * @param {string} action Stable action identifier.
      * @param {string} connectionId Registry connection id.
@@ -1060,6 +1135,14 @@ export class WorkspaceController {
         button.dataset.workspaceAction = action;
         button.dataset.workspaceId = connectionId;
         button.disabled = disabled;
+        const icons = { edit: "edit", share: "share", open: "open_in_new", reconnect: "refresh", disconnect: "delete" };
+        if (action === "disconnect") button.classList.add("workspace-disconnect-action");
+        if (icons[action]) {
+            button.replaceChildren(createMaterialIcon(icons[action]));
+            button.classList.add("workspace-icon-action");
+            button.setAttribute("aria-label", label);
+            button.title = label;
+        }
         return button;
     }
 
@@ -1071,7 +1154,7 @@ export class WorkspaceController {
     renderWorkspaceRegistry() {
         this.elements.workspaceListEl.innerHTML = "";
         this.elements.workspaceAddSectionEl.hidden = this.isLocalMode || Boolean(this.runtime.workspaceSetup);
-        this.elements.workspaceShareBtn.disabled = !this.runtime.workspace;
+        this.elements.workspaceShareBtn.hidden = true;
 
         const connections = this.runtime.workspaceRegistry.list();
         if (!connections.length) {
@@ -1082,12 +1165,13 @@ export class WorkspaceController {
             return;
         }
 
-        connections.forEach((connection, index) => {
-            const isActive = connection.id === this.runtime.activeWorkspaceConnection?.id;
+        connections.forEach((connection) => {
+            const session = this.runtime.sessions?.sessions.get(connection.id);
+            const isMounted = connection.id === this.runtime.activeWorkspaceConnection?.id;
             const hasCredential =
                 connection.provider === "local" || Boolean(this.configService.loadWorkspaceCredential(connection.id));
             const row = document.createElement("div");
-            row.className = `workspace-row${isActive ? " is-active" : ""}`;
+            row.className = "workspace-row";
             row.setAttribute("role", "listitem");
 
             const info = document.createElement("div");
@@ -1095,24 +1179,43 @@ export class WorkspaceController {
             const heading = document.createElement("div");
             heading.className = "workspace-row-title";
             const name = document.createElement("strong");
-            name.textContent = connection.displayName;
+            name.textContent = session?.name || connection.displayName;
             heading.append(name);
-            if (isActive) {
-                const badge = document.createElement("span");
-                badge.className = "workspace-active-badge";
-                badge.textContent = this.locale.t("workspace.active");
-                heading.append(badge);
+            const workspace = session?.runtime.workspace || (isMounted ? this.runtime.workspace : null);
+            const features = document.createElement("span");
+            features.className = "workspace-row-features";
+            for (const [component, key, icon] of [
+                ["time_tracking", "nav.week", "calendar_view_week"],
+                ["todos", "nav.todos", "checklist"],
+                ["expenses", "nav.expenses", "payments"],
+            ]) {
+                if (!workspace?.hasComponent(component)) continue;
+                const feature = document.createElement("span");
+                feature.title = this.locale.t(key);
+                feature.setAttribute("aria-label", this.locale.t(key));
+                feature.setAttribute("role", "img");
+                feature.append(createMaterialIcon(icon));
+                features.append(feature);
             }
+            heading.append(features);
             const credentialBadge = document.createElement("span");
-            credentialBadge.className = "workspace-credential-badge muted";
+            const needsAttention = Boolean(session?.error || session?.saveError ||
+                this.runtime.sessions?.unavailable.get(connection.id) ||
+                (isMounted && this.runtime.workspaceSetup) || !hasCredential);
+            const ready = Boolean(session?.ready && !needsAttention);
+            credentialBadge.className = `workspace-credential-badge workspace-health ${needsAttention ? "needs-attention" : ready ? "is-ok" : "is-pending"}`;
             credentialBadge.textContent =
-                isActive && this.runtime.workspaceSetup
+                session?.error || this.runtime.sessions?.unavailable.get(connection.id)
+                    ? this.locale.t("workspace.connectionFailed")
+                    : isMounted && this.runtime.workspaceSetup
                     ? this.locale.t("workspace.needsSetup")
                     : connection.provider === "local"
                       ? this.locale.t("workspace.localServer")
                       : hasCredential
                         ? this.locale.t("workspace.authenticated")
                         : this.locale.t("workspace.tokenRequired");
+            if (needsAttention) credentialBadge.textContent = this.locale.t("workspace.connectionFailed");
+            credentialBadge.prepend(createMaterialIcon(needsAttention ? "warning" : ready ? "check_circle" : "schedule"));
             heading.append(credentialBadge);
 
             const meta = document.createElement("div");
@@ -1126,33 +1229,39 @@ export class WorkspaceController {
                     // Keep the already validated absolute URL if browser URL parsing is unavailable.
                 }
             }
-            meta.textContent = [connection.provider, repository, connection.ref, connection.workspacePath]
+            meta.textContent = [connection.provider, repository, connection.ref]
                 .filter(Boolean)
                 .join(" · ");
+            meta.title = `${meta.textContent} · ${connection.workspacePath}`;
             info.append(heading, meta);
+            const inventory = this.runtime.sessions?.describeConnection(connection.id);
+            if (inventory) {
+                const details = document.createElement("div");
+                details.className = "workspace-row-inventory muted";
+                details.textContent = inventory;
+                info.append(details);
+            }
+            const status = document.createElement("div");
+            status.className = "workspace-row-status muted";
+            const saveStatus = session?.saving ? this.locale.t("workspaceSessions.savingShort")
+                : session?.saveError ? session.saveError : session?.dirty ? this.locale.t("workspace.unsaved") : "";
+            status.textContent = [saveStatus,
+                session?.error || this.runtime.sessions?.unavailable.get(connection.id) || ""].filter(Boolean).join(" — ");
+            info.append(status);
 
             const actions = document.createElement("div");
             actions.className = "workspace-row-actions";
             actions.append(this.createWorkspaceActionButton(this.locale.t("workspace.edit"), "edit", connection.id));
+            actions.append(this.createWorkspaceActionButton(this.locale.t("workspace.share"), "share", connection.id));
             actions.append(
                 this.createWorkspaceActionButton(
-                    isActive && (this.runtime.workspace || this.runtime.workspaceSetup)
-                        ? this.locale.t("workspace.open")
-                        : hasCredential
-                          ? this.locale.t("workspace.switch")
-                          : this.locale.t("workspace.authenticate"),
+                    hasCredential ? this.locale.t("workspace.open") : this.locale.t("workspace.authenticate"),
                     "open",
                     connection.id,
-                    isActive && Boolean(this.runtime.workspace || this.runtime.workspaceSetup),
-                ),
-                this.createWorkspaceActionButton(this.locale.t("workspace.earlier"), "up", connection.id, index === 0),
-                this.createWorkspaceActionButton(
-                    this.locale.t("workspace.later"),
-                    "down",
-                    connection.id,
-                    index === connections.length - 1,
                 ),
             );
+            if (connection.provider !== "local") actions.append(this.createWorkspaceActionButton(
+                this.locale.t("workspaceSessions.reconnectAction"), "reconnect", connection.id));
             if (connection.provider !== "local") {
                 actions.append(
                     this.createWorkspaceActionButton(this.locale.t("workspace.disconnect"), "disconnect", connection.id),
@@ -1200,6 +1309,7 @@ export class WorkspaceController {
      * @returns {void}
      */
     closeWorkspaceEditor() {
+        this.editorTarget = null;
         if (this.elements.workspaceEditDialog.open) this.elements.workspaceEditDialog.close();
     }
 
@@ -1210,6 +1320,8 @@ export class WorkspaceController {
      * @returns {void}
      */
     closeWorkspaceSettings(historyMode = "replace") {
+        const manual = this.elements.workspaceTokenInput?.closest?.("dialog");
+        if (manual?.open) manual.close();
         this.closeWorkspaceEditor();
         this.closeCapabilityScanner();
         this.elements.workspaceCapabilityLinkInput.value = "";
@@ -1226,7 +1338,7 @@ export class WorkspaceController {
 
     /**
      * Handles a delegated click from one registry-row control.
-     * Reordering and disconnection are local browser operations; opening a row performs an authenticated, failure-isolated workspace switch.
+     * Disconnection is a local browser operation; opening a row performs an authenticated, failure-isolated workspace switch.
      * @param {Event} event Click event originating inside the workspace list.
      * @returns {Promise<void>}
      */
@@ -1236,26 +1348,63 @@ export class WorkspaceController {
         const action = target.dataset.workspaceAction || "";
         const connectionId = target.dataset.workspaceId || "";
         if (!connectionId) return;
-        if (action === "edit") {
-            if (connectionId !== this.runtime.activeWorkspaceConnection?.id) await this.switchWorkspace(connectionId);
-            if (connectionId === this.runtime.activeWorkspaceConnection?.id) {
-                this.openWorkspaceSettings("none");
-                this.openWorkspaceEditor();
-            }
+        this.setError(this.elements.workspaceErrorEl, "");
+        target.closest("details")?.removeAttribute("open");
+        if (action === "edit" || action === "share") {
+            try {
+                const controller = await this.managementController(connectionId, action === "edit");
+                if (action === "edit") {
+                    this.editorTarget = controller;
+                    controller.openWorkspaceEditor();
+                } else {
+                    this.shareTarget = controller;
+                    controller.openWorkspaceShareDialog();
+                }
+            } catch (error) { this.setError(this.elements.workspaceErrorEl, safeText(error)); }
+            return;
+        }
+        if (action === "reconnect") {
+            target.closest("details")?.removeAttribute("open");
+            this.requestWorkspaceCredential(this.runtime.workspaceRegistry.getById(connectionId));
             return;
         }
         if (action === "open") {
-            await this.switchWorkspace(connectionId);
-            return;
-        }
-        if (action === "up" || action === "down") {
-            if (this.runtime.workspaceRegistry.move(connectionId, action === "up" ? -1 : 1)) {
-                this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
-                this.renderWorkspaceRegistry();
-            }
+            try { await this.switchWorkspace(connectionId); }
+            catch (error) { this.setError(this.elements.workspaceErrorEl, safeText(error)); }
             return;
         }
         if (action === "disconnect") this.disconnectWorkspace(connectionId);
+    }
+
+    /** Creates a dialog controller bound to the selected connection, without mounting its document.
+     * Shared DOM is used only while this modal owns focus; stores and save queues remain session-owned.
+     * @param {string} id Target connection id.
+     * @param {boolean} editing Whether configuration changes require a clean target session.
+     * @returns {Promise<WorkspaceController>} Controller dedicated to the requested repository.
+     */
+    async managementController(id, editing) {
+        const sessions = this.runtime.sessions;
+        const connection = this.runtime.workspaceRegistry.getById(id);
+        if (!connection) throw new Error(this.locale.t("workspace.none"));
+        if (!sessions?.current) return this;
+        const session = sessions.sessions.get(id) || await sessions.open(connection);
+        if (!session || (!session.ready && !session.setupError)) {
+            if (connection.provider !== "local") this.requestWorkspaceCredential(connection);
+            throw new Error(session?.error || this.locale.t("workspaceSessions.reconnect"));
+        }
+        if (editing && (session.dirty || session.saving)) throw new Error(this.locale.t("workspace.saveBeforeConfig"));
+        const runtime = session === sessions.current ? this.runtime : session.runtime;
+        if (session.setupError) {
+            runtime.workspaceSetup = session.setupError;
+            runtime.workspaceConfigBaseRaw = this.createWorkspaceConfigurationDraft(session.setupError.raw);
+        }
+        return Object.assign(Object.create(Object.getPrototypeOf(this)), this, {
+            runtime, state: session.state, ...session.views, editorTarget: null, shareTarget: null,
+            buildCurrentRoute: () => session === sessions.current ? this.buildCurrentRoute()
+                : session.route || this.routeForWorkspaceConnection(connection),
+            reloadData: () => sessions.reloadSession(session),
+            closeWorkspaceSettings: () => this.closeWorkspaceEditor(),
+        });
     }
 
     /**
@@ -1265,13 +1414,17 @@ export class WorkspaceController {
      * @returns {void}
      */
     requestWorkspaceCredential(connection) {
+        this.reconnectId = connection.id;
         this.elements.workspaceProviderInput.value = connection.provider;
         this.elements.workspaceRepositoryInput.value = connection.repositoryUrl;
         this.elements.workspaceRefInput.value = connection.ref;
         this.elements.workspacePathInput.value = connection.workspacePath;
         this.elements.workspaceTokenInput.value = "";
+        const manual = this.elements.workspaceTokenInput.closest("dialog");
+        if (manual && !manual.open) manual.showModal();
         this.elements.workspaceRememberInput.checked = false;
         this.updateProviderForm(this.elements.workspaceProviderInput, this.elements.workspaceRepositoryInput);
+        this.refreshOAuthControls();
         this.setError(
             this.elements.workspaceErrorEl,
             this.locale.t("workspace.enterTokenFor", { workspace: connection.displayName }),
@@ -1342,23 +1495,7 @@ export class WorkspaceController {
      * @returns {Promise<string>}
      */
     async loadUsableWorkspaceCredential(connection) {
-        const credential = this.configService.loadWorkspaceCredentialRecord(connection.id);
-        if (!credential) return "";
-        if (credential.kind !== "oauth") return credential.accessToken;
-        const refreshed = await refreshOAuthCredential(credential);
-        if (refreshed.kind !== "oauth") throw new Error("The OAuth credential could not be refreshed.");
-        if (
-            refreshed.accessToken !== credential.accessToken ||
-            refreshed.refreshToken !== credential.refreshToken ||
-            refreshed.expiresAt !== credential.expiresAt
-        ) {
-            this.configService.saveWorkspaceOAuthCredential(
-                connection.id,
-                refreshed,
-                this.configService.isWorkspaceCredentialRemembered(connection.id),
-            );
-        }
-        return refreshed.accessToken;
+        return this.configService.refreshWorkspaceCredential(connection.id, refreshOAuthCredential);
     }
 
     /**
@@ -1470,10 +1607,18 @@ export class WorkspaceController {
                 this.elements.workspacePathInput.value,
             );
             const connection = this.runtime.workspaceRegistry.upsert(locator);
+            const reconnecting = connection.id === this.reconnectId && this.runtime.sessions?.current;
+            if (reconnecting) await this.preflightWorkspaceConnection(connection, token);
             this.configService.saveWorkspaceCredential(connection.id, token, this.elements.workspaceRememberInput.checked);
             this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
             this.elements.workspaceTokenInput.value = "";
             this.renderWorkspaceRegistry();
+            if (reconnecting) {
+                await this.runtime.sessions.reconnect(connection);
+                this.reconnectId = "";
+                this.renderWorkspaceRegistry();
+                return;
+            }
             await this.switchWorkspace(connection.id);
         } catch (error) {
             this.setError(this.elements.workspaceErrorEl, safeText(error));
@@ -1498,15 +1643,20 @@ export class WorkspaceController {
      */
     async startCapabilityScanner() {
         this.elements.workspaceCapabilityLinkInput.value = "";
+        const dialog = this.elements.workspaceQrScannerEl.closest("dialog");
+        if (dialog && !dialog.open) dialog.showModal();
         await this.capabilityScanner.start();
     }
 
     /**
-     * Stops camera and worker activity and returns Workspace settings to its ordinary add form.
+     * Stops camera and worker activity, optionally leaving its dialog open for an import result.
+     * @param {boolean} [closeDialog] Whether to dismiss the scanner modal as well.
      * @returns {void}
      */
-    closeCapabilityScanner() {
+    closeCapabilityScanner(closeDialog = true) {
         this.capabilityScanner.close();
+        const dialog = this.elements.workspaceQrScannerEl?.closest?.("dialog");
+        if (closeDialog && dialog?.open) dialog.close();
     }
 
     /**
@@ -1526,9 +1676,10 @@ export class WorkspaceController {
      * @returns {Promise<boolean>} Whether a valid capability reached the workspace connection pipeline.
      */
     async importCapabilityValue(value) {
+        const scannerWasOpen = this.elements.workspaceQrScannerEl?.closest?.("dialog")?.open;
         const candidate = String(value || "").trim();
         this.elements.workspaceCapabilityLinkInput.value = "";
-        this.closeCapabilityScanner();
+        this.closeCapabilityScanner(false);
         this.setError(this.elements.workspaceCapabilityErrorEl, "");
         if (!candidate) {
             this.setError(this.elements.workspaceCapabilityErrorEl, this.locale.t("workspace.capabilityRequired"));
@@ -1539,10 +1690,18 @@ export class WorkspaceController {
             return false;
         }
         try {
-            this.runtime.capabilityImport = parseCapabilityLink(candidate, this.routeController.basePath);
+            const invitation = parseInvitationLink(candidate, this.routeController.basePath, window.location.origin);
+            this.runtime.capabilityImport = invitation
+                ? await this.invitations.resolve(invitation, this.routeController.basePath)
+                : parseCapabilityLink(candidate, this.routeController.basePath);
             return await this.importCapability();
         } catch (error) {
             this.runtime.capabilityImport = null;
+            const dialog = this.elements.workspaceQrScannerEl?.closest?.("dialog");
+            if (scannerWasOpen && dialog) {
+                this.elements.workspaceQrScannerEl.hidden = false;
+                if (!dialog.open) dialog.showModal();
+            }
             this.setError(this.elements.workspaceCapabilityErrorEl, safeText(error));
             return false;
         }
@@ -1609,13 +1768,62 @@ export class WorkspaceController {
         const route = this.buildWorkspaceShareRoute();
         if (!route.workspace) return;
         this.closeWorkspaceSettings("replace");
-        this.elements.workspaceShareDetailsEl.textContent = this.describeWorkspaceLocator(route.workspace);
-        this.elements.workspaceCopyCapabilityBtn.disabled = route.workspace.provider === "local";
-        this.setError(
-            this.elements.workspaceShareErrorEl,
-            route.workspace.provider === "local" ? this.locale.t("workspace.localLocatorOnly") : "",
-        );
+        this.elements.workspaceShareDetailsEl.textContent = this.runtime.workspace.name;
+        const oauth = this.configService.loadWorkspaceCredentialRecord(this.runtime.activeWorkspaceConnection?.id)?.kind === "oauth";
+        this.elements.workspaceCopyCapabilityBtn.disabled = route.workspace.provider === "local" || oauth;
+        this.elements.workspaceCopyCapabilityBtn.textContent = this.locale.t(this.invitations.endpoint ? "workspace.copyCapability" : "workspace.copyFullCapability");
+        const invitationFooter = document.getElementById("workspaceInvitationFooter");
+        if (invitationFooter) invitationFooter.hidden = !this.invitations.endpoint || route.workspace.provider === "local";
+        const accessNote = document.getElementById("workspaceShareAccessNote");
+        const accessReason = document.getElementById("workspaceShareAccessReason");
+        const tokenHelp = document.getElementById("workspaceShareTokenHelp");
+        if (accessNote) accessNote.hidden = !oauth && route.workspace.provider !== "local";
+        if (accessReason) accessReason.textContent = oauth ? this.locale.t("workspace.oauthNotShareable") : this.locale.t("workspace.localLocatorOnly");
+        if (tokenHelp instanceof HTMLAnchorElement) {
+            tokenHelp.hidden = !oauth;
+            tokenHelp.href = this.locale.locale === "de" ? "./guide.de.html#workspaces" : "./guide.html#workspaces";
+        }
+        this.setError(this.elements.workspaceShareErrorEl, "");
         if (!this.elements.workspaceShareDialog.open) this.elements.workspaceShareDialog.showModal();
+        this.renderInvitationReceipts();
+    }
+
+    /**
+     * Lists invitations created by this browser for this connection. Revoking a
+     * lookup prevents future imports, not access already obtained from its token.
+     * @returns {void}
+     */
+    renderInvitationReceipts() {
+        const list = document.getElementById("workspaceInvitationReceipts");
+        if (!list) return;
+        list.replaceChildren();
+        const receipts = this.invitations.receipts().filter((item) => item.connectionId === this.runtime.activeWorkspaceConnection?.id);
+        list.hidden = !receipts.length;
+        for (const receipt of receipts) {
+            const row = document.createElement("div");
+            row.className = "workspace-invitation-receipt";
+            const label = document.createElement("span");
+            label.textContent = this.locale.t("workspace.invitationExpires", { id: receipt.id.slice(0, 8), date: new Date(receipt.expiresAt).toLocaleDateString() });
+            const revoke = document.createElement("button");
+            revoke.type = "button";
+            revoke.className = "btn btn-danger btn-icon";
+            revoke.title = this.locale.t("workspace.revokeInvitation");
+            revoke.setAttribute("aria-label", revoke.title);
+            revoke.append(createMaterialIcon("delete"));
+            revoke.addEventListener("click", async () => {
+                revoke.disabled = true;
+                try {
+                    await this.invitations.revoke(receipt.id);
+                    this.preparedInvitation = null;
+                    this.renderInvitationReceipts();
+                } catch (error) {
+                    this.setError(this.elements.workspaceShareErrorEl, safeText(error));
+                    revoke.disabled = false;
+                }
+            });
+            row.append(label, revoke);
+            list.append(row);
+        }
     }
 
     /**
@@ -1623,6 +1831,9 @@ export class WorkspaceController {
      * @returns {void}
      */
     closeWorkspaceShareDialog() {
+        this.preparedInvitation = null;
+        if (this.shareTarget) this.shareTarget.preparedInvitation = null;
+        this.shareTarget = null;
         this.setError(this.elements.workspaceShareErrorEl, "");
         if (this.elements.workspaceShareDialog.open) this.elements.workspaceShareDialog.close();
     }
@@ -1632,6 +1843,7 @@ export class WorkspaceController {
      * @returns {Promise<void>}
      */
     async copyActiveWorkspaceLink() {
+        if (this.shareTarget && this.shareTarget !== this) return this.shareTarget.copyActiveWorkspaceLink();
         if (!this.runtime.workspace) return;
         const route = this.buildWorkspaceShareRoute();
         const relative = formatAppRoute(route, this.routeController.basePath);
@@ -1645,30 +1857,49 @@ export class WorkspaceController {
     }
 
     /**
-     * Creates and copies a bearer-capability link with the active workspace credential already held by this browser.
-     * OAuth credentials are refreshed through the ordinary credential service before encoding, while local workspaces remain ineligible because they do not represent transferable repository authority.
+     * Encrypts a dedicated PAT capability locally and copies a 30-day invitation.
+     * Broad OAuth grants and local connections cannot be shared. Only encrypted
+     * data reaches the service; the decryption key remains in the URL fragment.
      * Clipboard failure never falls back to a visible prompt, avoiding accidental on-screen disclosure of the encoded bearer payload.
      * @returns {Promise<void>}
      */
     async copyActiveCapabilityLink() {
+        if (this.shareTarget && this.shareTarget !== this) return this.shareTarget.copyActiveCapabilityLink();
+        if (this.invitationBusy) return;
+        this.invitationBusy = true;
+        this.elements.workspaceCopyCapabilityBtn.disabled = true;
         this.setError(this.elements.workspaceShareErrorEl, "");
         try {
             const connection = this.runtime.activeWorkspaceConnection;
             if (!connection || connection.provider === "local") {
                 throw new Error(this.locale.t("workspace.capabilityHostedOnly"));
             }
+            if (this.configService.loadWorkspaceCredentialRecord(connection.id)?.kind === "oauth") {
+                throw new Error(this.locale.t("workspace.oauthNotShareable"));
+            }
             const token = (await this.loadUsableWorkspaceCredential(connection)) || this.runtime.token;
             if (!token) throw new Error(this.locale.t("workspace.capabilityCredentialMissing"));
-            const link = formatCapabilityLink(
+            const capability = formatCapabilityLink(
                 this.buildWorkspaceShareRoute(),
                 token,
                 window.location.origin,
                 this.routeController.basePath,
             );
+            let link = capability;
+            if (this.invitations.endpoint) {
+                if (this.preparedInvitation?.connectionId !== connection.id || this.preparedInvitation?.capability !== capability) {
+                    link = await this.invitations.create(capability, connection.id, this.routeController.basePath);
+                    this.preparedInvitation = { connectionId: connection.id, capability, link };
+                } else link = this.preparedInvitation.link;
+            }
             await navigator.clipboard.writeText(link);
             this.toast(this.locale.t("workspace.capabilityCopied"), 4500, "success");
         } catch (error) {
-            this.setError(this.elements.workspaceShareErrorEl, safeText(error));
+            this.setError(this.elements.workspaceShareErrorEl, this.preparedInvitation ? this.locale.t("workspace.invitationCopyRetry") : safeText(error));
+        } finally {
+            this.invitationBusy = false;
+            this.elements.workspaceCopyCapabilityBtn.disabled = false;
+            this.renderInvitationReceipts();
         }
     }
 
@@ -1687,6 +1918,11 @@ export class WorkspaceController {
         });
         this.configService.saveWorkspaceCredential(connection.id, capability.credential, true);
         this.configService.saveWorkspaceRegistry(this.runtime.workspaceRegistry);
+        if (this.runtime.sessions?.current) {
+            this.runtime.capabilityImport = null;
+            await this.switchWorkspace(connection.id, capability.route);
+            return true;
+        }
         const connectionInfo = this.runtime.workspace
             ? await this.preflightWorkspaceConnection(connection, capability.credential)
             : null;
